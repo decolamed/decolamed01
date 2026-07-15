@@ -1,0 +1,130 @@
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import {
+  ASAAS_CONFIRMATION_EVENTS,
+  mapBillingTypeToFormaPagamento,
+  type AsaasWebhookPayload
+} from "@/lib/asaas/client";
+
+// Configure esta URL no painel do Asaas: Configurações > Integrações > Webhooks.
+// Marque ao menos os eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED.
+// O Asaas envia o token configurado no header abaixo — usado para validar a origem.
+export async function POST(request: Request) {
+  const token = request.headers.get("asaas-access-token");
+  if (token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+    return NextResponse.json({ error: "Token inválido." }, { status: 401 });
+  }
+
+  const payload = (await request.json()) as AsaasWebhookPayload;
+
+  if (!ASAAS_CONFIRMATION_EVENTS.includes(payload.event)) {
+    // Outros eventos (ex: PAYMENT_OVERDUE, PAYMENT_DELETED) podem ser
+    // tratados aqui futuramente. Por ora apenas confirmamos o recebimento.
+    return NextResponse.json({ received: true });
+  }
+
+  const supabase = createAdminClient();
+  const { payment } = payload;
+  const preCadastroId = payment.externalReference;
+
+  if (!preCadastroId) {
+    console.error("Webhook Asaas sem externalReference:", payment.id);
+    return NextResponse.json({ received: true });
+  }
+
+  const { data: preCadastro } = await supabase
+    .from("pre_cadastros")
+    .select("*, planos(*)")
+    .eq("id", preCadastroId)
+    .single();
+
+  if (!preCadastro) {
+    console.error("Pré-cadastro não encontrado para webhook:", preCadastroId);
+    return NextResponse.json({ received: true });
+  }
+
+  // Precisamos do matricula_id ANTES de gravar o pagamento, para que o aluno
+  // consiga ver o próprio pagamento depois (a policy de RLS pagamentos_select_own
+  // depende de pagamentos.matricula_id apontar para uma matrícula dele).
+  let matriculaId: string | null = null;
+
+  if (preCadastro.convertido) {
+    // Reenvio de evento (ex: PAYMENT_CONFIRMED seguido de PAYMENT_RECEIVED):
+    // a matrícula já existe, só localizamos o id dela.
+    const { data: matriculaExistente } = await supabase
+      .from("matriculas")
+      .select("id")
+      .eq("pre_cadastro_id", preCadastro.id)
+      .single();
+    matriculaId = matriculaExistente?.id ?? null;
+  } else {
+    // 1. Cria o usuário no Supabase Auth via convite — o próprio aluno define
+    //    a senha pelo link recebido por e-mail (nunca enviamos senha pronta).
+    const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+      preCadastro.email,
+      {
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/redefinir-senha`,
+        data: { nome: preCadastro.nome }
+      }
+    );
+
+    if (inviteError || !invited?.user) {
+      console.error("Erro ao convidar aluno:", inviteError);
+      return NextResponse.json({ error: "Falha ao criar usuário." }, { status: 500 });
+    }
+
+    // 2. Profile
+    await supabase.from("profiles").insert({
+      id: invited.user.id,
+      nome: preCadastro.nome,
+      email: preCadastro.email,
+      telefone: preCadastro.telefone,
+      cpf: preCadastro.cpf,
+      role: "aluno",
+      plano_id: preCadastro.plano_id
+    });
+
+    // 3. Matrícula — capturamos o id gerado para linkar o pagamento a seguir.
+    const { data: novaMatricula, error: matriculaError } = await supabase
+      .from("matriculas")
+      .insert({
+        aluno_id: invited.user.id,
+        pre_cadastro_id: preCadastro.id,
+        plano_id: preCadastro.plano_id,
+        status: "ativa",
+        asaas_customer_id: preCadastro.asaas_customer_id,
+        asaas_charge_id: preCadastro.asaas_charge_id,
+        acesso_liberado_em: new Date().toISOString()
+      })
+      .select("id")
+      .single();
+
+    if (matriculaError || !novaMatricula) {
+      console.error("Erro ao criar matrícula:", matriculaError);
+      return NextResponse.json({ error: "Falha ao criar matrícula." }, { status: 500 });
+    }
+
+    matriculaId = novaMatricula.id;
+
+    // 4. Marca o pré-cadastro como convertido
+    await supabase.from("pre_cadastros").update({ convertido: true }).eq("id", preCadastro.id);
+  }
+
+  // 5. Registra o pagamento já vinculado à matrícula (idempotente por
+  //    asaas_payment_id — reenvios do Asaas atualizam a mesma linha).
+  await supabase.from("pagamentos").upsert(
+    {
+      asaas_payment_id: payment.id,
+      pre_cadastro_id: preCadastro.id,
+      matricula_id: matriculaId,
+      valor_centavos: Math.round(payment.value * 100),
+      forma_pagamento: mapBillingTypeToFormaPagamento(payment.billingType),
+      status: payload.event === "PAYMENT_RECEIVED" ? "recebido" : "confirmado",
+      data_pagamento: payment.paymentDate ?? new Date().toISOString(),
+      payload
+    },
+    { onConflict: "asaas_payment_id" }
+  );
+
+  return NextResponse.json({ received: true });
+}
