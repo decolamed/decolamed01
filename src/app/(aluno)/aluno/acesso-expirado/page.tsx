@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
@@ -33,9 +32,17 @@ export default async function AcessoExpiradoPage() {
     .select("valor")
     .eq("chave", "site.contato.whatsapp")
     .maybeSingle();
-  const linkWhatsapp = montarLinkWhatsapp(config?.valor as string | undefined);
-
+  const numeroWhatsapp = config?.valor as string | undefined;
   const motivo = acesso.motivo ?? "expirada";
+
+  // Não existe mais catálogo público de planos — renovação/reativação agora
+  // passa sempre pelo suporte, que gera um novo link específico (ou reativa
+  // manualmente em /admin/matriculas).
+  const linkRenovar = montarLinkWhatsapp(
+    numeroWhatsapp,
+    "Olá! Meu acesso à plataforma Decola Med está indisponível e eu gostaria de renovar/reativar meu plano."
+  );
+  const linkSuporte = montarLinkWhatsapp(numeroWhatsapp);
 
   return (
     <div className="mx-auto max-w-lg text-center">
@@ -47,14 +54,16 @@ export default async function AcessoExpiradoPage() {
         <p className="mt-3 text-navy-dark/70">{acesso.mensagem}</p>
 
         <div className="mt-6 flex flex-col gap-3">
-          <Link
-            href="/planos"
+          <a
+            href={linkRenovar}
+            target="_blank"
+            rel="noopener noreferrer"
             className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
           >
             Renovar meu plano
-          </Link>
+          </a>
           <a
-            href={linkWhatsapp}
+            href={linkSuporte}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5"

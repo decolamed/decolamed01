@@ -6,7 +6,6 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 
 const CAMPOS = [
-  { chave: "site.hero.titulo", label: "Título de destaque da home" },
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
   { chave: "site.contato.instagram", label: "Usuário do Instagram" }
 ];
@@ -27,9 +26,10 @@ async function salvarConfiguracoes(formData: FormData) {
     )
   );
 
+  // Usado no rodapé das páginas de inscrição (/inscricao/[slug]) e de
+  // confirmação de pagamento — não existe mais home/contato pra revalidar.
   revalidatePath("/admin/configuracoes");
-  revalidatePath("/");
-  revalidatePath("/contato");
+  revalidatePath("/inscricao/[slug]", "page");
   redirect("/admin/configuracoes?sucesso=Configurações salvas com sucesso.");
 }
 
