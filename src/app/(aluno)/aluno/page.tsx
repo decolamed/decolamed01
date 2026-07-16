@@ -1,3 +1,5 @@
+import { requireAcessoAluno } from "@/lib/auth/permissions";
+
 const MODULOS_FUTUROS = [
   { titulo: "Cursos", desc: "Videoaulas organizadas por matéria e frente." },
   { titulo: "Questões", desc: "Banco de questões comentadas com filtros." },
@@ -7,7 +9,12 @@ const MODULOS_FUTUROS = [
   { titulo: "Simulados", desc: "Simulados cronometrados com correção automática." }
 ];
 
-export default function AlunoHomePage() {
+export default async function AlunoHomePage() {
+  // Camada 2 de proteção (a camada 1 é o middleware): garante que mesmo que
+  // a rota seja alcançada por algum outro caminho, o conteúdo só renderiza
+  // para quem tem matrícula ativa e dentro do prazo.
+  await requireAcessoAluno();
+
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-navy-dark">Bem-vindo à sua plataforma 🚀</h1>

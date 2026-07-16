@@ -1,17 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 // O Supabase já autentica o usuário automaticamente ao clicar no link do
-// e-mail (convite ou recuperação) antes de chegar nesta página — aqui só
-// pedimos a nova senha.
+// e-mail (convite ou recuperação) antes de chegar nesta página — a troca do
+// código pela sessão acontece em /auth/callback. Aqui só pedimos a nova senha.
 export default function RedefinirSenhaPage() {
   const router = useRouter();
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
+  const [semSessao, setSemSessao] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setSemSessao(!data.user);
+      setVerificandoSessao(false);
+    });
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,6 +52,28 @@ export default function RedefinirSenhaPage() {
 
     router.push("/aluno");
     router.refresh();
+  }
+
+  if (verificandoSessao) {
+    return (
+      <div className="rounded-3xl bg-white p-8 text-center shadow-xl">
+        <p className="text-navy-dark/60">Verificando link...</p>
+      </div>
+    );
+  }
+
+  if (semSessao) {
+    return (
+      <div className="rounded-3xl bg-white p-8 text-center shadow-xl">
+        <h1 className="font-display text-2xl font-bold text-navy-dark">Link inválido ou expirado</h1>
+        <p className="mt-2 text-sm text-navy-dark/60">
+          Peça um novo link de redefinição de senha.
+        </p>
+        <Button className="mt-6 w-full" onClick={() => router.push("/recuperar-senha")}>
+          Solicitar novo link
+        </Button>
+      </div>
+    );
   }
 
   return (

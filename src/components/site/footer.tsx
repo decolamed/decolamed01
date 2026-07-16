@@ -22,8 +22,8 @@ export async function SiteFooter() {
         <div className="flex flex-wrap gap-4">
           <Link href="/" className="hover:text-orange">Sobre a plataforma</Link>
           <Link href="/planos" className="hover:text-orange">Planos</Link>
-          <Link href="#" className="hover:text-orange">Condições e suporte</Link>
-          <Link href="#" className="hover:text-orange">Política de privacidade</Link>
+          <Link href="/contato" className="hover:text-orange">Suporte</Link>
+          <span className="text-white/40">Política de privacidade (em breve)</span>
         </div>
 
         <div className="flex flex-col gap-3">

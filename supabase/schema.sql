@@ -199,10 +199,17 @@ create policy "planos_admin_all" on planos for all using (is_admin()) with check
 create policy "config_select_publico" on configuracoes for select using (true);
 create policy "config_admin_all" on configuracoes for all using (is_admin()) with check (is_admin());
 
--- profiles: usuário vê/edita o próprio perfil; admin vê/edita todos
+-- profiles: usuário vê/edita o próprio perfil; admin vê/edita todos.
+-- IMPORTANTE: o WITH CHECK abaixo trava "role" — sem ele, qualquer usuário
+-- logado poderia rodar profiles.update({ role: 'admin' }) no próprio id e se
+-- autopromover (a policy de UPDATE sem WITH CHECK próprio reaproveita o
+-- USING, que só valida o dono da linha, não os valores sendo gravados).
 create policy "profiles_select_own_or_admin" on profiles for select using (auth.uid() = id or is_admin());
-create policy "profiles_update_own_or_admin" on profiles for update using (auth.uid() = id or is_admin());
-create policy "profiles_admin_insert" on profiles for insert with check (auth.uid() = id or is_admin());
+create policy "profiles_update_own_or_admin" on profiles for update
+  using (auth.uid() = id or is_admin())
+  with check (is_admin() or (auth.uid() = id and role = 'aluno'));
+create policy "profiles_admin_insert" on profiles for insert
+  with check (is_admin() or (auth.uid() = id and role = 'aluno'));
 
 -- matriculas: aluno vê a própria; admin vê/gerencia todas
 create policy "matriculas_select_own_or_admin" on matriculas for select using (aluno_id = auth.uid() or is_admin());
@@ -223,7 +230,9 @@ create policy "usuario_permissoes_admin_all" on usuario_permissoes for all using
 
 -- notificacoes: usuário vê as próprias; admin vê/gerencia todas
 create policy "notificacoes_select_own_or_admin" on notificacoes for select using (usuario_id = auth.uid() or is_admin());
-create policy "notificacoes_update_own" on notificacoes for update using (usuario_id = auth.uid() or is_admin());
+create policy "notificacoes_update_own" on notificacoes for update
+  using (usuario_id = auth.uid() or is_admin())
+  with check (usuario_id = auth.uid() or is_admin());
 create policy "notificacoes_admin_insert" on notificacoes for insert with check (is_admin());
 
 -- ----------------------------------------------------------------------------

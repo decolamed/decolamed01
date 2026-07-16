@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/server";
 import { findOrCreateCustomer, createCharge, getPixQrCode } from "@/lib/asaas/client";
+import { validarCupom } from "@/lib/cupons/validar";
 
 const bodySchema = z.object({
   planoId: z.string().uuid(),
@@ -11,7 +12,8 @@ const bodySchema = z.object({
   telefone: z.string().min(8),
   cep: z.string().min(8),
   numeroEndereco: z.string().min(1),
-  billingType: z.enum(["PIX", "BOLETO", "CREDIT_CARD"])
+  billingType: z.enum(["PIX", "BOLETO", "CREDIT_CARD"]),
+  cupomCodigo: z.string().trim().min(1).optional()
 });
 
 export async function POST(request: Request) {
@@ -20,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Dados inválidos.", detalhes: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { planoId, nome, email, cpf, telefone, cep, numeroEndereco, billingType } = parsed.data;
+  const { planoId, nome, email, cpf, telefone, cep, numeroEndereco, billingType, cupomCodigo } = parsed.data;
   const supabase = createAdminClient();
 
   const { data: plano, error: planoError } = await supabase
@@ -34,10 +36,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Plano não encontrado ou indisponível." }, { status: 404 });
   }
 
+  // Cupom: revalidamos aqui (nunca confiamos no desconto calculado no cliente,
+  // mesmo que o front já tenha chamado /api/cupons/validar antes).
+  let precoFinalCentavos = plano.preco_centavos;
+  let descontoCentavos = 0;
+  if (cupomCodigo) {
+    const resultado = await validarCupom(supabase, cupomCodigo, plano.preco_centavos);
+    if (!resultado.ok) {
+      return NextResponse.json({ error: "Cupom inválido ou expirado." }, { status: 400 });
+    }
+    descontoCentavos = resultado.resultado.descontoCentavos;
+    precoFinalCentavos = resultado.resultado.valorFinalCentavos;
+  }
+
   // 1. Pré-cadastro no Supabase, antes de qualquer chamada externa.
   const { data: preCadastro, error: preCadastroError } = await supabase
     .from("pre_cadastros")
-    .insert({ nome, email, cpf, telefone, plano_id: planoId })
+    .insert({
+      nome,
+      email,
+      cpf,
+      telefone,
+      plano_id: planoId,
+      cupom_codigo: cupomCodigo ? cupomCodigo.trim().toUpperCase() : null,
+      desconto_centavos: descontoCentavos
+    })
     .select()
     .single();
 
@@ -64,7 +87,7 @@ export async function POST(request: Request) {
     const charge = await createCharge({
       customer: customer.id,
       billingType,
-      value: plano.preco_centavos / 100,
+      value: precoFinalCentavos / 100,
       dueDate: dueDate.toISOString().slice(0, 10),
       description: `Matrícula Decola Med — ${plano.nome}`,
       externalReference: preCadastro.id
@@ -82,7 +105,7 @@ export async function POST(request: Request) {
     const response: Record<string, unknown> = {
       chargeId: charge.id,
       billingType,
-      value: plano.preco_centavos / 100,
+      value: precoFinalCentavos / 100,
       dueDate,
       invoiceUrl: charge.invoiceUrl,
       bankSlipUrl: charge.bankSlipUrl ?? null,

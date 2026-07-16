@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
+import { SubmitButton } from "@/components/admin/submit-button";
+import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { createAdminClient } from "@/lib/supabase/server";
 
 async function alterarStatus(formData: FormData) {
@@ -19,19 +22,33 @@ async function alterarStatus(formData: FormData) {
   revalidatePath("/admin/matriculas");
 }
 
-export default async function AdminMatriculasPage() {
+export default async function AdminMatriculasPage({
+  searchParams
+}: {
+  searchParams: { planoId?: string };
+}) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data: matriculas } = await supabase
+  let query = supabase
     .from("matriculas")
-    .select("id, status, created_at, profiles(nome, email), planos(nome)")
+    .select("id, status, created_at, profiles(nome, email, telefone), planos(nome)")
     .order("created_at", { ascending: false });
 
+  if (searchParams.planoId) {
+    query = query.eq("plano_id", searchParams.planoId);
+  }
+
+  const { data: matriculas } = await query;
   const lista = matriculas ?? [];
 
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-navy-dark">Matrículas</h1>
+      {searchParams.planoId && (
+        <Link href="/admin/matriculas" className="mt-1 inline-block text-sm text-navy hover:underline">
+          Filtrando por plano — limpar filtro
+        </Link>
+      )}
 
       <div className="mt-6 overflow-hidden rounded-2xl bg-white shadow">
         <table className="w-full text-left text-sm">
@@ -49,14 +66,18 @@ export default async function AdminMatriculasPage() {
                 <td className="p-3">
                   <p>{m.profiles?.nome ?? "—"}</p>
                   <p className="text-xs text-navy-dark/50">{m.profiles?.email}</p>
+                  <div className="mt-1">
+                    <WhatsappButton telefone={m.profiles?.telefone ?? null} nome={m.profiles?.nome ?? "Aluno"} />
+                  </div>
                 </td>
                 <td className="p-3">{m.planos?.nome}</td>
                 <td className="p-3 capitalize">{m.status}</td>
                 <td className="p-3">
                   <form action={alterarStatus} className="flex gap-2">
                     <input type="hidden" name="id" value={m.id} />
-                    <button name="status" value="ativa" className="text-green-700 hover:underline">Liberar</button>
-                    <button name="status" value="bloqueada" className="text-red-600 hover:underline">Bloquear</button>
+                    <SubmitButton name="status" value="ativa" pendingText="..." className="text-green-700 hover:underline">Liberar</SubmitButton>
+                    <SubmitButton name="status" value="bloqueada" pendingText="..." className="text-red-600 hover:underline">Bloquear</SubmitButton>
+                    <SubmitButton name="status" value="cancelada" pendingText="..." className="text-navy-dark/60 hover:underline">Cancelar</SubmitButton>
                   </form>
                 </td>
               </tr>

@@ -43,6 +43,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
+  // Se o pré-cadastro usou um cupom de afiliado, buscamos o parceiro e o
+  // percentual de comissão para gravar junto do pagamento (ver migração 005
+  // — comissao_centavos/parceiro_id em `pagamentos` e a trigger que gera a
+  // linha correspondente em `comissoes_parceiro`).
+  let parceiroId: string | null = null;
+  let comissaoCentavos = 0;
+  if (preCadastro.cupom_codigo) {
+    const { data: cupomInfo } = await supabase
+      .from("cupons")
+      .select("parceiro_id, percentual_comissao")
+      .eq("codigo", preCadastro.cupom_codigo)
+      .single();
+    if (cupomInfo?.parceiro_id) {
+      parceiroId = cupomInfo.parceiro_id;
+      comissaoCentavos = Math.round((payment.value * 100 * (cupomInfo.percentual_comissao ?? 0)) / 100);
+    }
+  }
+
+  const duracaoMeses: number | null = preCadastro.planos?.duracao_meses ?? null;
+  let acessoExpiraEm: string | null = null;
+  if (duracaoMeses) {
+    const expira = new Date();
+    expira.setMonth(expira.getMonth() + duracaoMeses);
+    acessoExpiraEm = expira.toISOString();
+  }
+
   // Precisamos do matricula_id ANTES de gravar o pagamento, para que o aluno
   // consiga ver o próprio pagamento depois (a policy de RLS pagamentos_select_own
   // depende de pagamentos.matricula_id apontar para uma matrícula dele).
@@ -63,7 +89,7 @@ export async function POST(request: Request) {
     const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       preCadastro.email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/redefinir-senha`,
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`,
         data: { nome: preCadastro.nome }
       }
     );
@@ -94,7 +120,9 @@ export async function POST(request: Request) {
         status: "ativa",
         asaas_customer_id: preCadastro.asaas_customer_id,
         asaas_charge_id: preCadastro.asaas_charge_id,
-        acesso_liberado_em: new Date().toISOString()
+        acesso_liberado_em: new Date().toISOString(),
+        acesso_expira_em: acessoExpiraEm,
+        cupom_codigo: preCadastro.cupom_codigo
       })
       .select("id")
       .single();
@@ -108,6 +136,22 @@ export async function POST(request: Request) {
 
     // 4. Marca o pré-cadastro como convertido
     await supabase.from("pre_cadastros").update({ convertido: true }).eq("id", preCadastro.id);
+
+    // 5. Contabiliza o uso do cupom — só aqui (primeira confirmação), nunca
+    //    em reenvios de evento, para não contar o mesmo pagamento duas vezes.
+    if (preCadastro.cupom_codigo) {
+      const { data: cupomAtual } = await supabase
+        .from("cupons")
+        .select("usos")
+        .eq("codigo", preCadastro.cupom_codigo)
+        .single();
+      if (cupomAtual) {
+        await supabase
+          .from("cupons")
+          .update({ usos: cupomAtual.usos + 1 })
+          .eq("codigo", preCadastro.cupom_codigo);
+      }
+    }
   }
 
   // 5. Registra o pagamento já vinculado à matrícula (idempotente por
@@ -121,7 +165,15 @@ export async function POST(request: Request) {
       forma_pagamento: mapBillingTypeToFormaPagamento(payment.billingType),
       status: payload.event === "PAYMENT_RECEIVED" ? "recebido" : "confirmado",
       data_pagamento: payment.paymentDate ?? new Date().toISOString(),
-      payload
+      payload,
+      origem_pagamento: "asaas",
+      cupom_codigo: preCadastro.cupom_codigo,
+      parceiro_id: parceiroId,
+      comissao_centavos: comissaoCentavos,
+      comprador_nome: preCadastro.nome,
+      comprador_email: preCadastro.email,
+      plano_nome: preCadastro.planos?.nome ?? null,
+      plano_id: preCadastro.plano_id
     },
     { onConflict: "asaas_payment_id" }
   );
