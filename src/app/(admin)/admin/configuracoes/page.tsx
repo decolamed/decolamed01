@@ -17,7 +17,10 @@ async function salvarConfiguracoes(formData: FormData) {
     CAMPOS.map((campo) =>
       supabase
         .from("configuracoes")
-        .upsert({ chave: campo.chave, valor: String(formData.get(campo.chave) ?? "") }, { onConflict: "chave" })
+        .upsert(
+          { chave: campo.chave, valor: JSON.stringify(String(formData.get(campo.chave) ?? "")) },
+          { onConflict: "chave" }
+        )
     )
   );
 

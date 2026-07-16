@@ -10,8 +10,7 @@ export function Navbar() {
           <span className="font-display text-lg font-bold text-white">Decola Med</span>
         </Link>
         <div className="flex items-center gap-6 font-body text-sm font-semibold text-white/90">
-          <Link href="/planos" className="hover:text-orange">Planos</Link>
-          <Link href="/contato" className="hover:text-orange">Contato</Link>
+          <Link href="/" className="hover:text-orange">Sobre a plataforma</Link>
           <Link
             href="/planos"
             className="rounded-full bg-orange px-4 py-2 text-white shadow-md shadow-orange/30 transition hover:bg-orange-dark"

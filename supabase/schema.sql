@@ -231,6 +231,6 @@ create policy "notificacoes_admin_insert" on notificacoes for insert with check 
 -- ----------------------------------------------------------------------------
 insert into configuracoes (chave, valor) values
   ('site.hero.titulo', '"A sua aprovação em Medicina começa aqui!"'),
-  ('site.contato.whatsapp', '"5500000000000"'),
+  ('site.contato.whatsapp', '"558791741532"'),
   ('site.contato.instagram', '"decolamed"')
 on conflict (chave) do nothing;

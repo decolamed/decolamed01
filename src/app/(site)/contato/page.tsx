@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 
 export default async function ContatoPage() {
   const supabase = createClient();
@@ -19,7 +20,7 @@ export default async function ContatoPage() {
 
       <div className="mt-8 flex flex-col items-center gap-4">
         <a
-          href={`https://wa.me/${whatsapp}`}
+          href={montarLinkWhatsapp(whatsapp)}
           className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white shadow-lg shadow-orange/30 hover:bg-orange-dark"
         >
           Falar no WhatsApp
