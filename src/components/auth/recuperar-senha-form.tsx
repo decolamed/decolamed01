@@ -27,7 +27,11 @@ export function RecuperarSenhaForm() {
 
     setLoading(false);
     if (error) {
-      setErro("Não foi possível enviar o e-mail de recuperação.");
+      // Mostra a mensagem real do Supabase (ex.: "redirect_to not allowed",
+      // "email rate limit exceeded") — isso ajuda MUITO a diagnosticar
+      // problema de configuração em produção, em vez de esconder atrás de
+      // um texto genérico.
+      setErro(`Não foi possível enviar o e-mail de recuperação: ${error.message}`);
       return;
     }
     setEnviado(true);
