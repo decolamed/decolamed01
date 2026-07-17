@@ -1,7 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { formatarCentavos } from "@/lib/formatacao";
 
 export default async function AdminDashboardPage() {
+  await requireAdmin();
   const supabase = createAdminClient();
 
   const [

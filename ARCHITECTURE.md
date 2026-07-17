@@ -147,6 +147,7 @@ O schema é aplicado **em ordem**, no SQL Editor do Supabase (ou `supabase db pu
 4. `004_role_parceiro_enum.sql` — `alter type user_role add value 'parceiro'`. **Precisa rodar sozinha** (o Postgres não deixa usar um valor de enum recém-criado na mesma transação em que ele foi adicionado) e precisa estar **commitada** antes da 005.
 5. `005_gestao_alunos_parceiros_vendas.sql` — colunas novas em `profiles`/`cupons`/`matriculas`/`pagamentos`, tabelas `comissoes_parceiro` e `historico_admin`, triggers de comissão/valor líquido, policies de RLS de parceiro.
 6. `006_fix_role_update_trigger.sql` — troca a checagem de `role` na policy de update de `profiles` por uma trigger (necessário porque a checagem antiga só permitia manter `role = 'aluno'`, o que bloquearia um parceiro de editar o próprio perfil).
+7. `007_fix_table_grants.sql` — concede GRANT de tabela (`select/insert/update/delete`) para os roles `anon`/`authenticated`/`service_role` em todas as tabelas do schema `public`, incluindo as futuras (via `alter default privileges`). Sem isso, leituras feitas pelo client do navegador (não pela service role) falhavam com `permission denied for table X` mesmo com as policies de RLS corretas — GRANT e RLS são camadas diferentes, RLS não substitui GRANT.
 
 Ao criar a próxima migração, siga a mesma convenção: arquivo numerado em
 `supabase/migrations/`, só com `alter table` / `create table if not exists`

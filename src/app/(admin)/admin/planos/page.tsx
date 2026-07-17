@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { CopiarLinkButton } from "@/components/admin/copiar-link-button";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { slugificar } from "@/lib/site/slugificar";
 import type { Plano } from "@/types/database";
 
 async function criarPlano(formData: FormData) {
@@ -19,10 +20,17 @@ async function criarPlano(formData: FormData) {
     .filter(Boolean);
 
   const duracao = String(formData.get("duracao_meses") ?? "");
+  // Nunca salva o slug exatamente como foi digitado — sempre normalizado
+  // (minúsculo, sem espaço/acento) para nunca gerar um link quebrado.
+  const slug = slugificar(String(formData.get("slug") ?? ""));
+
+  if (!slug) {
+    redirect(`/admin/planos?erro=${encodeURIComponent("Informe um slug válido (ex.: plano-intensivo).")}`);
+  }
 
   const { error } = await supabase.from("planos").insert({
     nome: String(formData.get("nome")),
-    slug: String(formData.get("slug")),
+    slug,
     descricao: String(formData.get("descricao") ?? ""),
     preco_centavos: Math.round(Number(formData.get("preco")) * 100),
     duracao_meses: duracao ? Number(duracao) : null,

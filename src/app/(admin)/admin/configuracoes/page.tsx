@@ -15,7 +15,7 @@ async function salvarConfiguracoes(formData: FormData) {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  await Promise.all(
+  const resultados = await Promise.all(
     CAMPOS.map((campo) =>
       supabase
         .from("configuracoes")
@@ -30,6 +30,11 @@ async function salvarConfiguracoes(formData: FormData) {
   // confirmação de pagamento — não existe mais home/contato pra revalidar.
   revalidatePath("/admin/configuracoes");
   revalidatePath("/inscricao/[slug]", "page");
+
+  const falhou = resultados.some((r) => r.error);
+  if (falhou) {
+    redirect("/admin/configuracoes?erro=Não foi possível salvar uma ou mais configurações.");
+  }
   redirect("/admin/configuracoes?sucesso=Configurações salvas com sucesso.");
 }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 
 const NAV = [
   { href: "/admin", label: "Visão geral" },
@@ -32,9 +33,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </nav>
       </aside>
 
-      <div className="flex-1">
-        <header className="flex items-center justify-between border-b bg-white px-6 py-4">
-          <span className="text-sm text-navy-dark/70">Logado como {profile.nome}</span>
+      <div className="relative flex-1">
+        <header className="flex items-center justify-between gap-3 border-b bg-white px-6 py-4">
+          <div className="flex items-center gap-3">
+            {/* Só aparece em telas pequenas — a barra lateral acima cobre telas grandes. */}
+            <AdminMobileNav nav={NAV} />
+            <span className="text-sm text-navy-dark/70">Logado como {profile.nome}</span>
+          </div>
           <LogoutButton />
         </header>
         <main className="p-6">{children}</main>

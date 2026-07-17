@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { Field } from "@/app/(admin)/admin/planos/page";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { slugificar } from "@/lib/site/slugificar";
 import type { Plano } from "@/types/database";
 
 async function salvarPlano(id: string, formData: FormData) {
@@ -19,12 +20,17 @@ async function salvarPlano(id: string, formData: FormData) {
     .filter(Boolean);
 
   const duracao = String(formData.get("duracao_meses") ?? "");
+  const slug = slugificar(String(formData.get("slug") ?? ""));
+
+  if (!slug) {
+    redirect(`/admin/planos/${id}/editar?erro=${encodeURIComponent("Informe um slug válido (ex.: plano-intensivo).")}`);
+  }
 
   const { error } = await supabase
     .from("planos")
     .update({
       nome: String(formData.get("nome")),
-      slug: String(formData.get("slug")),
+      slug,
       descricao: String(formData.get("descricao") ?? ""),
       preco_centavos: Math.round(Number(formData.get("preco")) * 100),
       duracao_meses: duracao ? Number(duracao) : null,

@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { InscricaoForm } from "@/components/site/matricula-form";
 import type { Plano } from "@/types/database";
@@ -14,7 +13,20 @@ export default async function InscricaoPage({ params }: { params: { slug: string
     .eq("ativo", true)
     .single();
 
-  if (!plano) notFound();
+  if (!plano) {
+    // Mensagem própria (em vez do notFound() padrão do Next) — o 404 padrão
+    // renderiza texto escuro, que ficava invisível sobre o fundo azul-escuro
+    // deste layout, parecendo uma "página em branco" sem nenhuma explicação.
+    return (
+      <section className="mx-auto max-w-lg px-5 py-24 text-center">
+        <h1 className="font-display text-2xl font-bold text-white">Link não encontrado</h1>
+        <p className="mt-3 text-white/70">
+          Não encontramos nenhum plano ativo com o endereço <span className="font-mono">/inscricao/{params.slug}</span>.
+          Confira se o link foi copiado corretamente, ou se o plano ainda está ativo em /admin/planos.
+        </p>
+      </section>
+    );
+  }
   const p = plano as Plano;
   const preco = (p.preco_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 

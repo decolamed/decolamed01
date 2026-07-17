@@ -6,8 +6,12 @@ import { validarCupom } from "@/lib/cupons/validar";
 
 const bodySchema = z.object({
   planoId: z.string().uuid(),
-  nome: z.string().min(3),
-  email: z.string().email(),
+  nome: z.string().trim().min(3),
+  // .toLowerCase() evita o mesmo problema já corrigido em /admin/usuarios:
+  // duas contas "diferentes" pro mesmo aluno por causa de maiúscula/
+  // minúscula no e-mail (o Supabase Auth normaliza para minúsculo por
+  // dentro, então profiles.email precisa bater com isso).
+  email: z.string().trim().toLowerCase().email(),
   cpf: z.string().min(11),
   telefone: z.string().min(8),
   cep: z.string().min(8),

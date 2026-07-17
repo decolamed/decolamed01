@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Profile
-    await supabase.from("profiles").insert({
+    const { error: profileError } = await supabase.from("profiles").insert({
       id: invited.user.id,
       nome: preCadastro.nome,
       email: preCadastro.email,
@@ -109,6 +109,16 @@ export async function POST(request: Request) {
       role: "aluno",
       plano_id: preCadastro.plano_id
     });
+
+    if (profileError) {
+      // Não podemos deixar passar batido: sem profile, o aluno teria um
+      // usuário de login criado mas nenhum jeito de o app reconhecê-lo (login
+      // quebraria, matrícula ficaria "órfã"). Melhor falhar aqui e deixar o
+      // Asaas reenviar o webhook depois, do que criar um estado inconsistente
+      // que só apareceria como bug muito mais tarde.
+      console.error("Erro ao criar profile no webhook:", profileError);
+      return NextResponse.json({ error: "Falha ao criar perfil do aluno." }, { status: 500 });
+    }
 
     // 3. Matrícula — capturamos o id gerado para linkar o pagamento a seguir.
     const { data: novaMatricula, error: matriculaError } = await supabase
@@ -135,7 +145,17 @@ export async function POST(request: Request) {
     matriculaId = novaMatricula.id;
 
     // 4. Marca o pré-cadastro como convertido
-    await supabase.from("pre_cadastros").update({ convertido: true }).eq("id", preCadastro.id);
+    const { error: convertidoError } = await supabase
+      .from("pre_cadastros")
+      .update({ convertido: true })
+      .eq("id", preCadastro.id);
+    if (convertidoError) {
+      // Não bloqueia a resposta (o aluno já tem acesso), mas se isso falhar
+      // silenciosamente, um reenvio do mesmo webhook pelo Asaas tentaria
+      // criar o aluno de novo (inviteUserByEmail falharia com "already
+      // registered", já que o e-mail já existe) — melhor deixar rastro.
+      console.error("Erro ao marcar pré-cadastro como convertido:", convertidoError, "preCadastro.id:", preCadastro.id);
+    }
 
     // 5. Contabiliza o uso do cupom — só aqui (primeira confirmação), nunca
     //    em reenvios de evento, para não contar o mesmo pagamento duas vezes.
@@ -156,7 +176,7 @@ export async function POST(request: Request) {
 
   // 5. Registra o pagamento já vinculado à matrícula (idempotente por
   //    asaas_payment_id — reenvios do Asaas atualizam a mesma linha).
-  await supabase.from("pagamentos").upsert(
+  const { error: pagamentoError } = await supabase.from("pagamentos").upsert(
     {
       asaas_payment_id: payment.id,
       pre_cadastro_id: preCadastro.id,
@@ -177,6 +197,16 @@ export async function POST(request: Request) {
     },
     { onConflict: "asaas_payment_id" }
   );
+
+  if (pagamentoError) {
+    // Crítico: sem essa linha, a venda não aparece em /admin/vendas nem a
+    // comissão do parceiro é gerada — mas o aluno já tem acesso (matrícula
+    // criada acima), então isso não bloqueia o aluno. Retornar erro (em vez
+    // de {received:true}) faz o Asaas reenviar este webhook automaticamente
+    // depois, dando uma segunda chance de registrar o pagamento.
+    console.error("Erro ao registrar pagamento no webhook:", pagamentoError, "payment.id:", payment.id);
+    return NextResponse.json({ error: "Falha ao registrar pagamento." }, { status: 500 });
+  }
 
   return NextResponse.json({ received: true });
 }

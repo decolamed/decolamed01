@@ -46,7 +46,7 @@ async function vincularParceiro(formData: FormData) {
   const supabase = createAdminClient();
   const parceiroId = String(formData.get("parceiro_id") ?? "");
   const percentualComissao = String(formData.get("percentual_comissao") ?? "");
-  await supabase
+  const { error } = await supabase
     .from("cupons")
     .update({
       parceiro_id: parceiroId || null,
@@ -54,6 +54,9 @@ async function vincularParceiro(formData: FormData) {
     })
     .eq("id", String(formData.get("id")));
   revalidatePath("/admin/cupons");
+  if (error) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent("Não foi possível salvar o vínculo com o parceiro. Confira se o percentual está entre 0 e 100.")}`);
+  }
 }
 
 async function alternarAtivo(formData: FormData) {
@@ -62,16 +65,22 @@ async function alternarAtivo(formData: FormData) {
   const supabase = createAdminClient();
   const id = String(formData.get("id"));
   const ativo = formData.get("ativo") === "true";
-  await supabase.from("cupons").update({ ativo: !ativo }).eq("id", id);
+  const { error } = await supabase.from("cupons").update({ ativo: !ativo }).eq("id", id);
   revalidatePath("/admin/cupons");
+  if (error) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent("Não foi possível atualizar o status do cupom.")}`);
+  }
 }
 
 async function excluirCupom(formData: FormData) {
   "use server";
   await requireAdmin();
   const supabase = createAdminClient();
-  await supabase.from("cupons").delete().eq("id", String(formData.get("id")));
+  const { error } = await supabase.from("cupons").delete().eq("id", String(formData.get("id")));
   revalidatePath("/admin/cupons");
+  if (error) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent("Não foi possível excluir o cupom.")}`);
+  }
 }
 
 export default async function AdminCuponsPage({

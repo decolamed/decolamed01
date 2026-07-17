@@ -22,7 +22,11 @@ function sucesso(mensagem: string): never {
 // ----------------------------------------------------------------------------
 const criarAlunoSchema = z.object({
   nome: z.string().trim().min(3, "Informe o nome completo."),
-  email: z.string().trim().email("E-mail inválido."),
+  // .toLowerCase() evita problema de duas contas "diferentes" por causa de
+  // maiúscula/minúscula (Supabase Auth já normaliza e-mail para minúsculo
+  // internamente — sem isso, profiles.email podia ficar dessincronizado
+  // do e-mail real usado pra login).
+  email: z.string().trim().toLowerCase().email("E-mail inválido."),
   telefone: z.string().trim().min(8, "Informe um telefone/WhatsApp válido."),
   planoId: z.string().uuid("Selecione um plano."),
   dataInicio: z.string().min(1, "Informe a data de início."),
@@ -120,7 +124,7 @@ export async function criarAlunoManual(formData: FormData) {
   //    com valor zero (não é uma "venda" de fato, mas mantém o histórico
   //    completo de como o aluno ganhou acesso).
   const valorCentavos = origemPagamento === "cortesia" ? 0 : plano.preco_centavos;
-  await supabase.from("pagamentos").insert({
+  const { error: pagamentoError } = await supabase.from("pagamentos").insert({
     matricula_id: matricula.id,
     valor_centavos: valorCentavos,
     status: statusMatricula === "ativa" ? "confirmado" : "pendente",
@@ -132,6 +136,13 @@ export async function criarAlunoManual(formData: FormData) {
     plano_nome: plano.nome,
     plano_id: planoId
   });
+  // Não bloqueia o fluxo aqui de propósito: a essa altura o aluno já foi
+  // criado e já tem acesso liberado, que é o que mais importa. Só loga para
+  // o admin conseguir investigar depois se a venda não aparecer em
+  // /admin/vendas.
+  if (pagamentoError) {
+    console.error("Erro ao registrar pagamento da matrícula manual:", pagamentoError);
+  }
 
   // 5. Auditoria — obrigatório pela spec: registrar que foi criado
   //    manualmente pelo administrador.
@@ -190,9 +201,10 @@ export async function reenviarSenha(formData: FormData) {
   const id = String(formData.get("id"));
   const email = String(formData.get("email"));
 
-  await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`
   });
+  if (error) erro(`Não foi possível reenviar o e-mail: ${error.message}`);
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "senha_redefinicao_reenviada",
@@ -219,7 +231,8 @@ export async function desativarUsuario(formData: FormData) {
   const { error: banError } = await supabase.auth.admin.updateUserById(id, { ban_duration: "876000h" });
   if (banError) erro("Não foi possível desativar o usuário.");
 
-  await supabase.from("profiles").update({ ativo: false }).eq("id", id);
+  const { error: profileError } = await supabase.from("profiles").update({ ativo: false }).eq("id", id);
+  if (profileError) erro("Usuário banido no login, mas falhou ao atualizar o status no perfil. Contate o suporte técnico.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_desativado",
@@ -239,7 +252,8 @@ export async function reativarUsuario(formData: FormData) {
   const { error: unbanError } = await supabase.auth.admin.updateUserById(id, { ban_duration: "none" });
   if (unbanError) erro("Não foi possível reativar o usuário.");
 
-  await supabase.from("profiles").update({ ativo: true }).eq("id", id);
+  const { error: profileError } = await supabase.from("profiles").update({ ativo: true }).eq("id", id);
+  if (profileError) erro("Usuário desbanido no login, mas falhou ao atualizar o status no perfil. Contate o suporte técnico.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_reativado",
@@ -256,7 +270,8 @@ export async function tornarAdmin(formData: FormData) {
   const id = String(formData.get("id"));
   const supabase = createAdminClient();
 
-  await supabase.from("profiles").update({ role: "admin" }).eq("id", id);
+  const { error } = await supabase.from("profiles").update({ role: "admin" }).eq("id", id);
+  if (error) erro("Não foi possível promover o usuário a administrador.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_promovido_admin",
@@ -275,7 +290,8 @@ export async function removerAdmin(formData: FormData) {
   if (id === admin.id) erro("Você não pode remover a própria permissão de administrador.");
 
   const supabase = createAdminClient();
-  await supabase.from("profiles").update({ role: "aluno" }).eq("id", id);
+  const { error } = await supabase.from("profiles").update({ role: "aluno" }).eq("id", id);
+  if (error) erro("Não foi possível remover a permissão de administrador.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_rebaixado_admin",
@@ -292,7 +308,8 @@ export async function tornarParceiro(formData: FormData) {
   const id = String(formData.get("id"));
   const supabase = createAdminClient();
 
-  await supabase.from("profiles").update({ role: "parceiro" }).eq("id", id);
+  const { error } = await supabase.from("profiles").update({ role: "parceiro" }).eq("id", id);
+  if (error) erro("Não foi possível tornar o usuário parceiro.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_promovido_parceiro",
@@ -309,7 +326,8 @@ export async function removerParceiro(formData: FormData) {
   const id = String(formData.get("id"));
   const supabase = createAdminClient();
 
-  await supabase.from("profiles").update({ role: "aluno" }).eq("id", id);
+  const { error } = await supabase.from("profiles").update({ role: "aluno" }).eq("id", id);
+  if (error) erro("Não foi possível remover a permissão de parceiro.");
 
   await registrarHistoricoAdmin(supabase, {
     tipo: "usuario_rebaixado_parceiro",
@@ -324,9 +342,10 @@ export async function removerParceiro(formData: FormData) {
 export async function alterarPlano(formData: FormData) {
   await requireAdmin();
   const supabase = createAdminClient();
-  await supabase
+  const { error } = await supabase
     .from("profiles")
     .update({ plano_id: String(formData.get("planoId")) })
     .eq("id", String(formData.get("id")));
+  if (error) erro("Não foi possível atualizar o plano do usuário.");
   revalidatePath(PATH);
 }

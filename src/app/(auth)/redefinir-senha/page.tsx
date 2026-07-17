@@ -46,12 +46,16 @@ export default function RedefinirSenhaPage() {
     setLoading(false);
 
     if (error) {
-      setErro("Não foi possível salvar a nova senha. O link pode ter expirado.");
+      // Mesmo ajuste que já ajudou a diagnosticar o problema do link antes:
+      // mostrar a mensagem real do Supabase em vez de um texto genérico.
+      setErro(`Não foi possível salvar a nova senha: ${error.message}`);
       return;
     }
 
-    router.push("/aluno");
-    router.refresh();
+    // Navegação "dura" pelo mesmo motivo do login: garante que o servidor já
+    // enxergue a sessão/senha nova no próximo carregamento, sem depender de
+    // timing entre o cookie ser gravado e o middleware ser consultado.
+    window.location.href = "/aluno";
   }
 
   if (verificandoSessao) {

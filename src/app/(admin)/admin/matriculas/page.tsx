@@ -1,9 +1,13 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
+import { AdminAlert } from "@/components/admin/admin-alert";
 import { createAdminClient } from "@/lib/supabase/server";
+
+const PATH = "/admin/matriculas";
 
 async function alterarStatus(formData: FormData) {
   "use server";
@@ -11,7 +15,7 @@ async function alterarStatus(formData: FormData) {
   const supabase = createAdminClient();
   const id = String(formData.get("id"));
   const status = String(formData.get("status"));
-  await supabase
+  const { error } = await supabase
     .from("matriculas")
     .update({
       status,
@@ -19,13 +23,21 @@ async function alterarStatus(formData: FormData) {
       acesso_liberado_em: status === "ativa" ? new Date().toISOString() : null
     })
     .eq("id", id);
-  revalidatePath("/admin/matriculas");
+  revalidatePath(PATH);
+
+  // Essa ação controla de verdade se o aluno consegue acessar a plataforma
+  // (ver lib/matricula/acesso.ts) — um erro silencioso aqui já causou
+  // confusão real, por isso agora sempre avisa o admin explicitamente.
+  if (error) {
+    redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível atualizar o status da matrícula.")}`);
+  }
+  redirect(`${PATH}?sucesso=${encodeURIComponent("Status da matrícula atualizado.")}`);
 }
 
 export default async function AdminMatriculasPage({
   searchParams
 }: {
-  searchParams: { planoId?: string };
+  searchParams: { planoId?: string; erro?: string; sucesso?: string };
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
@@ -44,6 +56,7 @@ export default async function AdminMatriculasPage({
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-navy-dark">Matrículas</h1>
+      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
       {searchParams.planoId && (
         <Link href="/admin/matriculas" className="mt-1 inline-block text-sm text-navy hover:underline">
           Filtrando por plano — limpar filtro
