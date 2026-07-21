@@ -11,6 +11,7 @@ const NAV = [
   { href: "/admin/cupons", label: "Cupons" },
   { href: "/admin/matriculas", label: "Matrículas" },
   { href: "/admin/usuarios", label: "Usuários" },
+  { href: "/admin/questoes", label: "Banco de questões" },
   { href: "/admin/configuracoes", label: "Configurações do site" }
 ];
 

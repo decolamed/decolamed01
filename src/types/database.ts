@@ -148,6 +148,37 @@ export interface Notificacao {
   created_at: string;
 }
 
+export type Dificuldade = "facil" | "media" | "dificil";
+
+export interface Alternativa {
+  id: string;
+  texto: string;
+}
+
+export interface Questao {
+  id: string;
+  materia: string;
+  assunto: string | null;
+  enunciado: string;
+  alternativas: Alternativa[];
+  resposta_correta: string;
+  explicacao: string | null;
+  dificuldade: Dificuldade;
+  ativo: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RespostaAluno {
+  id: string;
+  aluno_id: string;
+  questao_id: string;
+  alternativa_escolhida: string;
+  correta: boolean;
+  created_at: string;
+}
+
 // Tipo genérico simplificado — supabase-js aceita este formato sem exigir
 // o schema completo do Database gerado pela CLI.
 export type Database = any;

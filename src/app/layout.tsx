@@ -1,16 +1,21 @@
 import type { Metadata } from "next";
-import { Baloo_2, Nunito } from "next/font/google";
+import { Montserrat } from "next/font/google";
 import "./globals.css";
 
-const baloo = Baloo_2({
+// Nova identidade visual (Fase 1): tudo em Montserrat, com pesos diferentes
+// pra manter contraste entre título (display) e texto (body) — mesma fonte
+// usada no protótipo. Mantemos os nomes de variável CSS (--font-baloo,
+// --font-nunito) para não precisar tocar no tailwind.config.ts nem em
+// nenhuma classe já usada nas páginas — só troca o que está "por trás".
+const montserratDisplay = Montserrat({
   subsets: ["latin"],
-  weight: ["500", "700", "800"],
+  weight: ["600", "700", "800", "900"],
   variable: "--font-baloo"
 });
 
-const nunito = Nunito({
+const montserratBody = Montserrat({
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800", "900"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-nunito"
 });
 
@@ -22,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${baloo.variable} ${nunito.variable}`}>
+    <html lang="pt-BR" className={`${montserratDisplay.variable} ${montserratBody.variable}`}>
       <body>{children}</body>
     </html>
   );

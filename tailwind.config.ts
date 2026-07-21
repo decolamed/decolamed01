@@ -5,17 +5,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Paleta nova (Fase 1 — visual "aviação"), extraída do protótipo.
+        // Mantém os mesmos NOMES de cor (navy/orange/sky) usados em toda a
+        // base de código atual — só os valores exatos mudaram — assim
+        // nenhuma classe (bg-navy-dark, text-orange, etc.) precisa ser
+        // reescrita em nenhuma página.
         navy: {
-          DEFAULT: "#0B2A4A",
-          dark: "#071B30",
-          light: "#123A63"
+          DEFAULT: "#01395E",
+          dark: "#07223a",
+          light: "#0e3a5c"
         },
         sky: {
-          DEFAULT: "#EAF4FF"
+          DEFAULT: "#F2F7FB",
+          light: "#BFDDF2"
         },
         orange: {
-          DEFAULT: "#F2871F",
-          dark: "#D9720F"
+          DEFAULT: "#F36C21",
+          dark: "#d95a12"
         }
       },
       fontFamily: {

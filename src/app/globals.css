@@ -17,7 +17,7 @@ body {
 
 /* Foco visível para navegação por teclado em toda a aplicação */
 :focus-visible {
-  outline: 3px solid #F2871F;
+  outline: 3px solid #F36C21;
   outline-offset: 2px;
 }
 
