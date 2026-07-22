@@ -10,7 +10,11 @@ const PROTECTED_PARCEIRO = "/parceiro";
 const HOME_POR_ROLE: Record<string, string> = {
   admin: "/admin",
   aluno: "/aluno",
-  parceiro: "/parceiro"
+  parceiro: "/parceiro",
+  // Professor ainda não tem área própria — usa o painel administrativo
+  // (mesmo acesso do admin por enquanto, só com o rótulo/role diferente
+  // para fins de gestão de usuários).
+  professor: "/admin"
 };
 
 export async function middleware(request: NextRequest) {
@@ -51,7 +55,7 @@ export async function middleware(request: NextRequest) {
 
   // Cada role só acessa a própria área — tentar abrir outra redireciona
   // automaticamente para o painel correto, conforme especificado.
-  if ((isAdminRoute && role !== "admin") ||
+  if ((isAdminRoute && role !== "admin" && role !== "professor") ||
       (isAlunoRoute && role !== "aluno") ||
       (isParceiroRoute && role !== "parceiro")) {
     return NextResponse.redirect(new URL(home, request.url));

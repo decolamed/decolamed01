@@ -3,7 +3,7 @@
 // este arquivo pelo tipo gerado automaticamente:
 //   npx supabase gen types typescript --project-id SEU_PROJECT_ID > src/types/database.ts
 
-export type UserRole = "aluno" | "admin" | "parceiro";
+export type UserRole = "aluno" | "admin" | "parceiro" | "professor";
 export type MatriculaStatus = "pendente" | "ativa" | "bloqueada" | "cancelada";
 export type PagamentoStatus = "pendente" | "confirmado" | "recebido" | "estornado" | "falhou";
 export type FormaPagamento = "pix" | "boleto" | "cartao";
@@ -248,6 +248,85 @@ export interface CronogramaDia {
   dia_semana: number; // 0=domingo ... 6=sábado
   titulo: string;
   atividades: string[];
+  updated_at: string;
+}
+
+export interface MateriaPeso {
+  materia: string;
+  peso: number;
+  observacao: string | null;
+  updated_at: string;
+}
+
+export interface RankingLinha {
+  aluno_id: string;
+  nome: string;
+  xp: number;
+}
+
+export type AlunoMissaoTipo = "aula" | "questoes" | "flashcards" | "simulado" | "revisao" | "livre";
+export type AlunoMissaoOrigem = "admin" | "copiloto" | "briefing_inicial";
+
+export interface AlunoMissao {
+  id: string;
+  aluno_id: string;
+  data: string;
+  titulo: string;
+  materia: string | null;
+  assunto: string | null;
+  tipo: AlunoMissaoTipo;
+  duracao_minutos: number;
+  prioridade: number;
+  origem: AlunoMissaoOrigem;
+  motivo_copiloto: string | null;
+  concluida: boolean;
+  concluida_em: string | null;
+  ref_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CopilotoRecomendacaoTipo = "questoes" | "flashcards" | "aula" | "simulado";
+export type CopilotoRecomendacaoStatus = "pendente" | "concluida" | "descartada";
+
+export interface CopilotoRecomendacao {
+  id: string;
+  aluno_id: string;
+  tipo: CopilotoRecomendacaoTipo;
+  materia: string;
+  assunto: string | null;
+  titulo: string;
+  motivo: string | null;
+  payload: Record<string, unknown>;
+  prioridade: number;
+  status: CopilotoRecomendacaoStatus;
+  fonte: string;
+  gerado_em: string;
+  concluida_em: string | null;
+}
+
+export interface AlunoBriefing {
+  aluno_id: string;
+  data_prova: string;
+  inicio_estudos: string | null;
+  horas_por_dia_semana: number;
+  horas_por_dia_fim_semana: number;
+  dias_estuda: string[];
+  sentimentos: Record<string, string>;
+  observacoes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Banner {
+  id: string;
+  titulo: string;
+  link: string | null;
+  bg: string;
+  ativo: boolean;
+  ordem: number;
+  criado_por: string | null;
+  created_at: string;
   updated_at: string;
 }
 

@@ -40,6 +40,22 @@
   }
 }
 
+/* Tablet (entre o cartão de celular e a sidebar de desktop): sem isso o app
+   só centralizava o mesmo cartão de 480px num viewport bem maior, deixando
+   uma faixa enorme de espaço vazio nas laterais em iPads etc. Aqui o
+   cartão ganha mais largura real — ainda com o chrome de abas do mobile,
+   já que criar uma terceira variante de chrome só para tablet seria
+   desproporcional ao ganho. */
+@media (min-width: 768px) {
+  .shell {
+    max-width: 680px;
+    margin-top: 32px;
+    margin-bottom: 32px;
+    min-height: calc(100vh - 64px);
+    min-height: calc(100dvh - 64px);
+  }
+}
+
 /* A partir daqui o app troca o cartão de celular centralizado por uma
    sidebar fixa em tela cheia (layout "Decola Med Desktop") — ver
    DecolaApp.wide()/sidebarDesktop() em decola-app.tsx. */

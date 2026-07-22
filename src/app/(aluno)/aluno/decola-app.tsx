@@ -3,14 +3,61 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { enviarRelatoErro } from "./relato-actions";
+import { registrarResposta } from "./questoes/actions";
+import { registrarRevisao } from "./flashcards/actions";
+import { submeterSimulado, buscarGabaritoTentativa, type ResultadoSimulado, type ItemGabarito } from "./simulados/[id]/actions";
+import { marcarMissaoConcluida } from "./cronograma/actions";
+import { marcarRecomendacao } from "./copiloto/actions";
+import { marcarNotificacaoLida } from "./notificacoes-actions";
+import { salvarBriefing } from "./briefing/actions";
 import styles from "./decola-app.module.css";
+import type {
+  Questao,
+  Flashcard,
+  Simulado,
+  SimuladoTentativa,
+  MateriaPeso,
+  RankingLinha,
+  AlunoMissao,
+  CronogramaDia,
+  CopilotoRecomendacao,
+  Notificacao,
+  AlunoBriefing,
+  Banner
+} from "@/types/database";
+
+interface DecolaAppDados {
+  temCopiloto: boolean;
+  questoes: Questao[];
+  flashcards: Flashcard[];
+  simulados: Simulado[];
+  simuladoQuestoesCount: Record<string, number>;
+  simuladoQuestoes: Record<string, { id: string; enunciado: string; alternativas: { id: string; texto: string }[]; materia: string; assunto: string | null }[]>;
+  tentativas: SimuladoTentativa[];
+  ranking: RankingLinha[];
+  respostas: { correta: boolean; created_at: string; questoes: { materia: string; assunto: string | null } | null }[];
+  revisoes: { lembrou: boolean; created_at: string }[];
+  pesos: MateriaPeso[];
+  missoes: AlunoMissao[];
+  cronograma: CronogramaDia[];
+  recomendacoes: CopilotoRecomendacao[];
+  notificacoes: Notificacao[];
+  briefing: AlunoBriefing | null;
+  creditosRedacaoDisponiveis: number;
+  creditosRedacaoTotais: number;
+  creditosRedacaoConsumidos: number;
+  banners: Banner[];
+  hojeStr: string;
+}
 
 interface DecolaAppProps {
+  alunoId: string;
   nome: string;
   email: string;
   plano: "decolando" | "voo-guiado";
   whatsappSuporte: string;
   whatsappRedacao: string;
+  dados: DecolaAppDados;
 }
 
 // Porte do protótipo navegável "Decola Med App.dc.html" (Claude Design) para
@@ -61,22 +108,19 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     notifOpen: false,
     moreOpen: false,
     push: true,
-    feels: (function () {
-      try {
-        const s = localStorage.getItem("dm-feels");
-        if (s) return JSON.parse(s);
-      } catch (e) {}
+    feels: (function (self: any) {
+      const sentimentos = self.props.dados.briefing?.sentimentos || {};
       return {
-        Biologia: "Domínio",
-        Química: "Atenção",
-        Física: "Turbulência",
-        Matemática: "Atenção",
-        "Português/Literatura": "Domínio",
-        História: "Atenção",
-        Geografia: "Domínio",
-        "Língua Estrangeira": "Atenção"
+        Biologia: sentimentos.Biologia || "Atenção",
+        Química: sentimentos.Química || "Atenção",
+        Física: sentimentos.Física || "Atenção",
+        Matemática: sentimentos.Matemática || "Atenção",
+        "Português/Literatura": sentimentos["Português/Literatura"] || sentimentos.Português || "Atenção",
+        História: sentimentos.História || "Atenção",
+        Geografia: sentimentos.Geografia || "Atenção",
+        "Língua Estrangeira": sentimentos["Língua Estrangeira"] || "Atenção"
       };
-    })(),
+    })(this),
     gabFrom: null,
     fcIdx: 0,
     fcFlip: false,
@@ -86,13 +130,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     browserBack: "mapa",
     contTitle: null,
     contBack: "estudos",
-    brief: (function () {
-      try {
-        const s = localStorage.getItem("dm-brief");
-        if (s) return JSON.parse(s);
-      } catch (e) {}
-      return { prova: "2026-11-16", inicio: "2026-07-19", dias: 5, horas: 3 };
-    })(),
+    brief: (function (self: any) {
+      const b = self.props.dados.briefing;
+      if (b) {
+        return {
+          prova: b.data_prova || "",
+          inicio: b.inicio_estudos || "",
+          dias: b.dias_estuda?.length || 5,
+          horas: Math.round(b.horas_por_dia_semana || 3)
+        };
+      }
+      return { prova: "", inicio: "", dias: 5, horas: 3 };
+    })(this),
     chat: null,
     chatInput: "",
     copIdx: 0,
@@ -109,7 +158,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     senhaErro: null as string | null,
     senhaSalvando: false,
     senhaSalva: false,
-    w: 390
+    w: 390,
+    qResult: null as { correta: boolean; respostaCorreta: string; explicacao: string | null } | null,
+    qSalvando: false,
+    revResult: null as { correta: boolean; respostaCorreta: string; explicacao: string | null } | null,
+    revSalvando: false,
+    revPool: [] as Questao[],
+    simId: null as string | null,
+    simResult: null as ResultadoSimulado | null,
+    simEnviando: false,
+    gabaritoHistorico: null as ItemGabarito[] | null,
+    gabaritoCarregando: false,
+    briefSalvando: false,
+    briefErro: null as string | null,
+    notifsLocal: (function (self: any) {
+      return self.props.dados.notificacoes as Notificacao[];
+    })(this),
+    missoesLocal: (function (self: any) {
+      return self.props.dados.missoes as AlunoMissao[];
+    })(this),
+    recsLocal: (function (self: any) {
+      return self.props.dados.recomendacoes as CopilotoRecomendacao[];
+    })(this)
   };
 
   _t: any;
@@ -339,56 +409,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     );
   }
 
-  data() {
+  // Materiais estáticos (diretório do Hangar/Estudos): são só um menu de
+  // navegação para telas de conteúdo que ainda não têm CRUD próprio no
+  // admin (vídeos, PDFs, resumos, livros) — sem estado de progresso real
+  // para preservar aqui, então continuam ilustrativos, como no protótipo.
+  hangarEstudosEstaticos() {
     return {
-      subjects: [
-        { n: "Biologia", v: 84, c: "#3dd68c" },
-        { n: "Química", v: 62, c: "#ffc94d" },
-        { n: "Física", v: 58, c: "#ff6b5e" },
-        { n: "Matemática", v: 73, c: "#5aa9e6" },
-        { n: "Linguagens", v: 69, c: "#c58fff" }
-      ],
-      checklist: [
-        { t: "Aula · Sistema Digestório II", d: "Videoaula · 32 min", ic: "video", done: true, xp: 20 },
-        { t: "Aula · Enzimas e Digestão", d: "Videoaula · 28 min", ic: "video", done: true, xp: 20 },
-        { t: "Resumo · Bagagem Essencial", d: "Leitura · 10 min", ic: "file", done: false, xp: 10 },
-        { t: "20 questões da missão", d: "12 de 20 respondidas", ic: "target", done: false, xp: 200 }
-      ],
-      daily: [
-        { ic: "target", t: "Complete 20 questões hoje", p: 12, tot: 20, xp: 50 },
-        { ic: "book", t: "Revise Biologia: Genética", p: 0, tot: 1, xp: 40 },
-        { ic: "file", t: "Leia um resumo da Bagagem Essencial", p: 0, tot: 1, xp: 30 }
-      ],
-      weekly: [
-        { ic: "clock", t: "Estude 12 horas nesta semana", p: 8.2, tot: 12, xp: 150, unit: "h" },
-        { ic: "target", t: "Resolva 150 questões", p: 96, tot: 150, xp: 120 },
-        { ic: "cards", t: "Revise 60 flashcards", p: 34, tot: 60, xp: 80 }
-      ],
-      special: [
-        { ic: "gift", t: "Operação Aprovação FACAPE", d: "500 questões até domingo", p: 212, tot: 500, xp: 400 },
-        { ic: "flame", t: "Missão bônus: estude 3h hoje", d: "Recompensa em dobro", p: 1.75, tot: 3, xp: 100, unit: "h" }
-      ],
-      ranking: [
-        { p: 1, n: "João V.", xp: "2.580" },
-        { p: 2, n: "Ana C.", xp: "2.150" },
-        { p: 3, n: "Maria S.", xp: "1.980" },
-        { p: 4, n: this.props.nome || "Aluno Decola", xp: "1.250", me: true },
-        { p: 5, n: "Pedro L.", xp: "1.120" },
-        { p: 6, n: "Lucas R.", xp: "980" },
-        { p: 7, n: "Júlia M.", xp: "870" },
-        { p: 8, n: "Beatriz F.", xp: "760" }
-      ],
-      badges: [
-        { ic: "plane", t: "Primeira Missão", got: true },
-        { ic: "flame", t: "7 Dias Seguidos", got: true },
-        { ic: "target", t: "100 Questões", got: true },
-        { ic: "star4", t: "Precisão 90%+", got: true },
-        { ic: "dna", t: "Mestre da Biologia", prog: "72/90" },
-        { ic: "file", t: "Simulado Expert", prog: "1/3" },
-        { ic: "trophy", t: "Top 10 Ranking", prog: "0/1" },
-        { ic: "award", t: "Lenda Decola", lock: true },
-        { ic: "compass", t: "Rota Completa", lock: true }
-      ],
       hangar: [
         { ic: "bag", t: "Bagagem Essencial", d: "PDFs, resumos e mapas", tone: "blue" },
         { ic: "calendar", t: "Plano de Voo", d: "Cronograma inteligente", tone: "peach" },
@@ -403,95 +429,125 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { ic: "video", t: "Videoaulas", d: "86 aulas" },
         { ic: "file", t: "PDFs", d: "215 materiais" },
         { ic: "note", t: "Resumos", d: "128 resumos" },
-        { ic: "cards", t: "Flashcards", d: "540 cards" },
+        { ic: "cards", t: "Flashcards", d: this.props.dados.flashcards.length + " cards" },
         { ic: "book", t: "Livros", d: "8 obrigatórios" },
         { ic: "pencil", t: "Anotações", d: "Suas notas" },
         { ic: "layers", t: "Revisões", d: "Mapas mentais" },
         { ic: "heart", t: "Favoritos", d: "Materiais salvos" }
-      ],
-      sims: [
-        { t: "Simulado FACAPE 2024", q: 90, lvl: "Difícil", time: "3h" },
-        { t: "Simulado FACAPE 2023", q: 90, lvl: "Médio", time: "3h" },
-        { t: "Simulado Temático · Biologia", q: 60, lvl: "Médio", time: "2h" },
-        { t: "Simulado Rápido", q: 12, lvl: "Fácil", time: "30min" }
-      ],
-      simHist: [
-        { t: "Simulado FACAPE — 03", d: "18/05", v: 72 },
-        { t: "Simulado Rápido — 12", d: "15/05", v: 65 },
-        { t: "Simulado FACAPE — 02", d: "10/05", v: 61 }
-      ],
-      questions: [
-        {
-          code: "Q000001",
-          materia: "Biologia",
-          tema: "Sistema Digestório",
-          fonte: "FACAPE 2024",
-          q: "A estrutura responsável pela produção de bile no fígado é:",
-          alts: ["Vesícula biliar", "Ducto colédoco", "Hepatócito", "Ducto pancreático", "Células de Kupffer"],
-          ans: 2
-        },
-        {
-          code: "Q000002",
-          materia: "Biologia",
-          tema: "Citologia",
-          fonte: "FACAPE 2023",
-          q: "Qual é a função principal dos ribossomos?",
-          alts: ["Síntese de proteínas", "Produção de ATP", "Digestão intracelular", "Transporte de lipídios", "Armazenar cromatina"],
-          ans: 0
-        },
-        {
-          code: "Q000003",
-          materia: "Química",
-          tema: "Estequiometria",
-          fonte: "FACAPE 2023",
-          q: "Na combustão completa do metano (CH4), a proporção molar CH4:O2 é:",
-          alts: ["1:1", "1:2", "2:1", "1:3", "2:3"],
-          ans: 1
-        }
-      ],
-      review: [
-        {
-          q: "A bile produzida pelos hepatócitos é armazenada:",
-          alts: ["No pâncreas", "Na vesícula biliar", "No duodeno", "No baço", "No estômago"],
-          ans: 1
-        },
-        {
-          q: "A principal função da bile na digestão é:",
-          alts: ["Digerir proteínas", "Emulsificar gorduras", "Absorver vitaminas", "Neutralizar o pH", "Produzir enzimas"],
-          ans: 1
-        },
-        {
-          q: "O ducto que leva a bile ao duodeno é o:",
-          alts: ["Ducto cístico", "Ducto hepático", "Ducto colédoco", "Ducto pancreático", "Esfíncter de Oddi"],
-          ans: 2
-        },
-        {
-          q: "As células de Kupffer do fígado atuam como:",
-          alts: ["Produtoras de bile", "Macrófagos", "Reserva de glicogênio", "Células-tronco", "Transportadoras de O2"],
-          ans: 1
-        },
-        {
-          q: "A vesícula biliar libera bile em resposta ao hormônio:",
-          alts: ["Gastrina", "Secretina", "Insulina", "Colecistocinina", "Glucagon"],
-          ans: 3
-        }
-      ],
-      notifs: [
-        { ic: "award", t: "Missão concluída!", d: "Você ganhou +50 XP", time: "09:41", tone: "orange", go: "missoes" },
-        { ic: "bell", t: "Lembrete de estudo", d: "Seu plano de voo de hoje já está disponível.", time: "08:00", tone: "blue", go: "plano" },
-        { ic: "star4", t: "Nova conquista", d: 'Brasão "Primeiro Voo" desbloqueado', time: "Ontem", tone: "orange", go: "conquistas" },
-        { ic: "file", t: "Simulado disponível", d: "Simulado FACAPE 2024 já está liberado.", time: "Ontem", tone: "blue", go: "simulados" }
-      ],
-      recs: [
-        { ic: "video", t: "Aula · Fígado e Vias Biliares", d: "Videoaula · 24 min", tag: "Prioritário" },
-        { ic: "file", t: "Resumo · Sistema Digestório", d: "Bagagem Essencial · 8 min", tag: "Recomendado" },
-        { ic: "cards", t: "Flashcards · Anexos do Digestório", d: "18 cards", tag: "Recomendado" }
       ]
     };
   }
+  // Mapeia uma Questao real (banco de questões) para o formato usado pelas
+  // telas — sem incluir a resposta correta: ela só existe no servidor e só
+  // chega ao cliente depois de registrarResposta() checar de verdade.
+  mapQuestao(q: Questao) {
+    return {
+      id: q.id,
+      code: "Q" + q.id.slice(0, 6).toUpperCase(),
+      materia: q.materia,
+      tema: q.assunto || q.materia,
+      fonte: q.fonte,
+      q: q.enunciado,
+      alts: q.alternativas.map((a) => a.texto),
+      altIds: q.alternativas.map((a) => a.id),
+      dificuldade: q.dificuldade
+    };
+  }
+  data() {
+    const P = this.props.dados;
+    const perf = this.perf();
+    const subjects = P.pesos.length
+      ? P.pesos.map((p) => {
+          const t = perf[p.materia] || { ok: 0, err: 0 };
+          const tot = t.ok + t.err;
+          const v = tot > 0 ? Math.round((t.ok / tot) * 100) : 0;
+          const c = v >= 70 ? "#3dd68c" : v >= 40 ? "#ffc94d" : "#ff6b5e";
+          return { n: p.materia, v, c };
+        })
+      : [];
+    const contagemPorSimulado = P.simuladoQuestoesCount;
+    const nivelPorTotal = (n: number) => (n >= 60 ? "Difícil" : n >= 20 ? "Médio" : "Fácil");
+    return {
+      ...this.hangarEstudosEstaticos(),
+      subjects,
+      ranking: P.ranking.map((r, i) => ({ p: i + 1, n: r.nome, xp: String(r.xp), me: r.aluno_id === this.props.alunoId, id: r.aluno_id })),
+      badges: this.badgesReais(),
+      sims: P.simulados.map((s) => ({
+        id: s.id,
+        t: s.titulo,
+        q: contagemPorSimulado[s.id] ?? 0,
+        lvl: nivelPorTotal(contagemPorSimulado[s.id] ?? 0),
+        time: s.tempo_minutos >= 60 ? Math.round(s.tempo_minutos / 60) + "h" : s.tempo_minutos + "min"
+      })),
+      simHist: P.tentativas
+        .filter((t) => t.finalizado_em)
+        .map((t) => {
+          const sim = P.simulados.find((s) => s.id === t.simulado_id);
+          return {
+            id: t.id,
+            t: sim?.titulo ?? "Simulado",
+            d: new Date(t.created_at).toLocaleDateString("pt-BR"),
+            v: Math.round(t.nota_facape ?? t.nota)
+          };
+        }),
+      questions: P.questoes.map((q) => this.mapQuestao(q)),
+      notifs: (this.state.notifsLocal as Notificacao[]).map((n) => ({
+        id: n.id,
+        ic: n.lida ? "bell" : "award",
+        t: n.titulo,
+        d: n.mensagem,
+        time: new Date(n.created_at).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        tone: n.lida ? "blue" : "orange",
+        lida: n.lida
+      })),
+      recs: this.state.recsLocal.map((r: CopilotoRecomendacao) => ({
+        id: r.id,
+        ic: r.tipo === "flashcards" ? "cards" : r.tipo === "simulado" ? "file" : r.tipo === "aula" ? "video" : "target",
+        t: r.titulo,
+        d: r.motivo || r.materia,
+        tag: r.prioridade >= 3 ? "Prioritário" : "Recomendado"
+      }))
+    };
+  }
+  // Mesmo cálculo de /aluno/conquistas (contagens reais de respostas,
+  // revisões, tentativas e posição no ranking) — ver essa página para o
+  // detalhe de cada critério.
+  badgesReais() {
+    const P = this.props.dados;
+    const totalQuestoes = P.respostas.length;
+    const acertosQuestoes = P.respostas.filter((r) => r.correta).length;
+    const precisao = totalQuestoes > 0 ? Math.round((acertosQuestoes / totalQuestoes) * 100) : 0;
+    const totalFlashcards = P.revisoes.filter((r) => r.lembrou).length;
+    const totalSimulados = P.tentativas.length;
+    const minhaPosicao = P.ranking.findIndex((r) => r.aluno_id === this.props.alunoId) + 1;
+    const badges = [
+      { ic: "target", t: "Primeiras 10 Questões", got: totalQuestoes >= 10, prog: Math.min(totalQuestoes, 10) + "/10" },
+      { ic: "star4", t: "100 Questões", got: totalQuestoes >= 100, prog: Math.min(totalQuestoes, 100) + "/100" },
+      { ic: "dna", t: "Precisão 90%+", got: totalQuestoes >= 20 && precisao >= 90, prog: totalQuestoes >= 20 ? precisao + "%" : totalQuestoes + "/20" },
+      { ic: "cards", t: "Revisor Dedicado", got: totalFlashcards >= 50, prog: Math.min(totalFlashcards, 50) + "/50" },
+      { ic: "file", t: "Primeiro Simulado", got: totalSimulados >= 1, prog: Math.min(totalSimulados, 1) + "/1" },
+      { ic: "trophy", t: "Simulado Expert", got: totalSimulados >= 3, prog: Math.min(totalSimulados, 3) + "/3" },
+      { ic: "award", t: "Top 10 Ranking", got: minhaPosicao > 0 && minhaPosicao <= 10, prog: minhaPosicao > 0 ? "#" + minhaPosicao : "sem pontos" }
+    ];
+    return badges.map((b) => ({ ...b, lock: false }));
+  }
+  // Questões reais do simulado em andamento (sem resposta_correta — ver
+  // comentário em page.tsx). A correção de verdade só acontece no servidor,
+  // em submeterSimulado(), quando o aluno envia o simulado inteiro.
   simQs() {
-    const base = this.data().questions;
-    return Array.from({ length: 12 }, (_, i) => ({ ...base[i % 3], n: i + 1 }));
+    const simId: string | null = this.state.simId;
+    const itens: DecolaAppDados["simuladoQuestoes"][string] = (simId ? this.props.dados.simuladoQuestoes[simId] : undefined) || [];
+    return itens.map((q, i: number) => ({
+      id: q.id,
+      code: "Q" + q.id.slice(0, 6).toUpperCase(),
+      n: i + 1,
+      materia: q.materia,
+      tema: q.assunto || q.materia,
+      fonte: null as string | null,
+      q: q.enunciado,
+      alts: q.alternativas.map((a: { id: string; texto: string }) => a.texto),
+      altIds: q.alternativas.map((a: { id: string; texto: string }) => a.id)
+    }));
   }
 
   // ---------- mascote com imagens reais ----------
@@ -607,138 +663,52 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       );
     return { C, h, I, card, bar, chip, btn, ghost, iconBox, stars };
   }
-  perf() {
-    try {
-      return JSON.parse(localStorage.getItem("dm-perf") || "{}");
-    } catch (e) {
-      return {};
-    }
-  }
-  record(tema: string, ok: boolean) {
-    const p = this.perf();
-    const t = p[tema] || { ok: 0, err: 0 };
-    if (ok) t.ok++;
-    else t.err++;
-    p[tema] = t;
-    try {
-      localStorage.setItem("dm-perf", JSON.stringify(p));
-    } catch (e) {}
-    try {
-      const hs = JSON.parse(localStorage.getItem("dm-hist") || "[]");
-      hs.push({ t: tema, ok: !!ok, ts: Date.now() });
-      localStorage.setItem("dm-hist", JSON.stringify(hs.slice(-400)));
-    } catch (e) {}
-    this.setState({ perfTick: (this.state.perfTick || 0) + 1 });
+  // ---------- desempenho real (substitui o antigo cálculo em localStorage) ----------
+  // Agrupa as respostas reais de questões (tabela respostas_aluno, via prop
+  // `dados.respostas`) por matéria — mesmo formato usado em /aluno/raio-x e
+  // /aluno/desempenho, só que aqui alimenta as telas do app gamificado.
+  perf(): Record<string, { ok: number; err: number }> {
+    const out: Record<string, { ok: number; err: number }> = {};
+    this.props.dados.respostas.forEach((r) => {
+      const materia = r.questoes?.materia;
+      if (!materia) return;
+      const t = out[materia] || { ok: 0, err: 0 };
+      if (r.correta) t.ok++;
+      else t.err++;
+      out[materia] = t;
+    });
+    return out;
   }
   weights(): Record<string, number> {
-    return {
-      Biologia: 3,
-      "Português/Literatura": 2,
-      Português: 2,
-      Linguagens: 2,
-      Física: 2,
-      Química: 2,
-      Matemática: 1,
-      História: 1,
-      Geografia: 1,
-      "Língua Estrangeira": 1
-    };
+    const w: Record<string, number> = {};
+    this.props.dados.pesos.forEach((p) => {
+      w[p.materia] = Number(p.peso);
+    });
+    return w;
   }
-  matOf(tema: string) {
-    const m: Record<string, string> = {
-      "Sistema Digestório": "Biologia",
-      Citologia: "Biologia",
-      "Sistema Respiratório": "Biologia",
-      "Sistema Cardiovascular": "Biologia",
-      "Genética Mendeliana": "Biologia",
-      Ecologia: "Biologia",
-      Evolução: "Biologia",
-      "Fisiologia Humana": "Biologia",
-      Estequiometria: "Química",
-      Soluções: "Química",
-      Termoquímica: "Química",
-      "Química Orgânica": "Química",
-      "Equilíbrio químico": "Química",
-      Cinemática: "Física",
-      Dinâmica: "Física",
-      "Trabalho e Energia": "Física",
-      Funções: "Matemática",
-      "Geometria Plana": "Matemática",
-      Probabilidade: "Matemática",
-      "Interpretação de Texto": "Português/Literatura",
-      "Brasil República": "História",
-      Geopolítica: "Geografia"
-    };
-    return m[tema] || (this.weights()[tema] ? tema : "Biologia");
-  }
-  diffOf(tema: string) {
-    const d: Record<string, string> = {
-      Estequiometria: "Difícil",
-      Cinemática: "Difícil",
-      Termoquímica: "Difícil",
-      "Química Orgânica": "Difícil",
-      Dinâmica: "Difícil",
-      Citologia: "Fácil",
-      "Interpretação de Texto": "Fácil",
-      Ecologia: "Fácil"
-    };
-    return d[tema] || "Média";
-  }
-  hist() {
-    try {
-      return JSON.parse(localStorage.getItem("dm-hist") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-  trendOf(tema: string) {
-    const hs = this.hist().filter((x: any) => x.t === tema);
-    if (hs.length < 4) return 1;
-    const half = Math.floor(hs.length / 2);
-    const err = (a: any[]) => a.filter((x) => !x.ok).length / a.length;
-    const dE = err(hs.slice(half)) - err(hs.slice(0, half));
-    return Math.max(0.7, Math.min(1.3, 1 + dE * 0.6));
-  }
+  // Ordena matérias por "ganho potencial" (mesma fórmula de /aluno/raio-x):
+  // precisão baixa × peso alto sobe mais na lista — é o que realmente vale
+  // mais estudar agora, não só o que o aluno mais erra.
   priorities() {
-    const W = this.weights(),
-      perf = this.perf(),
-      feels = this.state.feels || {};
-    const recov: Record<string, number> = { Fácil: 1, Média: 0.75, Difícil: 0.55 };
+    const perf = this.perf(),
+      pesos = this.weights();
     const out: any[] = [];
-    for (const tema in perf) {
-      const t = perf[tema],
+    Object.keys(perf).forEach((materia) => {
+      const t = perf[materia],
         tot = t.ok + t.err;
-      if (!tot || !t.err) continue;
-      const errRate = t.err / tot,
-        mat = this.matOf(tema),
-        w = W[mat] || 1;
-      const dif = this.diffOf(tema),
-        conf = 0.5 + Math.min(1, tot / 10) * 0.5,
-        tr = this.trendOf(tema);
-      const gain = w * errRate * recov[dif] * conf * tr;
+      if (!tot) return;
+      const precisao = (t.ok / tot) * 100;
+      const w = pesos[materia] ?? 1;
+      const gain = ((100 - precisao) * w) / 10;
       out.push({
-        tema,
-        mat,
+        tema: materia,
+        mat: materia,
         w,
-        errRate,
         tot,
-        dif,
+        precisao: Math.round(precisao),
         gain,
-        why:
-          "peso " +
-          w +
-          " × " +
-          Math.round(errRate * 100) +
-          "% de erro × recuperação " +
-          dif.toLowerCase() +
-          (tr > 1.05 ? " × erros em alta" : tr < 0.95 ? " × em evolução" : "")
+        why: "peso " + w + " × " + Math.round(100 - precisao) + "% a melhorar"
       });
-    }
-    Object.keys(feels).forEach((mat) => {
-      if (feels[mat] === "Turbulência" && !out.some((o) => o.mat === mat)) {
-        const w = W[mat] || 1;
-        out.push({ tema: mat, mat, w, errRate: 0.5, tot: 0, dif: "Média", gain: w * 0.5 * 0.75 * 0.4, why: "peso " + w + " × turbulência no briefing" });
-      }
     });
     out.sort((a, b) => b.gain - a.gain);
     return out;
@@ -754,214 +724,32 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     } catch (e) {}
     return this.props.plano ?? ls ?? "decolando";
   }
-  extras() {
-    try {
-      return JSON.parse(localStorage.getItem("dm-extras") || "[]");
-    } catch (e) {
-      return [];
-    }
+  // Missões reais de hoje (tabela aluno_missoes, só para planos com
+  // Copiloto — ver aluno/cronograma/page.tsx para o mesmo critério).
+  // Substitui o antigo checklist local (dm-check) por conclusão real,
+  // persistida no banco via marcarMissaoConcluida().
+  missoesHoje(): AlunoMissao[] {
+    const hojeStr = this.props.dados.hojeStr;
+    return (this.state.missoesLocal as AlunoMissao[]).filter((m) => m.data === hojeStr).sort((a, b) => b.prioridade - a.prioridade);
   }
-  addExtra(t: string, d: string) {
-    const ex = this.extras();
-    if (!ex.some((x: any) => x.t === t)) {
-      ex.push({ t, d });
-      try {
-        localStorage.setItem("dm-extras", JSON.stringify(ex));
-      } catch (e) {}
-    }
+  iconeMissao(tipo: string) {
+    const m: Record<string, string> = { aula: "video", questoes: "target", flashcards: "cards", simulado: "file", revisao: "refresh", livre: "compass" };
+    return m[tipo] || "bot";
   }
-  fmtD(d: Date) {
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  navMissao(m: AlunoMissao) {
+    if (m.tipo === "questoes") this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
+    else if (m.tipo === "flashcards") this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 });
+    else if (m.tipo === "simulado") this.nav("simulados");
+    else if (m.tipo === "revisao" && m.materia) this.montarRevisao(m.materia, m.assunto || m.materia);
+    else this.nav("estudos");
   }
-  isStudyDay(d: Date) {
-    const B = this.state.brief || { dias: 5 };
-    return ((d.getDay() + 6) % 7) < (B.dias || 5);
-  }
-  curriculum() {
-    return [
-      ["Biologia", "Sistema Digestório"],
-      ["Química", "Estequiometria"],
-      ["Biologia", "Sistema Respiratório"],
-      ["Física", "Cinemática"],
-      ["Biologia", "Sistema Cardiovascular"],
-      ["Matemática", "Funções"],
-      ["Química", "Soluções"],
-      ["Biologia", "Genética Mendeliana"],
-      ["Português", "Interpretação de Texto"],
-      ["Física", "Dinâmica"],
-      ["Biologia", "Ecologia"],
-      ["Química", "Termoquímica"],
-      ["Matemática", "Geometria Plana"],
-      ["História", "Brasil República"],
-      ["Biologia", "Evolução"],
-      ["Geografia", "Geopolítica"],
-      ["Física", "Trabalho e Energia"],
-      ["Química", "Química Orgânica"],
-      ["Biologia", "Fisiologia Humana"],
-      ["Matemática", "Probabilidade"]
-    ];
-  }
-  missionOfDate(ds: string) {
-    const B = this.state.brief || {};
-    const start = new Date((B.inicio || "2026-07-19") + "T12:00");
-    const d = new Date(ds + "T12:00");
-    if (d < start || !this.isStudyDay(d)) return null;
-    if (B.prova && ds > B.prova) return null;
-    let n = 0;
-    const cur = new Date(start);
-    while (cur <= d) {
-      if (this.isStudyDay(cur)) n++;
-      cur.setDate(cur.getDate() + 1);
-    }
-    const c = this.curriculum();
-    const topic = c[(n - 1) % c.length];
-    const sim = n % 6 === 0,
-      red = n % 10 === 0;
-    const acts: any[] = [];
-    if (sim) {
-      acts.push(
-        { ic: "file", t: "Simulado de Voo · " + Math.ceil(n / 6) + "º", d: "12 questões · 30 min · pesos FACAPE", go: "simulados" },
-        { ic: "refresh", t: "Correção e revisão dos erros", d: "Gabarito comentado · 30 min", go: "simulados" }
-      );
-    } else {
-      acts.push(
-        { ic: "video", t: "Aula · " + topic[1], d: topic[0] + " · videoaula · 35 min", go: "conteudo" },
-        { ic: "target", t: "20 questões · " + topic[1], d: "Banco de Questões · 40 min", go: "questoes" },
-        { ic: "file", t: "Resumo · " + topic[1], d: "Bagagem Essencial · 10 min", go: "conteudo" },
-        { ic: "refresh", t: "Revisão programada", d: "Flashcards · 15 min", go: "flashcards" }
-      );
-    }
-    if (red) acts.push({ ic: "note", t: "Produção de redação", d: "Envio pelo WhatsApp · 1h", go: "redacao" });
-    if (this.plan() === "voo-guiado" && !sim) {
-      const f = this.state.feels || {};
-      const turb = Object.keys(f).filter((m2) => f[m2] === "Turbulência");
-      if (turb.length)
-        acts.splice(2, 0, {
-          ic: "bolt",
-          t: "Revisão extra · " + turb[(n - 1) % turb.length],
-          d: "Ajuste do algoritmo · turbulência no briefing",
-          ia: true,
-          go: "flashcards"
-        });
-    }
-    return { n, topic, acts, sim, red };
-  }
-  daysDone(): Record<string, boolean> {
-    try {
-      return JSON.parse(localStorage.getItem("dm-days-done") || "{}");
-    } catch (e) {
-      return {};
-    }
-  }
-  setDayDone(ds: string, v: boolean) {
-    const dd = this.daysDone();
-    if (v) dd[ds] = true;
-    else delete dd[ds];
-    try {
-      localStorage.setItem("dm-days-done", JSON.stringify(dd));
-    } catch (e) {}
-    this.forceUpdate();
-  }
-  checkinKey() {
-    return "dm-checkin-" + this.fmtD(new Date());
-  }
-  checkinDone() {
-    try {
-      return JSON.parse(localStorage.getItem(this.checkinKey()) || "null");
-    } catch (e) {
-      return null;
-    }
-  }
-  copQuestions() {
-    return [
-      { k: "desempenho", q: "Como foi seu desempenho hoje?", opts: ["Fui muito bem 💪", "Mais ou menos", "Tive dificuldades"] },
-      { k: "missoes", q: "Conseguiu concluir todas as missões de hoje?", opts: ["Sim, todas", "Parcialmente", "Ainda não"] },
-      { k: "disciplina", q: "Qual disciplina teve mais dificuldade?", opts: ["Biologia", "Química", "Física", "Matemática", "Nenhuma"] },
-      { k: "confianca", q: "Como está seu nível de confiança para a prova?", opts: ["Alto 🚀", "Médio", "Baixo"] },
-      { k: "tempo", q: "Quanto tempo conseguiu estudar hoje?", opts: ["Menos de 1h", "Entre 1h e 3h", "Mais de 3h"] },
-      { k: "carga", q: "Deseja aumentar ou reduzir a carga de estudos?", opts: ["Aumentar", "Manter como está", "Reduzir"] }
-    ];
-  }
-  copAck(k: string, opt: string) {
-    if (k === "desempenho")
-      return opt.indexOf("bem") >= 0
-        ? "Excelente, piloto! Altitude subindo. 🛫"
-        : opt === "Mais ou menos"
-        ? "Entendido. Vamos ajustar a rota juntos."
-        : "Sem problema — turbulência faz parte do voo.";
-    if (k === "missoes") return opt === "Sim, todas" ? "Missão cumprida! Registrado no diário de bordo." : "Ok, vou repriorizar o que ficou pendente.";
-    if (k === "disciplina") return opt === "Nenhuma" ? "Ótimo sinal!" : "Anotado: reforço de " + opt + " a caminho.";
-    if (k === "confianca")
-      return opt.indexOf("Alto") >= 0 ? "É assim que se fala!" : opt === "Médio" ? "Confiança se constrói com constância." : "Vou montar vitórias rápidas para elevar sua confiança.";
-    if (k === "tempo") return "Registrado no seu diário de bordo.";
-    return "Certo!";
-  }
-  copFinish(ans: any) {
-    const acts: string[] = [];
-    if (ans.disciplina && ans.disciplina !== "Nenhuma") {
-      this.addExtra("Revisão extra · " + ans.disciplina, "Check-in do Copiloto · dificuldade relatada");
-      acts.push("adicionei uma Revisão extra de " + ans.disciplina + " à sua Missão do Dia");
-    }
-    if (ans.missoes && ans.missoes !== "Sim, todas") acts.push("repriorizei os passos pendentes — eles abrem primeiro amanhã");
-    if (ans.confianca === "Baixo") acts.push("incluí metas curtas de vitória rápida nas próximas missões");
-    const B = { ...(this.state.brief || {}) };
-    if (ans.carga === "Aumentar") {
-      B.horas = Math.min(12, (B.horas || 3) + 1);
-      acts.push("aumentei sua carga para " + B.horas + "h/dia");
-    }
-    if (ans.carga === "Reduzir") {
-      B.horas = Math.max(1, (B.horas || 3) - 1);
-      acts.push("reduzi sua carga para " + B.horas + "h/dia");
-    }
-    if (ans.carga && ans.carga !== "Manter como está") {
-      this.setState({ brief: B });
-      try {
-        localStorage.setItem("dm-brief", JSON.stringify(B));
-      } catch (e) {}
-    }
-    try {
-      localStorage.setItem(this.checkinKey(), JSON.stringify(ans));
-    } catch (e) {}
-    return [
-      {
-        me: false,
-        t: acts.length
-          ? "Check-in registrado ✓ Com base nas suas respostas, " + acts.join("; ") + ". Confira na aba Hoje e no Cronograma."
-          : "Check-in registrado ✓ Tudo em ordem — mantive seu cronograma como está. Continue assim, piloto!"
-      }
-    ];
-  }
-  checkinSummary(a: any) {
-    return (
-      'Resumo: desempenho "' +
-      (a.desempenho || "—") +
-      '" · missões "' +
-      (a.missoes || "—") +
-      '" · dificuldade em "' +
-      (a.disciplina || "—") +
-      '" · confiança "' +
-      (a.confianca || "—") +
-      '" · tempo "' +
-      (a.tempo || "—") +
-      '" · carga "' +
-      (a.carga || "—") +
-      '". Seu cronograma já reflete esses ajustes.'
-    );
-  }
-  checkState(): Record<string, boolean> {
-    try {
-      return JSON.parse(localStorage.getItem("dm-check") || "{}");
-    } catch (e) {
-      return {};
-    }
-  }
-  toggleCheck(k: string) {
-    const c = this.checkState();
-    c[k] = !c[k];
-    try {
-      localStorage.setItem("dm-check", JSON.stringify(c));
-    } catch (e) {}
-    this.forceUpdate();
+  toggleMissao(id: string) {
+    const atual = this.state.missoesLocal.find((m: AlunoMissao) => m.id === id);
+    const concluida = !atual?.concluida;
+    this.setState({
+      missoesLocal: this.state.missoesLocal.map((m: AlunoMissao) => (m.id === id ? { ...m, concluida } : m))
+    });
+    marcarMissaoConcluida(id, concluida).catch((e) => console.error("Falha ao marcar missão:", e));
   }
   qList() {
     const qs = this.data().questions;
@@ -971,33 +759,33 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return f.length ? f : qs;
   }
   startReview() {
-    this.setState({ screen: "questoes", reviewMode: true, revIdx: 0, revPicked: null, revDone: false, revScore: 0, revFinished: false, practice: false, moreOpen: false, notifOpen: false, simView: null });
+    const pr = this.priorities();
+    const materia = pr.length ? pr[0].mat : this.props.dados.pesos[0]?.materia || "Biologia";
+    this.setState({ screen: "questoes", practice: false, moreOpen: false, notifOpen: false, simView: null });
+    this.montarRevisao(materia, materia);
   }
+  // Sequência real de hoje: missões de aluno_missoes (plano com Copiloto) ou,
+  // na falta delas, a atividade do dia no cronograma fixo (plano sem
+  // Copiloto) — sempre a mesma fonte usada em scrPlano()/aluno/cronograma.
   todaySeq() {
-    const pro = this.plan() === "voo-guiado";
-    const list: any[] = [
-      { ic: "video", t: "Aula · Sistema Digestório III", d: "Videoaula · 35 min", act: () => this.nav("conteudo", { contTitle: "Videoaulas", contBack: "mapa" }) },
-      { ic: "target", t: "20 questões do tema", d: "Banco de Questões · 40 min", act: () => this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }) },
-      { ic: "file", t: "Resumo · Bagagem Essencial", d: "Leitura · 10 min", act: () => this.nav("conteudo", { contTitle: "Resumos", contBack: "mapa" }) },
-      { ic: "refresh", t: "Revisão programada · Citologia", d: "Flashcards · 15 min", act: () => this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 }) }
-    ];
-    if (pro) {
-      const feels = this.state.feels || {};
-      const turb = Object.keys(feels).filter((m) => feels[m] === "Turbulência");
-      if (turb.length)
-        list.splice(1, 0, {
-          ic: "bolt",
-          t: "Revisão extra · " + turb[0],
-          d: "Ajuste do algoritmo · você marcou turbulência no briefing",
-          ia: true,
-          act: () => this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 })
-        });
+    const hoje = this.missoesHoje();
+    const list: any[] = hoje.map((m) => ({
+      id: m.id,
+      ic: this.iconeMissao(m.tipo),
+      t: m.titulo,
+      d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
+      ia: m.origem === "copiloto",
+      done: m.concluida,
+      act: () => this.navMissao(m)
+    }));
+    if (!list.length) {
+      const dia = this.props.dados.cronograma.find((d) => d.dia_semana === new Date().getDay());
+      (dia?.atividades || []).forEach((a, i) => {
+        list.push({ id: "cron-" + i, ic: "book", t: a, d: dia!.titulo, ia: false, done: false, act: () => this.nav("plano") });
+      });
     }
     const pr0 = this.priorities();
-    if (pr0.length) list.push({ ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, act: () => this.startReview() });
-    this.extras().forEach((x: any) => {
-      if (!list.some((o) => o.t === x.t)) list.push({ ic: "bot", t: x.t, d: x.d, ia: true, act: () => this.startReview() });
-    });
+    if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview() });
     return list;
   }
   nav(screen: string, extra?: any) {
@@ -1006,25 +794,19 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   openBrowser(title: string, url: string, back?: string) {
     this.nav("browser", { browserTitle: title, browserUrl: url, browserBack: back || this.state.screen });
   }
+  // Navega para dentro do app quando o link do banner é "app/<tela>"
+  // (convenção usada no formulário de banners do admin — ver
+  // banners-manager.tsx), ou abre como página externa caso contrário.
+  irParaLinkBanner(link: string | null) {
+    if (!link) return;
+    if (link.startsWith("app/")) this.nav(link.slice(4));
+    else this.openBrowser("Decola Med", link, this.state.screen);
+  }
   bannerRow() {
     const { h, I } = this.ui();
-    const banners = [
-      {
-        t: "Aulão FACAPE ao vivo",
-        d: "Sábado · 9h · transmissão no app",
-        ic: "video",
-        bg: "linear-gradient(140deg,#0d4a79,#01395E)",
-        act: () => this.openBrowser("Aulão FACAPE ao vivo", "live.decolamed.com.br", "mapa")
-      },
-      { t: "Voo Guiado · PRO", d: "Cronograma inteligente adaptado a você", ic: "bolt", bg: "linear-gradient(140deg,#F36C21,#c9560f)", act: () => this.nav("plano") },
-      {
-        t: "Nova Bagagem Essencial",
-        d: "12 resumos novos nos Estudos",
-        ic: "bag",
-        bg: "linear-gradient(140deg,rgba(1,30,50,.78),rgba(1,30,50,.38)),url(/assets/mountain_lake.png) center/cover",
-        act: () => this.nav("hangar")
-      }
-    ];
+    const reais = this.props.dados.banners;
+    if (!reais.length) return null;
+    const banners = reais.map((b) => ({ t: b.titulo, ic: "bell", bg: b.bg, act: () => this.irParaLinkBanner(b.link) }));
     const bs = [...banners, { ...banners[0], clone: true }];
     return h(
       "div",
@@ -1060,10 +842,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           },
           [
             h("div", { key: "i", style: { width: 42, height: 42, borderRadius: 14, background: "rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center" } }, I(b.ic, 20, "#fff")),
-            h("div", { key: "t", style: { flex: 1 } }, [
-              h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, b.t),
-              h("div", { key: "b", style: { fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,.75)", marginTop: 2 } }, b.d)
-            ]),
+            h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, b.t)]),
             I("chevR", 16, "rgba(255,255,255,.7)")
           ]
         )
@@ -1094,7 +873,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             onClick: () => this.setState({ notifOpen: true }),
             style: { position: "relative", width: 36, height: 36, borderRadius: 12, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }
           },
-          [I("bell", 18, C.txt), h("div", { key: "d", style: { position: "absolute", top: 7, right: 7, width: 8, height: 8, borderRadius: 99, background: C.orange } })]
+          [I("bell", 18, C.txt), this.naoLidas() > 0 ? h("div", { key: "d", style: { position: "absolute", top: 7, right: 7, width: 8, height: 8, borderRadius: 99, background: C.orange } }) : null]
         )
     ]);
   }
@@ -1219,6 +998,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
+  naoLidas() {
+    return this.state.notifsLocal.filter((n: Notificacao) => !n.lida).length;
+  }
+  abrirNotificacao(id: string) {
+    this.setState({
+      notifsLocal: this.state.notifsLocal.map((n: Notificacao) => (n.id === id ? { ...n, lida: true } : n))
+    });
+    marcarNotificacaoLida(id).catch((e) => console.error("Falha ao marcar notificação como lida:", e));
+  }
   // ---------- overlays ----------
   notifSheet() {
     const { C, h, I, iconBox } = this.ui();
@@ -1237,24 +1025,27 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             h("div", { key: "t", style: { fontSize: 16, fontWeight: 800, color: C.txt } }, "Notificações"),
             h("div", { key: "x", onClick: () => this.setState({ notifOpen: false }), style: { cursor: "pointer", color: C.sub } }, I("x", 18, C.sub))
           ]),
-          ...d.notifs.map((n, i) =>
-            h(
-              "div",
-              {
-                key: i,
-                onClick: () => this.nav(n.go || "mapa"),
-                style: { display: "flex", gap: 12, alignItems: "center", padding: "11px 4px", cursor: "pointer", borderBottom: i < d.notifs.length - 1 ? "1px solid " + C.line : "none" }
-              },
-              [
-                iconBox(n.ic, n.tone === "orange" ? C.orangeSoft : C.blueSoft, n.tone === "orange" ? C.orange : C.dark ? "#8fc3e8" : "#01395E", 40, 18),
-                h("div", { key: "b", style: { flex: 1 } }, [
-                  h("div", { key: "t", style: { fontSize: 13, fontWeight: 700, color: C.txt } }, n.t),
-                  h("div", { key: "d", style: { fontSize: 11.5, color: C.sub, marginTop: 2 } }, n.d)
-                ]),
-                h("div", { key: "tm", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, n.time)
-              ]
-            )
-          )
+          ...(d.notifs.length
+            ? d.notifs.map(
+                (n: { id: string; ic: string; t: string; d: string; time: string; tone: string; lida: boolean }, i: number) =>
+                  h(
+                    "div",
+                    {
+                      key: i,
+                      onClick: () => this.abrirNotificacao(n.id),
+                      style: { display: "flex", gap: 12, alignItems: "center", padding: "11px 4px", cursor: "pointer", borderBottom: i < d.notifs.length - 1 ? "1px solid " + C.line : "none", opacity: n.lida ? 0.6 : 1 }
+                    },
+                    [
+                      iconBox(n.ic, n.tone === "orange" ? C.orangeSoft : C.blueSoft, n.tone === "orange" ? C.orange : C.dark ? "#8fc3e8" : "#01395E", 40, 18),
+                      h("div", { key: "b", style: { flex: 1 } }, [
+                        h("div", { key: "t", style: { fontSize: 13, fontWeight: n.lida ? 600 : 800, color: C.txt } }, n.t),
+                        h("div", { key: "d", style: { fontSize: 11.5, color: C.sub, marginTop: 2 } }, n.d)
+                      ]),
+                      h("div", { key: "tm", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, n.time)
+                    ]
+                  )
+              )
+            : [h("div", { key: "vazio", style: { padding: "20px 4px", textAlign: "center", fontSize: 12.5, color: C.sub, fontWeight: 600 } }, "Nenhuma notificação por aqui ainda.")])
         ]
       )
     );
@@ -1300,19 +1091,17 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const { C, h, I, card, bar, btn } = this.ui();
     const S = this.state;
     const seq = this.todaySeq();
-    const ck = this.checkState();
-    const doneN = seq.filter((o) => ck[o.t]).length;
-    const pct = Math.round((doneN / seq.length) * 100);
-    const nextI = seq.findIndex((o) => !ck[o.t]);
+    const doneN = seq.filter((o) => o.done).length;
+    const pct = seq.length ? Math.round((doneN / seq.length) * 100) : 0;
+    const nextI = seq.findIndex((o) => !o.done);
     const pro = this.plan() === "voo-guiado";
     const wk = this.weakest();
-    const upcoming = [
-      ["Missão 7 · Sistema Respiratório", "Amanhã"],
-      ["Missão 8 · Sistema Cardiovascular", "Semana 4"],
-      ["Missão 9 · Genética Mendeliana", "Semana 4"],
-      ["Missão 10 · Estequiometria", "Semana 5"],
-      ["Missão 11 · Cinemática", "Semana 5"]
-    ];
+    const hojeStr = this.props.dados.hojeStr;
+    const upcoming = (this.state.missoesLocal as AlunoMissao[])
+      .filter((m) => m.data > hojeStr)
+      .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade)
+      .slice(0, 5)
+      .map((m) => [m.titulo, new Date(m.data + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })]);
     return this.screenWrap([
       h("div", { key: "brand", style: { display: "flex", justifyContent: "center", padding: "20px 0 6px" } }, h("img", { src: "/assets/logo.png", alt: "Decola Med", style: { height: 50, filter: "drop-shadow(0 4px 10px rgba(1,20,40,.25))" } })),
       h("div", { key: "hd", style: { padding: "6px 20px 6px", display: "flex", alignItems: "center", gap: 12 } }, [
@@ -1337,14 +1126,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           },
           [
             I("bell", 19, C.txt),
-            h(
-              "div",
-              {
-                key: "d",
-                style: { position: "absolute", top: 6, right: 6, minWidth: 15, height: 15, borderRadius: 99, background: C.orange, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }
-              },
-              "3"
-            )
+            this.naoLidas() > 0
+              ? h(
+                  "div",
+                  {
+                    key: "d",
+                    style: { position: "absolute", top: 6, right: 6, minWidth: 15, height: 15, borderRadius: 99, background: C.orange, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }
+                  },
+                  String(this.naoLidas())
+                )
+              : null
           ]
         )
       ]),
@@ -1408,7 +1199,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           h("div", { key: "steps", style: { padding: "4px 16px 16px" } }, [
             h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase", margin: "12px 0 2px" } }, "Sequência de hoje — siga na ordem"),
             ...seq.map((o, i) => {
-              const dn = !!ck[o.t];
+              const dn = !!o.done;
               const isNext = i === nextI;
               return h("div", { key: "s" + i, style: { display: "flex", gap: 11, alignItems: "center", padding: "10px 0", borderBottom: i < seq.length - 1 ? "1px solid " + C.line : "none", opacity: dn ? 0.55 : 1 } }, [
                 h(
@@ -1417,7 +1208,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                     key: "n",
                     onClick: (e: any) => {
                       e.stopPropagation();
-                      this.toggleCheck(o.t);
+                      if (typeof o.id === "string" && !o.id.startsWith("cron-") && o.id !== "rev-copiloto") this.toggleMissao(o.id);
                     },
                     title: dn ? "Desmarcar" : "Marcar como concluído",
                     style: {
@@ -1450,8 +1241,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             nextI >= 0
               ? btn("COMEÇAR PASSO " + (nextI + 1) + " →", seq[nextI].act, { marginTop: 14, padding: "13px" })
               : h("div", { key: "done" }, [
-                  h("div", { key: "a", style: { marginTop: 14, padding: "12px", borderRadius: 14, background: C.greenSoft, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: C.green } }, "Missão do Dia concluída! ✓ +290 XP"),
-                  this.checkinDone() ? null : btn("FAZER CHECK-IN COM O COPILOTO →", () => this.nav("copiloto"), { marginTop: 10, padding: "12px", fontSize: 12.5 })
+                  h("div", { key: "a", style: { marginTop: 14, padding: "12px", borderRadius: 14, background: C.greenSoft, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: C.green } }, "Missão do Dia concluída! ✓"),
+                  this.state.recsLocal.length ? btn("VER RECOMENDAÇÕES DO COPILOTO →", () => this.nav("copiloto"), { marginTop: 10, padding: "12px", fontSize: 12.5 }) : null
                 ]),
             h("div", { key: "pl", onClick: () => this.nav("plano"), style: { textAlign: "center", fontSize: 11, fontWeight: 800, color: C.orange, paddingTop: 12, cursor: "pointer" } }, "Ver cronograma completo →")
           ])
@@ -1469,7 +1260,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h(
                 "div",
                 { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2, lineHeight: 1.45 } },
-                this.checkinDone() ? "Check-in de hoje feito ✓ cronograma ajustado com suas respostas." : wk ? "Detectei erros em " + wk + " e adicionei uma revisão à sua missão. Faça o check-in do dia →" : "Faça o check-in do dia: respondo com opções rápidas e ajusto seu cronograma."
+                this.state.recsLocal.length
+                  ? this.state.recsLocal.length + " recomendação" + (this.state.recsLocal.length > 1 ? "ões" : "") + " pendente" + (this.state.recsLocal.length > 1 ? "s" : "") + (wk ? " · maior ganho em " + wk : "")
+                  : "Nenhuma recomendação pendente — continue estudando que eu aviso quando identificar algo importante."
               )
             ]),
             h("div", { key: "go", style: { fontSize: 11.5, fontWeight: 800, color: C.orange } }, "Abrir →")
@@ -1491,11 +1284,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   scrPainel() {
     const { C, h, I, card, bar } = this.ui();
     const d = this.data();
+    const P = this.props.dados;
+    const xp = this.xpTotal();
+    const seq = this.sequenciaDias();
+    const totalResp = P.respostas.length;
+    const acertosResp = P.respostas.filter((r) => r.correta).length;
+    const precisaoGeral = totalResp > 0 ? Math.round((acertosResp / totalResp) * 100) : 0;
+    const lembrados = P.revisoes.filter((r) => r.lembrou).length;
     const metrics = [
-      { t: "Altitude (XP total)", v: "12.450", s: "+650 esta semana", vals: [3, 4, 4, 6, 7, 9, 11], c: "#5aa9e6" },
-      { t: "Sequência", v: "7 dias", s: "Melhor: 12 dias", vals: [2, 4, 3, 5, 6, 6, 7], c: C.orange },
-      { t: "Precisão geral", v: "78%", s: "+8% esta semana", vals: [60, 64, 66, 70, 72, 75, 78], c: C.green },
-      { t: "Horas de voo", v: "87h 15m", s: "+12h esta semana", vals: [40, 50, 58, 66, 72, 80, 87], c: "#c58fff" }
+      { t: "Altitude (XP total)", v: String(xp), s: P.tentativas.length + " simulado(s) feito(s)", vals: [Math.max(1, xp - 1), xp || 1], c: "#5aa9e6" },
+      { t: "Sequência", v: seq + " dia" + (seq === 1 ? "" : "s"), s: seq > 0 ? "Continue assim!" : "Comece hoje", vals: [Math.max(0, seq - 1), seq], c: C.orange },
+      { t: "Precisão geral", v: precisaoGeral + "%", s: totalResp + " questões respondidas", vals: [Math.max(0, precisaoGeral - 1), precisaoGeral], c: C.green },
+      { t: "Flashcards revisados", v: String(P.revisoes.length), s: lembrados + " lembrado" + (lembrados === 1 ? "" : "s"), vals: [Math.max(0, P.revisoes.length - 1), P.revisoes.length], c: "#c58fff" }
     ];
     return this.screenWrap([
       this.head("Painel de Bordo", { back: "mapa" }),
@@ -1512,18 +1312,17 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             h("div", { key: "t", style: { flex: 1 } }, [
               h("div", { key: "a", style: { fontSize: 16, fontWeight: 900 } }, this.props.nome || "Aluno Decola"),
               h("div", { key: "b", style: { display: "flex", gap: 6, alignItems: "center", marginTop: 3 } }, [
-                h("span", { key: "p", style: { fontSize: 10.5, fontWeight: 800, background: "rgba(255,255,255,.16)", padding: "3px 9px", borderRadius: 99 } }, "COPILOTO"),
-                h("span", { key: "n", style: { fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 700 } }, "Nível 12")
+                h("span", { key: "p", style: { fontSize: 10.5, fontWeight: 800, background: "rgba(255,255,255,.16)", padding: "3px 9px", borderRadius: 99 } }, this.plan() === "voo-guiado" ? "VOO GUIADO" : "DECOLANDO")
               ])
             ]),
             I("star4", 30, "#F8935A")
           ]),
           h("div", { key: "xp", style: { marginTop: 14 } }, [
             h("div", { key: "l", style: { display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.7)", marginBottom: 6 } }, [
-              h("span", { key: "a" }, "1.250 / 2.000 XP"),
-              h("span", { key: "b" }, "Próxima patente: 1º Oficial")
+              h("span", { key: "a" }, xp + " XP"),
+              h("span", { key: "b" }, precisaoGeral + "% de precisão")
             ]),
-            h("div", { key: "b", style: { display: "flex" } }, bar(62, "#F8935A", 7, "rgba(255,255,255,.18)"))
+            h("div", { key: "b", style: { display: "flex" } }, bar(precisaoGeral, "#F8935A", 7, "rgba(255,255,255,.18)"))
           ])
         ])
       ),
@@ -1643,38 +1442,31 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   scrMissoes() {
-    const { C, h, I, card, bar, chip, iconBox } = this.ui();
-    const d = this.data();
+    const { C, h, I, card, chip } = this.ui();
     const t = this.state.missTab;
-    const list = t === "diarias" ? d.daily : t === "semanais" ? d.weekly : d.special;
+    const hojeStr = this.props.dados.hojeStr;
+    const todas = this.state.missoesLocal as AlunoMissao[];
+    const list =
+      t === "diarias" ? todas.filter((m) => m.data === hojeStr) : t === "especiais" ? todas.filter((m) => m.origem === "copiloto") : todas.filter((m) => m.data >= hojeStr);
+    const ordenada = [...list].sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
     return this.screenWrap([
       this.head("Centro de Missões", { back: "mapa" }),
       h("div", { key: "tabs", style: { display: "flex", gap: 8, padding: "6px 18px 4px" } }, [
         chip("Diárias", t === "diarias", () => this.setState({ missTab: "diarias" })),
         chip("Semanais", t === "semanais", () => this.setState({ missTab: "semanais" })),
-        chip("Especiais", t === "especiais", () => this.setState({ missTab: "especiais" }))
+        chip("Do Copiloto", t === "especiais", () => this.setState({ missTab: "especiais" }))
       ]),
       h(
         "div",
-        { key: "list", style: { margin: "12px 18px 0", display: "flex", flexDirection: "column", gap: 10 } },
-        list.map((m: any, i: number) =>
-          card({ padding: 15 }, [
-            h("div", { key: "r", style: { display: "flex", gap: 12, alignItems: "center", marginBottom: 11 } }, [
-              iconBox(m.ic, i % 2 ? C.peach : C.orangeSoft, i % 2 ? (C.dark ? C.peachTxt : "#9a5218") : C.orange, 44, 20),
-              h("div", { key: "t", style: { flex: 1 } }, [
-                h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 800 } }, m.t),
-                m.d ? h("div", { key: "b", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, m.d) : null
-              ]),
-              h("div", { key: "xp", style: { fontSize: 12, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "5px 10px", borderRadius: 99 } }, "+" + m.xp + " XP")
-            ]),
-            h("div", { key: "p", style: { display: "flex", alignItems: "center", gap: 10 } }, [bar((m.p / m.tot) * 100), h("span", { key: "f", style: { fontSize: 11.5, fontWeight: 800, color: C.sub } }, m.p + (m.unit || "") + "/" + m.tot + (m.unit || ""))])
-          ])
-        )
+        { key: "list", style: { margin: "12px 18px 0" } },
+        ordenada.length
+          ? card({ padding: 15 }, ordenada.map((m, i) => this.linhaMissao(m, i, ordenada.length)))
+          : h("div", { key: "vazio", style: { textAlign: "center", padding: 20, color: C.sub, fontSize: 12.5, fontWeight: 600 } }, "Nenhuma missão por aqui no momento.")
       ),
       t === "especiais"
         ? h("div", { key: "note", style: { margin: "14px 18px 0", padding: "13px 15px", borderRadius: 16, background: C.peach, display: "flex", gap: 10, alignItems: "center" } }, [
             I("gift", 20, C.dark ? C.peachTxt : "#9a5218"),
-            h("span", { key: "t", style: { fontSize: 12, fontWeight: 700, color: C.dark ? C.peachTxt : "#9a5218", lineHeight: 1.5 } }, "Missões especiais têm prazo e recompensas maiores. Fique de olho na torre de controle!")
+            h("span", { key: "t", style: { fontSize: 12, fontWeight: 700, color: C.dark ? C.peachTxt : "#9a5218", lineHeight: 1.5 } }, "Missões marcadas como \"Copiloto\" foram adicionadas automaticamente pelo algoritmo, com base no seu desempenho real.")
           ])
         : null
     ]);
@@ -1816,17 +1608,25 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     if (S.reviewMode) return this.scrReview();
     if (S.practice) {
       const qs = this.qList();
+      if (!qs.length) {
+        return this.screenWrap(
+          [this.head("Praticar questões", { back: "questoes" }), h("div", { key: "vazio", style: { margin: "18px 18px 0" } }, card({ textAlign: "center", padding: 26 }, "Ainda não há questões cadastradas para essa matéria."))],
+          { noTab: true }
+        );
+      }
       const q = qs[S.qIdx];
       const picked = S.qPicked,
         done = S.qDone,
-        correct = done && picked === q.ans;
+        res = S.qResult,
+        correct = done && !!res?.correta;
+      const idxCorreta = done && res ? q.altIds.indexOf(res.respostaCorreta) : -1;
       return this.screenWrap(
         [
           this.head(S.qMateria ? "Praticar · " + S.qMateria : "Praticar questões", { back: "questoes", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.qIdx + 1 + " / " + qs.length) }),
           h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar(((S.qIdx + (done ? 1 : 0)) / qs.length) * 100)),
           h("div", { key: "meta", style: { margin: "14px 18px 0", display: "flex", gap: 8 } }, [
             h("span", { key: "m", style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "5px 11px", borderRadius: 99 } }, q.materia),
-            h("span", { key: "qc", style: { fontSize: 10, fontWeight: 800, color: C.faint, background: C.chip, padding: "5px 9px", borderRadius: 99, fontFamily: "monospace" } }, q.code || "Q000000"),
+            h("span", { key: "qc", style: { fontSize: 10, fontWeight: 800, color: C.faint, background: C.chip, padding: "5px 9px", borderRadius: 99, fontFamily: "monospace" } }, q.code),
             h("span", { key: "t", style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "5px 11px", borderRadius: 99 } }, q.tema),
             q.fonte ? h("span", { key: "fn", style: { fontSize: 11, fontWeight: 800, color: C.dark ? "#8fc3e8" : "#0b6aa8", background: C.blueSoft, padding: "5px 11px", borderRadius: 99 } }, q.fonte) : null
           ]),
@@ -1839,7 +1639,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 border = C.line,
                 col = C.txt;
               if (done) {
-                if (i === q.ans) {
+                if (i === idxCorreta) {
                   bg = C.greenSoft;
                   border = C.green;
                   col = C.dark ? "#7fe8b5" : "#127347";
@@ -1873,7 +1673,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           h("div", { key: "erri", style: { margin: "4px 18px 0" } }, this.errInline()),
           h(
             "div",
-            { key: "nota" + (q.code || S.qIdx), style: { margin: "10px 18px 0" } },
+            { key: "nota" + q.id, style: { margin: "10px 18px 0" } },
             card({ padding: 14 }, [
               h("div", { key: "l", style: { display: "flex", gap: 7, alignItems: "center", marginBottom: 8 } }, [
                 I("pencil", 13, C.sub),
@@ -1883,14 +1683,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 key: "ta",
                 defaultValue: (function () {
                   try {
-                    return localStorage.getItem("dm-note-" + (q.code || S.qIdx)) || "";
+                    return localStorage.getItem("dm-note-" + q.id) || "";
                   } catch (e) {
                     return "";
                   }
                 })(),
                 onChange: (e: any) => {
                   try {
-                    localStorage.setItem("dm-note-" + (q.code || S.qIdx), e.target.value);
+                    localStorage.setItem("dm-note-" + q.id, e.target.value);
                   } catch (err) {}
                 },
                 placeholder: "Anote aqui seu raciocínio, macetes ou dúvidas sobre esta questão...",
@@ -1898,6 +1698,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               })
             ])
           ),
+          done && res?.explicacao
+            ? h("div", { key: "expl", style: { margin: "10px 18px 0" } }, card({ padding: 14 }, h("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55 } }, res.explicacao)))
+            : null,
           done && !correct
             ? h(
                 "div",
@@ -1910,22 +1713,24 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                       h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Assunto mapeado: " + q.tema + " · Matriz FACAPE")
                     ])
                   ]),
-                  h("div", { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55, marginBottom: 12 } }, "Registrei este erro no seu Raio-X. Materiais recomendados para reforçar o assunto:"),
-                  ...d.recs.map((r, i) =>
-                    h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid " + C.line } }, [
-                      iconBox(r.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 36, 16),
-                      h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12, fontWeight: 700 } }, r.t), h("div", { key: "b", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, r.d)]),
-                      h("span", { key: "tag", style: { fontSize: 9.5, fontWeight: 800, color: r.tag === "Prioritário" ? C.orange : C.sub, background: r.tag === "Prioritário" ? C.orangeSoft : C.chip, padding: "3px 8px", borderRadius: 99 } }, r.tag)
-                    ])
-                  ),
-                  btn("INICIAR REVISÃO · 5 QUESTÕES", () => this.setState({ reviewMode: true, revIdx: 0, revPicked: null, revDone: false, revScore: 0, revFinished: false }), { marginTop: 12, padding: "12px 14px", fontSize: 13 })
+                  h("div", { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55, marginBottom: 12 } }, "Registrei este erro no seu Raio-X."),
+                  ...(d.recs.length
+                    ? d.recs.slice(0, 3).map((r: { ic: string; t: string; d: string; tag: string }, i: number) =>
+                        h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid " + C.line } }, [
+                          iconBox(r.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 36, 16),
+                          h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12, fontWeight: 700 } }, r.t), h("div", { key: "b", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, r.d)]),
+                          h("span", { key: "tag", style: { fontSize: 9.5, fontWeight: 800, color: r.tag === "Prioritário" ? C.orange : C.sub, background: r.tag === "Prioritário" ? C.orangeSoft : C.chip, padding: "3px 8px", borderRadius: 99 } }, r.tag)
+                        ])
+                      )
+                    : []),
+                  btn("INICIAR REVISÃO · 5 QUESTÕES", () => this.montarRevisao(q.materia, q.tema), { marginTop: 12, padding: "12px 14px", fontSize: 13 })
                 ])
               )
             : null,
           done && correct
             ? h("div", { key: "ok", style: { margin: "14px 18px 0", padding: "13px 15px", borderRadius: 16, background: C.greenSoft, display: "flex", gap: 10, alignItems: "center" } }, [
                 I("check", 18, C.green, 3),
-                h("span", { key: "t", style: { fontSize: 12.5, fontWeight: 700, color: C.dark ? "#7fe8b5" : "#127347" } }, "Correto! +10 XP · Altitude subindo, piloto.")
+                h("span", { key: "t", style: { fontSize: 12.5, fontWeight: 700, color: C.dark ? "#7fe8b5" : "#127347" } }, "Correto! Altitude subindo, piloto.")
               ])
             : null,
           h(
@@ -1934,20 +1739,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             !done
               ? [
                   btn(
-                    "CONFIRMAR RESPOSTA",
-                    () => {
-                      if (picked == null) return;
-                      this.record(q.tema, picked === q.ans);
-                      this.setState({ qDone: true });
-                    },
-                    { flex: 1, opacity: picked == null ? 0.45 : 1 }
+                    S.qSalvando ? "ENVIANDO..." : "CONFIRMAR RESPOSTA",
+                    () => this.confirmarResposta(),
+                    { flex: 1, opacity: picked == null || S.qSalvando ? 0.45 : 1 }
                   )
                 ]
               : [
-                  ghost("Sair", () => this.setState({ practice: false, qPicked: null, qDone: false }), { flex: 1 }),
+                  ghost("Sair", () => this.setState({ practice: false, qPicked: null, qDone: false, qResult: null }), { flex: 1 }),
                   btn(
                     S.qIdx < qs.length - 1 ? "PRÓXIMA →" : "CONCLUIR",
-                    () => (S.qIdx < qs.length - 1 ? this.setState({ qIdx: S.qIdx + 1, qPicked: null, qDone: false }) : this.setState({ practice: false, qIdx: 0, qPicked: null, qDone: false })),
+                    () => (S.qIdx < qs.length - 1 ? this.setState({ qIdx: S.qIdx + 1, qPicked: null, qDone: false, qResult: null }) : this.setState({ practice: false, qIdx: 0, qPicked: null, qDone: false, qResult: null })),
                     { flex: 2 }
                   )
                 ]
@@ -1962,6 +1763,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       { ic: "note", t: "Cadernos", d: "Suas anotações", act: () => this.nav("anotacoes") },
       { ic: "heart", t: "Favoritas", d: "Materiais salvos", act: () => this.nav("conteudo", { contTitle: "Favoritos", contBack: "questoes" }) }
     ];
+    const respostas = this.props.dados.respostas;
+    const totalResp = respostas.length;
+    const acertos = respostas.filter((r) => r.correta).length;
+    const pctResp = totalResp > 0 ? Math.round((acertos / totalResp) * 100) : 0;
     return this.screenWrap([
       this.head("Banco de Questões", { back: "mapa" }),
       h(
@@ -1970,12 +1775,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         card({ display: "flex", gap: 16, alignItems: "center" }, [
           h("svg", { key: "s", width: 86, height: 86, viewBox: "0 0 86 86" }, [
             h("circle", { key: "t", cx: 43, cy: 43, r: 36, fill: "none", stroke: C.chip, strokeWidth: 10 }),
-            h("circle", { key: "v", cx: 43, cy: 43, r: 36, fill: "none", stroke: C.green, strokeWidth: 10, strokeDasharray: 2 * Math.PI * 36, strokeDashoffset: 2 * Math.PI * 36 * 0.28, strokeLinecap: "round", transform: "rotate(-90 43 43)" }),
-            h("text", { key: "x", x: 43, y: 47, textAnchor: "middle", fontSize: 17, fontWeight: 900, fill: C.txt, fontFamily: "inherit" }, "72%")
+            h("circle", { key: "v", cx: 43, cy: 43, r: 36, fill: "none", stroke: C.green, strokeWidth: 10, strokeDasharray: 2 * Math.PI * 36, strokeDashoffset: 2 * Math.PI * 36 * (1 - pctResp / 100), strokeLinecap: "round", transform: "rotate(-90 43 43)" }),
+            h("text", { key: "x", x: 43, y: 47, textAnchor: "middle", fontSize: 17, fontWeight: 900, fill: C.txt, fontFamily: "inherit" }, pctResp + "%")
           ]),
           h("div", { key: "t", style: { flex: 1 } }, [
-            h("div", { key: "a", style: { fontSize: 14.5, fontWeight: 800 } }, "1.248 questões resolvidas"),
-            h("div", { key: "b", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 3, lineHeight: 1.5 } }, "898 acertos · 350 erros"),
+            h("div", { key: "a", style: { fontSize: 14.5, fontWeight: 800 } }, totalResp + " questão" + (totalResp === 1 ? "" : "ões") + " respondida" + (totalResp === 1 ? "" : "s")),
+            h("div", { key: "b", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 3, lineHeight: 1.5 } }, acertos + " acertos · " + (totalResp - acertos) + " erros"),
             h("div", { key: "c", onClick: () => this.nav("painel"), style: { fontSize: 11.5, fontWeight: 800, color: C.orange, marginTop: 6, cursor: "pointer" } }, "Ver relatório completo →")
           ])
         ])
@@ -2003,21 +1808,66 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
+  // Monta uma rota de revisão real: até 5 questões da mesma matéria/assunto
+  // da questão que o aluno acabou de errar, tiradas do pool já carregado
+  // (sem nova consulta ao banco). Cada resposta ainda passa por
+  // registrarResposta() — mesma checagem segura da prática normal.
+  montarRevisao(materia: string, tema: string) {
+    const pool = this.props.dados.questoes.map((q) => this.mapQuestao(q));
+    const mesmoAssunto = pool.filter((q) => q.tema === tema);
+    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => q.materia === materia);
+    const embaralhado = [...base].sort(() => Math.random() - 0.5).slice(0, 5);
+    this.setState({ reviewMode: true, revPool: embaralhado, revIdx: 0, revPicked: null, revDone: false, revResult: null, revScore: 0, revFinished: false });
+  }
+  async confirmarResposta() {
+    const S = this.state;
+    const qs = this.qList();
+    const q = qs[S.qIdx];
+    if (S.qPicked == null || S.qSalvando) return;
+    this.setState({ qSalvando: true });
+    try {
+      const res = await registrarResposta(q.id, q.altIds[S.qPicked]);
+      if (res.ok) {
+        this.setState({ qDone: true, qSalvando: false, qResult: { correta: res.correta, respostaCorreta: res.respostaCorreta, explicacao: res.explicacao } });
+      } else {
+        this.setState({ qSalvando: false });
+      }
+    } catch (e) {
+      console.error("Falha ao registrar resposta:", e);
+      this.setState({ qSalvando: false });
+    }
+  }
+  async confirmarRevisao() {
+    const S = this.state;
+    const q = S.revPool[S.revIdx];
+    if (S.revPicked == null || S.revSalvando) return;
+    this.setState({ revSalvando: true });
+    try {
+      const res = await registrarResposta(q.id, q.altIds[S.revPicked]);
+      if (res.ok) {
+        this.setState({ revDone: true, revSalvando: false, revResult: { correta: res.correta, respostaCorreta: res.respostaCorreta, explicacao: res.explicacao }, revScore: S.revScore + (res.correta ? 1 : 0) });
+      } else {
+        this.setState({ revSalvando: false });
+      }
+    } catch (e) {
+      console.error("Falha ao registrar resposta da revisão:", e);
+      this.setState({ revSalvando: false });
+    }
+  }
   scrReview() {
     const { C, h, I, card, bar, btn, ghost } = this.ui();
-    const d = this.data();
     const S = this.state;
+    const pool = S.revPool as ReturnType<DecolaApp["mapQuestao"]>[];
     if (S.revFinished) {
-      const pct = Math.round((S.revScore / d.review.length) * 100);
+      const pct = pool.length ? Math.round((S.revScore / pool.length) * 100) : 0;
       return this.screenWrap(
         [
           h("div", { key: "c", style: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px", textAlign: "center" } }, [
             this.mascoteBadge("award", 124, { anim: "dm-pop .5s ease both", bg: C.greenSoft, color: C.green, shadow: "none" }),
             h("div", { key: "t", style: { fontSize: 22, fontWeight: 900, marginTop: 20 } }, "Revisão concluída!"),
-            h("div", { key: "d", style: { fontSize: 13.5, color: C.sub, fontWeight: 600, marginTop: 8, lineHeight: 1.5 } }, "Você acertou " + S.revScore + " de " + d.review.length + " questões sobre Sistema Digestório."),
+            h("div", { key: "d", style: { fontSize: 13.5, color: C.sub, fontWeight: 600, marginTop: 8, lineHeight: 1.5 } }, "Você acertou " + S.revScore + " de " + pool.length + " questões."),
             h("div", { key: "pct", style: { fontSize: 44, fontWeight: 900, color: pct >= 70 ? C.green : C.orange, margin: "18px 0 4px" } }, pct + "%"),
-            h("div", { key: "xp", style: { fontSize: 12.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "6px 14px", borderRadius: 99 } }, "+" + (S.revScore * 10 + 10) + " XP · Raio-X atualizado"),
-            h("div", { key: "note", style: { marginTop: 18, padding: "12px 14px", borderRadius: 14, background: C.chip, fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.55 } }, "O Copiloto seguirá recomendando este assunto até sua precisão passar de 80%.")
+            h("div", { key: "note", style: { marginTop: 18, padding: "12px 14px", borderRadius: 14, background: C.chip, fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.55 } }, "O Copiloto seguirá recomendando esse assunto até sua precisão melhorar.")
           ]),
           h("div", { key: "f", style: { padding: "0 24px 30px", display: "flex", gap: 10 } }, [
             ghost("Voltar às questões", () => this.setState({ reviewMode: false, revFinished: false, practice: false }), { flex: 1 }),
@@ -2027,27 +1877,29 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { noTab: true }
       );
     }
-    const q = d.review[S.revIdx],
+    const q = pool[S.revIdx],
       picked = S.revPicked,
-      done = S.revDone;
+      done = S.revDone,
+      res = S.revResult;
+    const idxCorreta = done && res ? q.altIds.indexOf(res.respostaCorreta) : -1;
     return this.screenWrap(
       [
-        this.head("Rota de Revisão", { back: "questoes", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.revIdx + 1 + " / " + d.review.length) }),
-        h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar(((S.revIdx + (done ? 1 : 0)) / d.review.length) * 100, C.green)),
+        this.head("Rota de Revisão", { back: "questoes", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.revIdx + 1 + " / " + pool.length) }),
+        h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar(((S.revIdx + (done ? 1 : 0)) / pool.length) * 100, C.green)),
         h("div", { key: "tag", style: { margin: "14px 18px 0", display: "flex", gap: 8, alignItems: "center" } }, [
           I("refresh", 15, C.orange),
-          h("span", { key: "t", style: { fontSize: 11.5, fontWeight: 800, color: C.orange } }, "Revisão dirigida · Sistema Digestório")
+          h("span", { key: "t", style: { fontSize: 11.5, fontWeight: 800, color: C.orange } }, "Revisão dirigida · " + q.tema)
         ]),
         h("div", { key: "q", style: { margin: "12px 18px 0" } }, card({}, h("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.55 } }, q.q))),
         h(
           "div",
           { key: "alts", style: { margin: "12px 18px 0", display: "flex", flexDirection: "column", gap: 9 } },
-          q.alts.map((a, i) => {
+          q.alts.map((a: string, i: number) => {
             let bg = C.card,
               border = C.line,
               col = C.txt;
             if (done) {
-              if (i === q.ans) {
+              if (i === idxCorreta) {
                 bg = C.greenSoft;
                 border = C.green;
                 col = C.dark ? "#7fe8b5" : "#127347";
@@ -2079,87 +1931,124 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           "div",
           { key: "cta", style: { margin: "16px 18px 0" } },
           !done
-            ? btn(
-                "CONFIRMAR",
-                () => {
-                  if (picked == null) return;
-                  this.record("Sistema Digestório", picked === q.ans);
-                  this.setState({ revDone: true, revScore: this.state.revScore + (picked === q.ans ? 1 : 0) });
-                },
-                { opacity: picked == null ? 0.45 : 1 }
-              )
-            : btn(S.revIdx < d.review.length - 1 ? "PRÓXIMA →" : "VER RESULTADO", () => (S.revIdx < d.review.length - 1 ? this.setState({ revIdx: S.revIdx + 1, revPicked: null, revDone: false }) : this.setState({ revFinished: true })))
+            ? btn("CONFIRMAR", () => this.confirmarRevisao(), { opacity: picked == null || S.revSalvando ? 0.45 : 1 })
+            : btn(S.revIdx < pool.length - 1 ? "PRÓXIMA →" : "VER RESULTADO", () => (S.revIdx < pool.length - 1 ? this.setState({ revIdx: S.revIdx + 1, revPicked: null, revDone: false, revResult: null }) : this.setState({ revFinished: true })))
         )
       ],
       { noTab: true }
     );
   }
 
+  iniciarSimulado(simuladoId: string) {
+    this.setState({ simView: "run", simId: simuladoId, simIdx: 0, simAns: {}, simSec: 0, simGrid: false, simResult: null });
+  }
+  async abrirGabaritoHistorico(tentativaId: string) {
+    this.setState({ simView: "gabarito", gabFrom: "hist", gabaritoCarregando: true, gabaritoHistorico: null });
+    try {
+      const gabarito = await buscarGabaritoTentativa(tentativaId);
+      this.setState({ gabaritoHistorico: gabarito ?? [], gabaritoCarregando: false });
+    } catch (e) {
+      console.error("Falha ao buscar gabarito do histórico:", e);
+      this.setState({ gabaritoHistorico: [], gabaritoCarregando: false });
+    }
+  }
   scrSimulados() {
     const { C, h, I, card, btn, iconBox } = this.ui();
     const d = this.data();
+    const tentativas = this.props.dados.tentativas;
+    const notas = tentativas.map((t) => t.nota_facape ?? t.nota);
+    const media = notas.length ? Math.round(notas.reduce((a, b) => a + b, 0) / notas.length) : null;
+    const melhor = notas.length ? Math.round(Math.max(...notas)) : null;
+    const destaque = d.sims[0];
     return this.screenWrap([
       this.head("Simulados de Voo", { back: "mapa" }),
-      h(
-        "div",
-        { key: "next", style: { margin: "6px 18px 0" } },
-        card({ background: C.headGrad, border: "none", color: "#fff" }, [
-          h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } }, "Próximo simulado"),
-          h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, "Simulado Rápido · Demonstração"),
-          h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 4 } }, "12 questões · 30 min · pesos oficiais FACAPE"),
-          btn("INICIAR SIMULADO", () => this.setState({ simView: "run", simIdx: 0, simAns: {}, simSec: 0, simGrid: false }), { marginTop: 14, background: "#F36C21" })
-        ])
-      ),
+      destaque
+        ? h(
+            "div",
+            { key: "next", style: { margin: "6px 18px 0" } },
+            card({ background: C.headGrad, border: "none", color: "#fff" }, [
+              h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } }, "Simulado em destaque"),
+              h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, destaque.t),
+              h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 4 } }, destaque.q + " questões · " + destaque.time + " · pesos oficiais FACAPE"),
+              destaque.q > 0
+                ? btn("INICIAR SIMULADO", () => this.iniciarSimulado(destaque.id), { marginTop: 14, background: "#F36C21" })
+                : h("div", { key: "sc", style: { marginTop: 12, fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,.75)" } }, "Ainda sem questões cadastradas.")
+            ])
+          )
+        : h("div", { key: "vazio", style: { margin: "6px 18px 0" } }, card({ textAlign: "center", padding: 26 }, "Nenhum simulado disponível no momento.")),
       h(
         "div",
         { key: "stats", style: { margin: "14px 18px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 } },
         [
-          ["66%", "média de acertos"],
-          ["8", "realizados"],
-          ["Top 5%", "ranking"]
+          [media != null ? media + "%" : "—", "média (FACAPE)"],
+          [String(tentativas.length), "realizados"],
+          [melhor != null ? melhor + "%" : "—", "melhor nota"]
         ].map((s, i) => card({ padding: "14px 10px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: i === 0 ? C.green : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
       ),
       h("div", { key: "lbl", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Disponíveis"),
       h(
         "div",
         { key: "sims", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 10 } },
-        d.sims.map((s, i) =>
-          card({ padding: 14, display: "flex", gap: 12, alignItems: "center" }, [
-            iconBox("file", C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 44, 19),
-            h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 800 } }, s.t), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, s.q + " questões · " + s.time + " · " + s.lvl)]),
-            h("div", { key: "go", onClick: () => this.setState({ simView: "run", simIdx: 0, simAns: {}, simSec: 0, simGrid: false }), style: { fontSize: 11, fontWeight: 900, color: "#fff", background: C.orange, padding: "8px 13px", borderRadius: 10, cursor: "pointer" } }, "INICIAR")
-          ])
-        )
+        d.sims.length
+          ? d.sims.map((s, i) =>
+              card({ padding: 14, display: "flex", gap: 12, alignItems: "center" }, [
+                iconBox("file", C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 44, 19),
+                h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 800 } }, s.t), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, s.q + " questões · " + s.time + " · " + s.lvl)]),
+                s.q > 0 ? h("div", { key: "go", onClick: () => this.iniciarSimulado(s.id), style: { fontSize: 11, fontWeight: 900, color: "#fff", background: C.orange, padding: "8px 13px", borderRadius: 10, cursor: "pointer" } }, "INICIAR") : null
+              ])
+            )
+          : [h("div", { key: "vazio2", style: { fontSize: 12.5, color: C.sub, fontWeight: 600, textAlign: "center", padding: 10 } }, "Nenhum simulado cadastrado.")]
       ),
       h("div", { key: "lbl2", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Histórico"),
       h(
         "div",
         { key: "hist", style: { margin: "0 18px 4px", display: "flex", flexDirection: "column", gap: 10 } },
-        d.simHist.map((s2, i) =>
-          card(
-            { padding: 14, display: "flex", gap: 12, alignItems: "center" },
-            [
-              h(
-                "div",
-                { key: "v", style: { width: 46, height: 46, borderRadius: 14, background: s2.v >= 70 ? C.greenSoft : C.orangeSoft, color: s2.v >= 70 ? C.green : C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900 } },
-                s2.v + "%"
-              ),
-              h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13, fontWeight: 800 } }, s2.t), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, s2.d + " · concluído")]),
-              I("chevR", 17, C.faint)
-            ],
-            () => this.setState({ simView: "gabarito", gabFrom: "hist" })
-          )
-        )
+        d.simHist.length
+          ? d.simHist.map((s2, i) =>
+              card(
+                { padding: 14, display: "flex", gap: 12, alignItems: "center" },
+                [
+                  h(
+                    "div",
+                    { key: "v", style: { width: 46, height: 46, borderRadius: 14, background: s2.v >= 70 ? C.greenSoft : C.orangeSoft, color: s2.v >= 70 ? C.green : C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900 } },
+                    s2.v + "%"
+                  ),
+                  h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13, fontWeight: 800 } }, s2.t), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, s2.d + " · concluído")]),
+                  I("chevR", 17, C.faint)
+                ],
+                () => this.abrirGabaritoHistorico(s2.id)
+              )
+            )
+          : [h("div", { key: "vazio3", style: { fontSize: 12.5, color: C.sub, fontWeight: 600, textAlign: "center", padding: 10 } }, "Você ainda não fez nenhum simulado.")]
       )
     ]);
   }
 
+  async enviarSimulado() {
+    const S = this.state;
+    if (!S.simId || S.simEnviando) return;
+    const qs = this.simQs();
+    const respostas: Record<string, string> = {};
+    qs.forEach((qq: ReturnType<DecolaApp["simQs"]>[number], i: number) => {
+      const picked = S.simAns[i];
+      if (picked != null) respostas[qq.id] = qq.altIds[picked];
+    });
+    this.setState({ simEnviando: true });
+    try {
+      const resultado = await submeterSimulado(S.simId, respostas);
+      this.setState({ simEnviando: false, simResult: resultado, simView: "result" });
+    } catch (e) {
+      console.error("Falha ao enviar simulado:", e);
+      this.setState({ simEnviando: false });
+    }
+  }
   scrSimRun() {
     const { C, h, I, card, btn, ghost } = this.ui();
     const S = this.state;
     const qs = this.simQs();
     const q = qs[S.simIdx];
-    const total = 30 * 60,
+    const simulado = this.props.dados.simulados.find((s) => s.id === S.simId);
+    const total = (simulado?.tempo_minutos ?? 30) * 60,
       left = Math.max(0, total - S.simSec);
     const mm = String(Math.floor(left / 60)).padStart(2, "0"),
       ss = String(left % 60).padStart(2, "0");
@@ -2210,7 +2099,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 h(
                   "div",
                   { key: "g", style: { display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 } },
-                  qs.map((_, i) =>
+                  qs.map((_: unknown, i: number) =>
                     h(
                       "div",
                       {
@@ -2243,13 +2132,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         S.simIdx < qs.length - 1
           ? btn("PRÓXIMA →", () => this.setState({ simIdx: S.simIdx + 1 }), { flex: 1, padding: "12px 10px", fontSize: 12.5 })
           : btn(
-              "ENVIAR ✓",
-              () => {
-                qs.forEach((qq, i) => {
-                  if (S.simAns[i] != null) this.record(qq.tema, S.simAns[i] === qq.ans);
-                });
-                this.setState({ simView: "result" });
-              },
+              S.simEnviando ? "ENVIANDO..." : "ENVIAR ✓",
+              () => this.enviarSimulado(),
               { flex: 1, padding: "12px 10px", fontSize: 12.5, background: C.green }
             )
       ])
@@ -2257,11 +2141,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   scrSimResult() {
-    const { C, h, I, card, btn, ghost } = this.ui();
+    const { C, h, card, btn, ghost } = this.ui();
     const S = this.state;
-    const qs = this.simQs();
-    const correct = qs.filter((q, i) => S.simAns[i] === q.ans).length;
-    const pct = Math.round((correct / qs.length) * 100);
+    const r = S.simResult as ResultadoSimulado;
+    const pct = Math.round(r.notaFacape);
     const mm = String(Math.floor(S.simSec / 60)).padStart(2, "0"),
       ss = String(S.simSec % 60).padStart(2, "0");
     return this.screenWrap(
@@ -2271,18 +2154,17 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           h("div", { key: "t", style: { fontSize: 23, fontWeight: 900, marginTop: 18 } }, "Simulado concluído!"),
           h("div", { key: "d", style: { fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 6 } }, "Parabéns, piloto. Voo finalizado com segurança."),
           h("div", { key: "pct", style: { fontSize: 52, fontWeight: 900, color: pct >= 70 ? C.green : C.orange, marginTop: 14 } }, pct + "%"),
-          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } }, "de acertos · nota calculada pelos pesos das disciplinas do curso"),
-          h("div", { key: "obj", style: { marginTop: 10, fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "7px 13px", borderRadius: 99 } }, "Nota considerando apenas a prova objetiva."),
+          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } }, "Nota FACAPE · ponderada pelos pesos das disciplinas"),
+          h("div", { key: "obj", style: { marginTop: 10, fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "7px 13px", borderRadius: 99 } }, Math.round(r.nota) + "% de acertos simples"),
           h(
             "div",
             { key: "stats", style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 22, width: "100%" } },
             [
-              [String(correct), "corretas", C.green],
-              [String(qs.length - correct), "erradas", C.red],
+              [String(r.acertos), "corretas", C.green],
+              [String(r.total - r.acertos), "erradas", C.red],
               ["00:" + mm + ":" + ss, "tempo total", C.txt]
             ].map((s, i) => card({ padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: s[2] as string } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
-          ),
-          h("div", { key: "xp", style: { marginTop: 16, fontSize: 12.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "7px 16px", borderRadius: 99 } }, "+" + (100 + correct * 10) + " XP · Ranking atualizado: Top 320")
+          )
         ]),
         h("div", { key: "f", style: { padding: "20px 24px 10px", display: "flex", flexDirection: "column", gap: 10 } }, [
           btn("VER GABARITO COMENTADO", () => this.setState({ simView: "gabarito", gabFrom: null })),
@@ -2296,102 +2178,68 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     );
   }
 
+  // Marca a recomendação como concluída/descartada de verdade
+  // (copiloto_recomendacoes) e atualiza a lista local otimisticamente.
+  responderRecomendacao(id: string, status: "concluida" | "descartada") {
+    this.setState({ recsLocal: this.state.recsLocal.filter((r: CopilotoRecomendacao) => r.id !== id) });
+    marcarRecomendacao(id, status).catch((e) => console.error("Falha ao marcar recomendação:", e));
+  }
   scrCopiloto() {
     const { C, h, I, btn, ghost } = this.ui();
-    const S = this.state;
-    const wk = this.weakest();
+    const recs = this.state.recsLocal as CopilotoRecomendacao[];
     const p = this.perf();
     const tot = Object.keys(p).reduce((a, k) => ({ ok: a.ok + p[k].ok, err: a.err + p[k].err }), { ok: 0, err: 0 });
-    const qs = this.copQuestions();
-    const done = this.checkinDone();
-    const intro = [
-      {
-        me: false,
-        t:
-          tot.ok + tot.err > 0
-            ? "Olá, piloto! Analisei seu dia: " +
-              tot.ok +
-              " acertos e " +
-              tot.err +
-              " erros nas questões respondidas" +
-              (function (self: DecolaApp) {
-                const pr = self.priorities();
-                return pr.length ? ". Maior ganho de nota agora: " + pr[0].tema + " (" + pr[0].mat + ", peso " + pr[0].w + ") — priorizo o que mais sobe sua nota, não só o que você mais erra" : "";
-              })(this) +
-              ". Vou fazer um check-in rápido para ajustar seu cronograma."
-            : "Olá, piloto! Sou seu Copiloto. Faço perguntas objetivas em momentos-chave e ajusto seu cronograma com as respostas — é só tocar nas opções."
-      },
-      { me: false, t: qs[0].q }
-    ];
-    const msgs: any[] = S.chat || (done ? [{ me: false, t: "Check-in de hoje concluído ✓" }, { me: false, t: this.checkinSummary(done) }] : intro);
-    const idx = S.copIdx || 0;
-    const last = msgs[msgs.length - 1];
-    const asking = idx < qs.length && last && !last.me && last.t === qs[idx].q;
-    const finished = idx >= qs.length && S.chat;
-    const pick = (opt: string) => {
-      const ans = { ...(S.copAns || {}), [qs[idx].k]: opt };
-      const base = S.chat || intro;
-      this.setState({ chat: [...base, { me: true, t: opt }], copAns: ans, copIdx: idx + 1 });
-      setTimeout(() => {
-        if (idx < qs.length - 1) this.setState({ chat: [...(this.state.chat || []), { me: false, t: this.copAck(qs[idx].k, opt) }, { me: false, t: qs[idx + 1].q }] });
-        else this.setState({ chat: [...(this.state.chat || []), ...this.copFinish(ans)] });
-      }, 550);
+    const pr = this.priorities();
+    const intro =
+      tot.ok + tot.err > 0
+        ? "Analisei seu desempenho real: " +
+          tot.ok +
+          " acertos e " +
+          tot.err +
+          " erros nas questões respondidas até agora" +
+          (pr.length ? ". Maior ganho de nota agora: " + pr[0].tema + " (peso " + pr[0].w + ") — priorizo o que mais sobe sua nota, não só o que você mais erra." : ".")
+        : "Sou seu Copiloto. Assim que você responder questões, revisar flashcards ou fazer simulados, eu começo a identificar o que vale mais a pena revisar.";
+    const LINK_TIPO: Record<string, () => void> = {
+      questoes: () => this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }),
+      flashcards: () => this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 }),
+      simulado: () => this.nav("simulados"),
+      aula: () => this.nav("estudos")
     };
-    const restart = () => this.setState({ chat: intro, copIdx: 0, copAns: {} });
     return this.screenWrap([
       this.head("Copiloto Decola", { back: "mapa" }),
-      h("div", { key: "chat", style: { flex: 1, display: "flex", flexDirection: "column", gap: 10, padding: "8px 18px 0" } }, [
+      h("div", { key: "chat", style: { display: "flex", flexDirection: "column", gap: 10, padding: "8px 18px 0" } }, [
         h("div", { key: "bot", style: { display: "flex", justifyContent: "center", marginBottom: 6 } }, this.mascoteBadge("bot", 96, { anim: "dm-fly 4s ease-in-out infinite" })),
-        ...msgs.map((m, i) =>
-          h(
-            "div",
-            {
-              key: i,
-              style: {
-                alignSelf: m.me ? "flex-end" : "flex-start",
-                maxWidth: "82%",
-                padding: "11px 14px",
-                borderRadius: m.me ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                background: m.me ? C.orange : C.card,
-                border: m.me ? "none" : "1px solid " + C.line,
-                color: m.me ? "#fff" : C.txt,
-                fontSize: 13,
-                fontWeight: 600,
-                lineHeight: 1.5,
-                animation: "dm-in .3s ease both"
-              }
-            },
-            m.t
-          )
+        h(
+          "div",
+          { key: "intro", style: { alignSelf: "flex-start", maxWidth: "88%", padding: "11px 14px", borderRadius: "16px 16px 16px 4px", background: C.card, border: "1px solid " + C.line, color: C.txt, fontSize: 13, fontWeight: 600, lineHeight: 1.5 } },
+          intro
         ),
-        asking
+        recs.length === 0
           ? h(
               "div",
-              { key: "opts" + idx, style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 2, justifyContent: "flex-end" } },
-              qs[idx].opts.map((o: string, i: number) =>
-                h(
-                  "div",
-                  {
-                    key: i,
-                    onClick: () => pick(o),
-                    style: { padding: "10px 15px", borderRadius: 14, background: C.orangeSoft, border: "1.5px solid " + (C.dark ? "rgba(243,108,33,.4)" : "rgba(243,108,33,.3)"), color: C.dark ? "#FBD3B8" : "#a04a10", fontSize: 12.5, fontWeight: 800, cursor: "pointer", animation: "dm-in .3s ease both" }
-                  },
-                  o
-                )
+              { key: "vazio", style: { alignSelf: "flex-start", maxWidth: "88%", padding: "11px 14px", borderRadius: "16px 16px 16px 4px", background: C.card, border: "1px solid " + C.line, color: C.sub, fontSize: 13, fontWeight: 600, lineHeight: 1.5 } },
+              "Sem recomendações pendentes no momento. Continue estudando — quando eu identificar algo que vale revisar, aparece aqui. ✨"
+            )
+          : recs.map((r) =>
+              h(
+                "div",
+                { key: r.id, style: { alignSelf: "flex-start", maxWidth: "92%", padding: "12px 14px", borderRadius: "16px 16px 16px 4px", background: C.card, border: "1.5px solid " + (r.prioridade >= 3 ? C.red : r.prioridade >= 2 ? C.orange : C.line) } },
+                [
+                  h("div", { key: "t", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, textTransform: "uppercase", letterSpacing: ".04em" } }, r.materia + (r.assunto ? " · " + r.assunto : "")),
+                  h("div", { key: "h", style: { fontSize: 13.5, fontWeight: 900, marginTop: 3 } }, r.titulo),
+                  r.motivo ? h("div", { key: "m", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 4, lineHeight: 1.45 } }, r.motivo) : null,
+                  h("div", { key: "acts", style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }, [
+                    btn("FAZER AGORA →", () => (LINK_TIPO[r.tipo] || LINK_TIPO.aula)(), { padding: "9px 14px", fontSize: 12 }),
+                    ghost("Já revisei ✓", () => this.responderRecomendacao(r.id, "concluida"), { padding: "9px 14px", fontSize: 12 }),
+                    ghost("Dispensar", () => this.responderRecomendacao(r.id, "descartada"), { padding: "9px 14px", fontSize: 12, color: C.faint })
+                  ])
+                ]
               )
             )
-          : null,
-        done && !S.chat ? h("div", { key: "redo", style: { display: "flex", justifyContent: "flex-end" } }, ghost("Refazer check-in", restart, { padding: "10px 16px", fontSize: 12 })) : null,
-        finished
-          ? h("div", { key: "end", style: { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" } }, [
-              ghost("Novo check-in", restart, { padding: "10px 14px", fontSize: 12 }),
-              btn("VER CRONOGRAMA →", () => this.nav("plano"), { padding: "10px 14px", fontSize: 12 })
-            ])
-          : null
       ]),
-      h("div", { key: "note", style: { margin: "12px 18px 4px", padding: "11px 13px", borderRadius: 13, background: C.chip, display: "flex", gap: 9, alignItems: "center", fontSize: 10.5, color: C.sub, fontWeight: 600, lineHeight: 1.5 } }, [
+      h("div", { key: "note", style: { margin: "16px 18px 4px", padding: "11px 13px", borderRadius: 13, background: C.chip, display: "flex", gap: 9, alignItems: "center", fontSize: 10.5, color: C.sub, fontWeight: 600, lineHeight: 1.5 } }, [
         I("bot", 15, C.orange),
-        "O Copiloto conduz a conversa: perguntas objetivas ao fim do dia, após missões, simulados, redações ou atrasos — e ajusta o cronograma automaticamente."
+        "O Copiloto analisa suas respostas de verdade (questões, flashcards, simulados) e cria estas recomendações automaticamente."
       ])
     ]);
   }
@@ -2400,6 +2248,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const { C, h, card, chip } = this.ui();
     const d = this.data();
     const t = this.state.rankTab;
+    if (!d.ranking.length) {
+      return this.screenWrap([
+        this.head("Ranking", { back: "mapa" }),
+        h(
+          "div",
+          { key: "vazio", style: { margin: "18px 18px 0" } },
+          card({ textAlign: "center", padding: 26 }, "Ainda não há dados suficientes pra montar o ranking. Pratique questões, flashcards ou simulados pra começar a pontuar!")
+        )
+      ]);
+    }
     const podium = [d.ranking[1], d.ranking[0], d.ranking[2]];
     return this.screenWrap([
       this.head("Ranking", { back: "mapa" }),
@@ -2412,6 +2270,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "podium", style: { margin: "18px 18px 0", display: "flex", alignItems: "flex-end", gap: 10, justifyContent: "center" } },
         podium.map((p, i) => {
+          if (!p) return h("div", { key: i, style: { flex: 1 } });
           const first = i === 1,
             hgt = first ? 118 : 88,
             medal = ["#c8d6e5", "#ffc94d", "#e08e5a"][i];
@@ -2528,10 +2387,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
+  // XP real = mesma fórmula da view ranking_geral (10 por acerto, 5 por
+  // flashcard lembrado, 50 por simulado concluído) — assim o número bate
+  // exatamente com o que aparece no Ranking.
+  xpTotal() {
+    const P = this.props.dados;
+    const acertos = P.respostas.filter((r) => r.correta).length;
+    const lembrados = P.revisoes.filter((r) => r.lembrou).length;
+    return acertos * 10 + lembrados * 5 + P.tentativas.length * 50;
+  }
+  // Sequência real de dias com pelo menos uma atividade (questão, flashcard
+  // ou simulado), contando para trás a partir de hoje.
+  sequenciaDias() {
+    const P = this.props.dados;
+    const dias = new Set<string>();
+    P.respostas.forEach((r) => dias.add(r.created_at.slice(0, 10)));
+    P.revisoes.forEach((r) => dias.add(r.created_at.slice(0, 10)));
+    P.tentativas.forEach((t) => dias.add(t.created_at.slice(0, 10)));
+    let n = 0;
+    const cur = new Date();
+    while (dias.has(cur.toISOString().slice(0, 10))) {
+      n++;
+      cur.setDate(cur.getDate() - 1);
+    }
+    return n;
+  }
   scrPerfil() {
     const { C, h, I, card, bar, iconBox } = this.ui();
     const d = this.data();
     const handle = "@" + (this.props.email || "aluno").split("@")[0];
+    const xp = this.xpTotal();
+    const posicao = this.props.dados.ranking.findIndex((r) => r.aluno_id === this.props.alunoId) + 1;
+    const totalRespostas = this.props.dados.respostas.length;
+    const acertosResp = this.props.dados.respostas.filter((r) => r.correta).length;
+    const precisaoGeral = totalRespostas > 0 ? Math.round((acertosResp / totalRespostas) * 100) : 0;
     return this.screenWrap([
       this.head("Carteira de Piloto", {
         back: "mapa",
@@ -2551,12 +2440,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             h("div", { key: "t", style: { flex: 1 } }, [
               h("div", { key: "a", style: { fontSize: 17, fontWeight: 900 } }, this.props.nome || "Aluno Decola"),
               h("div", { key: "b", style: { fontSize: 11.5, color: "rgba(255,255,255,.65)", fontWeight: 700 } }, handle),
-              h("div", { key: "c", style: { display: "flex", gap: 6, marginTop: 6 } }, [h("span", { key: "p", style: { fontSize: 10, fontWeight: 800, background: "rgba(255,255,255,.16)", padding: "3px 9px", borderRadius: 99 } }, "COPILOTO · NÍVEL 12")])
+              h("div", { key: "c", style: { display: "flex", gap: 6, marginTop: 6 } }, [h("span", { key: "p", style: { fontSize: 10, fontWeight: 800, background: "rgba(255,255,255,.16)", padding: "3px 9px", borderRadius: 99 } }, xp + " XP")])
             ])
           ]),
           h("div", { key: "xp", style: { marginTop: 16 } }, [
-            h("div", { key: "l", style: { display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.7)", marginBottom: 6 } }, [h("span", { key: "a" }, "1.250 / 2.000 XP"), h("span", { key: "b" }, "Faltam 750 XP para 1º Oficial")]),
-            h("div", { key: "b", style: { display: "flex" } }, bar(62, "#F8935A", 7, "rgba(255,255,255,.18)"))
+            h("div", { key: "l", style: { display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.7)", marginBottom: 6 } }, [
+              h("span", { key: "a" }, precisaoGeral + "% de precisão geral"),
+              h("span", { key: "b" }, totalRespostas + " questões respondidas")
+            ]),
+            h("div", { key: "b", style: { display: "flex" } }, bar(precisaoGeral, "#F8935A", 7, "rgba(255,255,255,.18)"))
           ])
         ])
       ),
@@ -2564,9 +2456,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "stats", style: { margin: "14px 18px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 } },
         [
-          ["87h 15m", "horas de voo"],
-          ["7 dias", "sequência"],
-          ["Top 3%", "ranking #320"]
+          [String(xp), "XP total"],
+          [this.sequenciaDias() + " dias", "sequência"],
+          [posicao > 0 ? "#" + posicao : "—", "ranking"]
         ].map((s, i) => card({ padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 15, fontWeight: 900, color: i === 1 ? C.orange : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 9.5, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
       ),
       h(
@@ -2598,7 +2490,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         card(
           { padding: "6px 16px" },
           [
-            ["note", "Redação · Correção via WhatsApp", "2 créditos"],
+            ["note", "Redação · Correção via WhatsApp", this.props.dados.creditosRedacaoDisponiveis + " crédito" + (this.props.dados.creditosRedacaoDisponiveis === 1 ? "" : "s")],
             ["calendar", "Recalibrar plano de voo", ""],
             ["bell", "Notificações", ""],
             ["logout", "Sair da conta", ""]
@@ -2764,254 +2656,186 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           })
         )
       ]),
-      h("div", { key: "f", style: { padding: "10px 18px 30px" } }, btn("CONCLUÍDO", () => this.nav("perfil")))
+      h(
+        "div",
+        { key: "f", style: { padding: "10px 18px 30px" } },
+        btn(this.state.briefSalvando ? "SALVANDO..." : "CONCLUÍDO", () => this.salvarBriefingReal(), { opacity: this.state.briefSalvando ? 0.6 : 1 })
+      )
     ]);
   }
+  async salvarBriefingReal() {
+    if (this.state.briefSalvando) return;
+    this.setState({ briefSalvando: true });
+    const B = this.state.brief;
+    const fd = new FormData();
+    fd.set("data_prova", B.prova || "");
+    fd.set("inicio_estudos", B.inicio || "");
+    fd.set("dias_por_semana", String(B.dias || 5));
+    fd.set("horas_por_dia", String(B.horas || 3));
+    Object.entries(this.state.feels as Record<string, string>).forEach(([materia, sentimento]) => {
+      fd.set("sentimento_" + materia, sentimento);
+    });
+    try {
+      await salvarBriefing(fd);
+    } catch (e) {
+      // salvarBriefing() usa redirect() do Next.js, que lança internamente
+      // para acionar a navegação — não é um erro real, então só logamos
+      // outros tipos de falha.
+      if (!(e as any)?.digest?.startsWith?.("NEXT_REDIRECT")) console.error("Falha ao salvar briefing:", e);
+    } finally {
+      this.setState({ briefSalvando: false });
+    }
+  }
 
+  linhaMissao(m: AlunoMissao, i: number, total: number) {
+    const { C, h, I } = this.ui();
+    const dn = m.concluida;
+    return h(
+      "div",
+      { key: "m" + m.id, style: { display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: i < total - 1 ? "1px solid " + C.line : "none", opacity: dn ? 0.55 : 1 } },
+      [
+        h(
+          "div",
+          {
+            key: "n",
+            onClick: () => this.toggleMissao(m.id),
+            style: { width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 10.5, fontWeight: 900, background: dn ? C.green : C.chip, color: dn ? "#fff" : C.sub }
+          },
+          dn ? I("check", 12, "#fff", 3) : i + 1
+        ),
+        h("div", { key: "t", onClick: () => this.navMissao(m), style: { flex: 1, cursor: "pointer" } }, [
+          h("div", { key: "a", style: { fontSize: 12, fontWeight: 800, textDecoration: dn ? "line-through" : "none" } }, m.titulo),
+          h("div", { key: "b", style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min")
+        ]),
+        m.origem === "copiloto" ? h("span", { key: "g", style: { fontSize: 8, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "2px 7px", borderRadius: 99 } }, "COPILOTO") : I("chevR", 14, C.faint)
+      ]
+    );
+  }
   scrPlano() {
-    const { C, h, I, card, btn, ghost, iconBox } = this.ui();
-    const S = this.state;
-    const pro = this.plan() === "voo-guiado";
-    const B = S.brief || {};
-    const today = this.fmtD(new Date());
-    const sel = S.calSel || today;
-    const base = new Date();
-    base.setDate(1);
-    base.setMonth(base.getMonth() + (S.calMonth || 0));
-    const y = base.getFullYear(),
-      mo = base.getMonth();
-    const monthName = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mo] + " " + y;
-    const lead = (new Date(y, mo, 1).getDay() + 6) % 7,
-      ndays = new Date(y, mo + 1, 0).getDate();
-    const dd = this.daysDone();
-    const prova = B.prova || null;
-    const cells: (string | null)[] = [];
-    for (let i = 0; i < lead; i++) cells.push(null);
-    for (let d2 = 1; d2 <= ndays; d2++) cells.push(this.fmtD(new Date(y, mo, d2)));
-    const ck = this.checkState();
-    const seqToday = this.todaySeq();
-    const todayDone = seqToday.every((o) => ck[o.t]);
-    const isDone = (ds: string) => (ds === today ? todayDone || !!dd[ds] : !!dd[ds]);
-    const m = sel === today ? { n: 6, topic: ["Biologia", "Sistema Digestório"], acts: [] as any[], sim: false, red: false } : this.missionOfDate(sel);
-    const selLabel = new Date(sel + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-    const isToday = sel === today,
-      isPast = sel < today,
-      isFuture = sel > today;
-    const doneCount = Object.keys(dd).filter((k) => k !== today).length + (isDone(today) ? 1 : 0);
-    const feels = S.feels || {};
-    const turb = Object.keys(feels).filter((m2) => feels[m2] === "Turbulência");
-    const dom = Object.keys(feels).filter((m2) => feels[m2] === "Domínio");
+    const { C, h, I, card, btn, iconBox } = this.ui();
+    const temCopiloto = this.props.dados.temCopiloto;
+    const B = this.state.brief || {};
+    const pr = this.priorities();
+    if (temCopiloto) {
+      const hoje = this.missoesHoje();
+      const hojeStr = this.props.dados.hojeStr;
+      const proximas = (this.state.missoesLocal as AlunoMissao[])
+        .filter((m) => m.data > hojeStr)
+        .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
+      const porDia = new Map<string, AlunoMissao[]>();
+      proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
+      return this.screenWrap([
+        this.head("Cronograma de Estudos", { back: "mapa" }),
+        h(
+          "div",
+          { key: "info", style: { margin: "6px 18px 0" } },
+          card({ padding: 14 }, [
+            h("span", { key: "p", style: { fontSize: 9.5, fontWeight: 900, color: "#fff", background: C.orange, padding: "4px 10px", borderRadius: 99, letterSpacing: ".05em" } }, "VOO GUIADO · PRO"),
+            h(
+              "div",
+              { key: "t", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginTop: 8, lineHeight: 1.55 } },
+              "Rota adaptativa: o Copiloto ajusta suas missões conforme seu desempenho real em questões, flashcards e simulados." + (B.prova ? " Prova em " + B.prova.split("-").reverse().join("/") + "." : "")
+            )
+          ])
+        ),
+        h(
+          "div",
+          { key: "hoje", style: { margin: "12px 18px 0" } },
+          card({ padding: 15 }, [
+            h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 900, marginBottom: 8 } }, "Hoje"),
+            hoje.length
+              ? hoje.map((m, i) => this.linhaMissao(m, i, hoje.length))
+              : h("div", { key: "vazio", style: { fontSize: 11.5, color: C.sub, fontWeight: 600 } }, "Nenhuma missão planejada para hoje.")
+          ])
+        ),
+        pr.length
+          ? h(
+              "div",
+              { key: "prio", style: { margin: "12px 18px 0" } },
+              card({ border: "1.5px solid " + C.orange }, [
+                h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center" } }, [
+                  iconBox("bolt", C.orangeSoft, C.orange, 40, 19),
+                  h("div", { key: "t", style: { flex: 1 } }, [
+                    h("div", { key: "a", style: { fontSize: 13, fontWeight: 900 } }, "Maior ganho agora: " + pr[0].tema),
+                    h("div", { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, pr[0].why)
+                  ])
+                ])
+              ])
+            )
+          : null,
+        ...Array.from(porDia.entries()).map(([data, ms]) =>
+          h(
+            "div",
+            { key: "dia" + data, style: { margin: "12px 18px 0" } },
+            card({ padding: 15 }, [
+              h(
+                "div",
+                { key: "t", style: { fontSize: 12, fontWeight: 800, color: C.sub, textTransform: "capitalize", marginBottom: 8 } },
+                new Date(data + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
+              ),
+              ...ms.map((m, i) => this.linhaMissao(m, i, ms.length))
+            ])
+          )
+        ),
+        proximas.length === 0 && hoje.length === 0
+          ? h("div", { key: "vazio2", style: { margin: "12px 18px 0" } }, card({ textAlign: "center", padding: 20 }, "Nenhuma missão cadastrada ainda. Fale com a coordenação ou aguarde o próximo ajuste do Copiloto."))
+          : null
+      ]);
+    }
+    // Plano sem Copiloto: segue exatamente o cronograma fixo criado no admin.
+    const DIAS_SEMANA_LABEL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+    const porDiaSemana = new Map(this.props.dados.cronograma.map((d) => [d.dia_semana, d]));
+    const hojeSemana = new Date().getDay();
+    const missaoHoje = porDiaSemana.get(hojeSemana);
     return this.screenWrap([
       this.head("Cronograma de Estudos", { back: "mapa" }),
       h(
         "div",
-        { key: "info", style: { margin: "6px 18px 0" } },
-        card({ padding: 14 }, [
-          h("div", { key: "r", style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } }, [
-            h("span", { key: "p", style: { fontSize: 9.5, fontWeight: 900, color: pro ? "#fff" : C.orange, background: pro ? C.orange : C.orangeSoft, padding: "4px 10px", borderRadius: 99, letterSpacing: ".05em" } }, pro ? "VOO GUIADO · PRO" : "DECOLANDO"),
-            h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 700, color: C.sub } }, (prova ? "Prova " + prova.split("-").reverse().join("/") + " · " : "") + (B.dias || 5) + " dias/sem · " + (B.horas || 3) + "h/dia")
-          ]),
-          h(
-            "div",
-            { key: "t", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginTop: 8, lineHeight: 1.55 } },
-            "Gerado automaticamente do Cronograma Base + seu Briefing de Voo" + (pro ? " + ajustes do Copiloto" : "") + ". Alterou o briefing ou fez check-in? O calendário se recalcula na hora."
-          )
-        ])
-      ),
-      h(
-        "div",
-        { key: "cal", style: { margin: "12px 18px 0" } },
-        card({ padding: 14 }, [
-          h("div", { key: "mh", style: { display: "flex", alignItems: "center", marginBottom: 10 } }, [
-            h("div", { key: "l", onClick: () => this.setState({ calMonth: (S.calMonth || 0) - 1 }), style: { width: 30, height: 30, borderRadius: 10, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transform: "rotate(180deg)" } }, I("chevR", 15, C.sub)),
-            h("div", { key: "t", style: { flex: 1, textAlign: "center", fontSize: 13.5, fontWeight: 900 } }, monthName),
-            h("div", { key: "r", onClick: () => this.setState({ calMonth: (S.calMonth || 0) + 1 }), style: { width: 30, height: 30, borderRadius: 10, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" } }, I("chevR", 15, C.sub))
-          ]),
-          h(
-            "div",
-            { key: "wd", style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 } },
-            ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((w, i) => h("div", { key: i, style: { textAlign: "center", fontSize: 8.5, fontWeight: 900, color: C.faint } }, w))
-          ),
-          h(
-            "div",
-            { key: "g", style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 } },
-            cells.map((ds, i) => {
-              if (!ds) return h("div", { key: "e" + i });
-              const mm = ds === today ? true : this.missionOfDate(ds);
-              const done2 = mm && isDone(ds);
-              const isSel = ds === sel,
-                isT = ds === today,
-                isProva = prova === ds;
-              const missed = mm && ds < today && !done2;
-              let bg = "transparent",
-                col = C.faint,
-                bd = "1.5px solid transparent";
-              if (mm) {
-                bg = C.chip;
-                col = C.txt;
-              }
-              if (done2) {
-                bg = C.greenSoft;
-                col = C.green;
-              }
-              if (missed) col = C.red;
-              if (isProva) {
-                bg = C.orange;
-                col = "#fff";
-              }
-              if (isT) bd = "1.5px solid " + C.orange;
-              if (isSel) {
-                bg = C.orange;
-                col = "#fff";
-                bd = "1.5px solid " + C.orange;
-              }
-              return h(
-                "div",
-                { key: ds, onClick: () => this.setState({ calSel: ds }), style: { height: 42, borderRadius: 11, background: bg, border: bd, color: col, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer" } },
-                [
-                  h("span", { key: "n", style: { fontSize: 12, fontWeight: 800 } }, parseInt(ds.slice(8), 10)),
-                  isProva ? h("span", { key: "p", style: { fontSize: 6, fontWeight: 900, letterSpacing: ".04em" } }, "PROVA") : done2 ? I("check", 9, isSel ? "#fff" : C.green, 3.5) : mm ? h("div", { key: "d", style: { width: 4, height: 4, borderRadius: 99, background: isSel ? "#fff" : missed ? C.red : C.orange } }) : null
-                ]
-              );
-            })
-          ),
-          h(
-            "div",
-            { key: "leg", style: { display: "flex", gap: 11, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid " + C.line } },
-            [
-              [C.orange, "Dia de missão"],
-              [C.green, "Concluído"],
-              [C.red, "Atrasado"],
-              [C.faint, "Descanso"]
-            ].map((l, i) => h("div", { key: i, style: { display: "flex", gap: 5, alignItems: "center", fontSize: 9.5, fontWeight: 700, color: C.sub } }, [h("div", { key: "d", style: { width: 7, height: 7, borderRadius: 99, background: l[0] as string } }), l[1]]))
-          )
-        ])
-      ),
-      h("div", { key: "sum", style: { margin: "10px 20px 0", fontSize: 10.5, fontWeight: 700, color: C.sub } }, doneCount + " dia(s) de missão concluído(s) · toque em um dia para ver as atividades"),
-      h(
-        "div",
-        { key: "det" + sel, style: { margin: "8px 18px 0" } },
-        card({ padding: 15 }, [
-          h("div", { key: "h", style: { display: "flex", alignItems: "center", gap: 9, marginBottom: m ? 10 : 6 } }, [
-            h("div", { key: "t", style: { flex: 1 } }, [
-              h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, m ? "Missão " + m.n + (m.sim ? " · Simulado de Voo" : " · " + m.topic[1]) : "Dia de descanso"),
-              h("div", { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 1, textTransform: "capitalize" } }, selLabel)
-            ]),
-            m && isDone(sel)
-              ? h("span", { key: "ok", style: { fontSize: 9, fontWeight: 900, color: C.green, background: C.greenSoft, padding: "4px 10px", borderRadius: 99 } }, "CONCLUÍDO ✓")
-              : isToday
-              ? h("span", { key: "hj", style: { fontSize: 9, fontWeight: 900, color: "#fff", background: C.orange, padding: "4px 10px", borderRadius: 99 } }, "HOJE")
-              : null
-          ]),
-          !m
+        { key: "hero", style: { margin: "6px 18px 0" } },
+        card({ background: C.headGrad, border: "none", color: "#fff" }, [
+          h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } }, "Hoje · " + DIAS_SEMANA_LABEL[hojeSemana]),
+          h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, missaoHoje?.titulo ?? "Sem missão cadastrada hoje"),
+          missaoHoje && missaoHoje.atividades.length
             ? h(
                 "div",
-                { key: "rest", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.55 } },
-                sel > today ? "Sem missões planejadas para este dia — descanso previsto no seu briefing. Quer estudar mesmo assim? Adiante o próximo dia de missão pelo calendário." : "Sem missões neste dia."
+                { key: "at", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 4 } },
+                missaoHoje.atividades.map((a, i) => h("div", { key: i, style: { fontSize: 12, color: "rgba(255,255,255,.85)", fontWeight: 600 } }, "✈️ " + a))
               )
-            : null,
-          m && isToday
-            ? seqToday.map((o, i) => {
-                const dn = !!ck[o.t];
-                return h("div", { key: "s" + i, style: { display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: i < seqToday.length - 1 ? "1px solid " + C.line : "none", opacity: dn ? 0.55 : 1 } }, [
-                  h(
-                    "div",
-                    {
-                      key: "n",
-                      onClick: () => this.toggleCheck(o.t),
-                      style: { width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 10.5, fontWeight: 900, background: dn ? C.green : C.chip, color: dn ? "#fff" : C.sub }
-                    },
-                    dn ? I("check", 12, "#fff", 3) : i + 1
-                  ),
-                  h("div", { key: "t", onClick: o.act, style: { flex: 1, cursor: "pointer" } }, [
-                    h("div", { key: "a", style: { fontSize: 12, fontWeight: 800, textDecoration: dn ? "line-through" : "none" } }, o.t),
-                    h("div", { key: "b", style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, o.d)
-                  ]),
-                  o.ia ? h("span", { key: "g", style: { fontSize: 8, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "2px 7px", borderRadius: 99 } }, "COPILOTO") : I("chevR", 14, C.faint)
-                ]);
-              })
-            : null,
-          m && !isToday
-            ? m.acts.map((o: any, i: number) =>
-                h(
-                  "div",
-                  {
-                    key: "a" + i,
-                    onClick: () =>
-                      this.nav(
-                        o.go,
-                        o.go === "conteudo" ? { contTitle: o.t, contBack: "plano" } : o.go === "questoes" ? { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null } : o.go === "flashcards" ? { fcIdx: 0, fcFlip: false, fcOk: 0 } : {}
-                      ),
-                    style: { display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: i < m.acts.length - 1 ? "1px solid " + C.line : "none", cursor: "pointer" }
-                  },
-                  [
-                    iconBox(o.ic, o.ia ? C.orangeSoft : C.blueSoft, o.ia ? C.orange : C.dark ? "#8fc3e8" : "#01395E", 36, 16),
-                    h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12, fontWeight: 800 } }, o.t), h("div", { key: "b", style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, o.d)]),
-                    o.ia ? h("span", { key: "g", style: { fontSize: 8, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "2px 7px", borderRadius: 99 } }, "COPILOTO") : I("chevR", 14, C.faint)
-                  ]
-                )
-              )
-            : null,
-          m && isFuture && !dd[sel] ? btn("ADIANTAR · CONCLUIR ESTE DIA ✓", () => this.setDayDone(sel, true), { marginTop: 12, padding: "11px", fontSize: 12 }) : null,
-          m && isFuture && dd[sel] ? ghost("Desfazer conclusão", () => this.setDayDone(sel, false), { marginTop: 12, padding: "10px", fontSize: 12 }) : null,
-          m && isPast && !isDone(sel) ? btn("RECUPERAR · MARCAR COMO FEITO ✓", () => this.setDayDone(sel, true), { marginTop: 12, padding: "11px", fontSize: 12, background: C.green, boxShadow: "0 6px 18px rgba(31,165,101,.35)" }) : null,
-          m && isFuture && !dd[sel]
-            ? h("div", { key: "nt", style: { marginTop: 10, fontSize: 10, color: C.faint, fontWeight: 600, lineHeight: 1.5 } }, "Você pode adiantar seus estudos: conclua as atividades deste dia hoje mesmo — o progresso é registrado e as próximas missões seguem na sequência.")
-            : null
+            : h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 6 } }, "Dia livre — aproveite pra revisar o que quiser.")
         ])
       ),
-      pro
-        ? h(
+      h("div", { key: "lbl", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Semana completa"),
+      h(
+        "div",
+        { key: "semana", style: { margin: "0 18px 4px", display: "flex", flexDirection: "column", gap: 8 } },
+        DIAS_SEMANA_LABEL.map((nome, i) => {
+          const dia = porDiaSemana.get(i);
+          const éHoje = i === hojeSemana;
+          return h(
             "div",
-            { key: "fac", style: { margin: "14px 18px 4px" } },
-            card({}, [
-              h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, marginBottom: 10 } }, "O que o algoritmo está considerando"),
-              ...[
-                ["gauge", "Desempenho por assunto", "78% de precisão"],
-                [
-                  "flag",
-                  "Briefing · data da prova",
-                  (function () {
-                    const dd2 = B.prova ? Math.max(0, Math.ceil((+new Date(B.prova + "T12:00") - Date.now()) / 864e5)) : 0;
-                    return (B.prova ? B.prova.split("-").reverse().join("/") : "—") + " · " + dd2 + " dias restantes";
-                  })()
-                ],
-                ["calendar", "Dias e horas de estudo", (B.dias || 5) + " dias/sem · " + (B.horas || 3) + "h/dia"],
-                ["star4", "Sentimento por matéria", (turb.length ? "Turbulência: " + turb.join(", ") : "Nenhuma turbulência marcada") + (dom.length ? " · Domínio: " + dom.join(", ") : "")],
-                ["bot", "Check-in do Copiloto", this.checkinDone() ? "Feito hoje ✓ ajustes aplicados" : "Pendente hoje"],
-                ["bolt", "Pesos das disciplinas", "Bio 3 · Port/Fís/Quí 2 · Mat/His/Geo 1"],
-                [
-                  "alert",
-                  "Maior ganho agora",
-                  (function (self: DecolaApp) {
-                    const pr = self.priorities();
-                    return pr.length ? pr[0].tema + " · +" + pr[0].gain.toFixed(1) + " pts/h" : "Nenhum erro registrado ainda";
-                  })(this)
-                ],
-                ["clock", "Dias adiantados/recuperados", String(Object.keys(dd).length)]
-              ].map((r, i, arr) =>
-                h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.line : "none" } }, [
-                  I(r[0], 16, C.orange),
-                  h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 700 } }, r[1]),
-                  h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 700, color: C.sub, textAlign: "right", maxWidth: 170 } }, r[2])
-                ])
-              )
+            { key: i, style: { borderRadius: 16, padding: 14, background: éHoje ? C.orangeSoft : C.card, border: éHoje ? "1.5px solid " + C.orange : "1px solid " + C.line } },
+            [
+              h("div", { key: "n", style: { fontSize: 10, fontWeight: 800, color: éHoje ? C.orange : C.faint, textTransform: "uppercase", letterSpacing: ".05em" } }, nome + (éHoje ? " · Hoje" : "")),
+              h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, marginTop: 3 } }, dia?.titulo ?? "Dia livre"),
+              dia && dia.atividades.length ? h("div", { key: "a", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 3 } }, dia.atividades.join(" · ")) : null
+            ]
+          );
+        })
+      ),
+      h(
+        "div",
+        { key: "pro", style: { margin: "14px 18px 4px" } },
+        card({ border: "1.5px solid " + C.orange, background: C.dark ? "linear-gradient(150deg,#3a2410,#0c3557 60%)" : "linear-gradient(150deg,#fff4ec,#fff)" }, [
+          h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center" } }, [
+            iconBox("bolt", C.orangeSoft, C.orange, 40, 19),
+            h("div", { key: "t", style: { flex: 1 } }, [
+              h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, "Conheça o Voo Guiado (PRO)"),
+              h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, "O Copiloto adapta seu cronograma ao seu desempenho real. Seu plano atual não muda até você contratar.")
             ])
-          )
-        : h(
-            "div",
-            { key: "up", style: { margin: "14px 18px 4px" } },
-            card({ border: "1.5px solid " + C.orange, background: C.dark ? "linear-gradient(150deg,#3a2410,#0c3557 60%)" : "linear-gradient(150deg,#fff4ec,#fff)" }, [
-              h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center" } }, [
-                iconBox("bolt", C.orangeSoft, C.orange, 40, 19),
-                h("div", { key: "t", style: { flex: 1 } }, [
-                  h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, "Conheça o Voo Guiado (PRO)"),
-                  h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, "O algoritmo adapta seu cronograma a você. Seu plano atual não muda até você contratar.")
-                ])
-              ]),
-              btn("SAIBA MAIS →", () => this.openBrowser("Voo Guiado (PRO) · Planos", "decolamed.com.br/planos", "plano"), { marginTop: 12, padding: "12px" })
-            ])
-          )
+          ]),
+          btn("SAIBA MAIS →", () => this.openBrowser("Voo Guiado (PRO) · Planos", "decolamed.com.br/planos", "plano"), { marginTop: 12, padding: "12px" })
+        ])
+      )
     ]);
   }
 
@@ -3161,7 +2985,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   scrGabarito() {
     const { C, h, I, card } = this.ui();
     const S = this.state;
-    const qs = this.simQs();
+    const gabarito: ItemGabarito[] = S.gabFrom === "hist" ? S.gabaritoHistorico || [] : S.simResult?.gabarito || [];
     return this.screenWrap(
       [
         h("div", { key: "hd", style: { display: "flex", alignItems: "center", gap: 12, padding: "18px 18px 10px" } }, [
@@ -3172,50 +2996,64 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ),
           h("div", { key: "t", style: { fontSize: 17, fontWeight: 800, flex: 1 } }, "Gabarito comentado")
         ]),
-        h(
-          "div",
-          { key: "list", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 10 } },
-          qs.map((q, i) => {
-            const my = S.simAns[i];
-            const ok = my === q.ans;
-            return card({ padding: 14 }, [
-              h("div", { key: "h", style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8 } }, [
-                h("div", { key: "n", style: { width: 26, height: 26, borderRadius: 9, background: ok ? C.greenSoft : C.redSoft, color: ok ? C.green : C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900 } }, i + 1),
-                h("span", { key: "m", style: { fontSize: 10.5, fontWeight: 800, color: C.sub } }, (q.code ? q.code + " · " : "") + q.materia + " · " + q.tema + (q.fonte ? " · " + q.fonte : "")),
-                h("span", { key: "s", style: { marginLeft: "auto", fontSize: 10, fontWeight: 900, color: ok ? C.green : C.red } }, ok ? "ACERTOU" : my == null ? "EM BRANCO" : "ERROU")
-              ]),
-              h("div", { key: "q", style: { fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, marginBottom: 8 } }, q.q),
-              h("div", { key: "a", style: { fontSize: 11.5, fontWeight: 700, color: C.green } }, "Correta: " + String.fromCharCode(65 + q.ans) + ") " + q.alts[q.ans]),
-              my != null && !ok ? h("div", { key: "my", style: { fontSize: 11.5, fontWeight: 700, color: C.red, marginTop: 2 } }, "Sua resposta: " + String.fromCharCode(65 + my) + ") " + q.alts[my]) : null,
-              h(
-                "div",
-                { key: "c", style: { marginTop: 8, padding: "9px 11px", borderRadius: 10, background: C.chip, fontSize: 11, color: C.sub, fontWeight: 600, lineHeight: 1.5 } },
-                'Comentário: a alternativa "' + q.alts[q.ans] + '" é a correta segundo a matriz FACAPE. Este assunto foi registrado no seu Raio-X de desempenho.'
-              )
-            ]);
-          })
-        )
+        S.gabaritoCarregando
+          ? h("div", { key: "load", style: { textAlign: "center", padding: 30, color: C.sub, fontSize: 12.5, fontWeight: 700 } }, "Carregando gabarito...")
+          : h(
+              "div",
+              { key: "list", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 10 } },
+              gabarito.map((q, i) => {
+                const idxCorreta = q.alternativas.findIndex((a) => a.id === q.respostaCorreta);
+                const idxEscolhida = q.escolhida ? q.alternativas.findIndex((a) => a.id === q.escolhida) : -1;
+                return card({ padding: 14 }, [
+                  h("div", { key: "h", style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8 } }, [
+                    h("div", { key: "n", style: { width: 26, height: 26, borderRadius: 9, background: q.correta ? C.greenSoft : C.redSoft, color: q.correta ? C.green : C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900 } }, i + 1),
+                    h("span", { key: "m", style: { fontSize: 10.5, fontWeight: 800, color: C.sub } }, q.materia + (q.assunto ? " · " + q.assunto : "")),
+                    h("span", { key: "s", style: { marginLeft: "auto", fontSize: 10, fontWeight: 900, color: q.correta ? C.green : C.red } }, q.correta ? "ACERTOU" : q.escolhida == null ? "EM BRANCO" : "ERROU")
+                  ]),
+                  h("div", { key: "q", style: { fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, marginBottom: 8 } }, q.enunciado),
+                  h("div", { key: "a", style: { fontSize: 11.5, fontWeight: 700, color: C.green } }, "Correta: " + String.fromCharCode(65 + idxCorreta) + ") " + (q.alternativas[idxCorreta]?.texto ?? "")),
+                  q.escolhida != null && !q.correta
+                    ? h("div", { key: "my", style: { fontSize: 11.5, fontWeight: 700, color: C.red, marginTop: 2 } }, "Sua resposta: " + String.fromCharCode(65 + idxEscolhida) + ") " + (q.alternativas[idxEscolhida]?.texto ?? ""))
+                    : null,
+                  q.explicacao
+                    ? h(
+                        "div",
+                        { key: "c", style: { marginTop: 8, padding: "9px 11px", borderRadius: 10, background: C.chip, fontSize: 11, color: C.sub, fontWeight: 600, lineHeight: 1.5 } },
+                        "Comentário: " + q.explicacao
+                      )
+                    : null
+                ]);
+              })
+            )
       ],
       { noTab: true }
     );
   }
 
+  flashcardsPool(): Flashcard[] {
+    return this.props.dados.flashcards;
+  }
+  responderFlashcard(id: string, lembrou: boolean) {
+    this.setState({ fcIdx: this.state.fcIdx + 1, fcFlip: false, fcOk: lembrou ? this.state.fcOk + 1 : this.state.fcOk });
+    registrarRevisao(id, lembrou).catch((e) => console.error("Falha ao registrar revisão de flashcard:", e));
+  }
   scrFlashcards() {
-    const { C, h, I, card, bar, btn, ghost } = this.ui();
+    const { C, h, card, bar, btn, ghost } = this.ui();
     const S = this.state;
-    const cards = [
-      { m: "Biologia", a: "Citologia", f: "O que é osmose?", v: "Passagem de água do meio hipotônico para o hipertônico, através da membrana." },
-      { m: "Biologia", a: "Sistema Digestório", f: "O que emulsifica gorduras na digestão?", v: "A bile, produzida pelos hepatócitos e armazenada na vesícula biliar." },
-      { m: "Física", a: "Cinemática", f: "Fórmula da velocidade média", v: "Vm = ΔS / Δt" },
-      { m: "Química", a: "Estequiometria", f: "Número de Avogadro", v: "6,02 × 10²³ entidades por mol." }
-    ];
+    const cards = this.flashcardsPool();
+    if (!cards.length) {
+      return this.screenWrap([
+        this.head("Flashcards", { back: "estudos" }),
+        h("div", { key: "vazio", style: { margin: "18px 18px 0" } }, card({ textAlign: "center", padding: 26 }, "Ainda não há flashcards cadastrados para o seu curso."))
+      ]);
+    }
     if (S.fcIdx >= cards.length) {
       return this.screenWrap([
         h("div", { key: "c", style: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px", textAlign: "center" } }, [
           this.mascoteBadge("cards", 92, { anim: "dm-pop .5s ease both", bg: C.greenSoft, color: C.green, shadow: "none" }),
           h("div", { key: "t", style: { fontSize: 21, fontWeight: 900, marginTop: 18 } }, "Sessão concluída!"),
           h("div", { key: "d", style: { fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 8 } }, "Você lembrou " + S.fcOk + " de " + cards.length + " flashcards."),
-          h("div", { key: "xp", style: { marginTop: 14, fontSize: 12.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "6px 14px", borderRadius: 99 } }, "+" + (S.fcOk * 5 + 10) + " XP · revisão registrada")
+          h("div", { key: "xp", style: { marginTop: 14, fontSize: 12.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "6px 14px", borderRadius: 99 } }, "Revisão registrada no seu histórico")
         ]),
         h("div", { key: "f", style: { padding: "0 24px 20px", display: "flex", gap: 10 } }, [
           ghost("Repetir", () => this.setState({ fcIdx: 0, fcFlip: false, fcOk: 0 }), { flex: 1 }),
@@ -3228,8 +3066,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.head("Flashcards", { back: "estudos", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.fcIdx + 1 + " / " + cards.length) }),
       h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar((S.fcIdx / cards.length) * 100)),
       h("div", { key: "meta", style: { margin: "14px 18px 0", display: "flex", gap: 8 } }, [
-        h("span", { key: "m", style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "5px 11px", borderRadius: 99 } }, c2.m),
-        h("span", { key: "a", style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "5px 11px", borderRadius: 99 } }, c2.a)
+        h("span", { key: "m", style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "5px 11px", borderRadius: 99 } }, c2.materia),
+        h("span", { key: "a", style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "5px 11px", borderRadius: 99 } }, c2.assunto || c2.materia)
       ]),
       h(
         "div",
@@ -3257,14 +3095,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         },
         [
           h("div", { key: "l", style: { fontSize: 10, fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: S.fcFlip ? "rgba(255,255,255,.6)" : C.faint } }, S.fcFlip ? "Resposta" : "Pergunta"),
-          h("div", { key: "t", style: { fontSize: S.fcFlip ? 15 : 18, fontWeight: 800, lineHeight: 1.5 } }, S.fcFlip ? c2.v : c2.f),
+          h("div", { key: "t", style: { fontSize: S.fcFlip ? 15 : 18, fontWeight: 800, lineHeight: 1.5 } }, S.fcFlip ? c2.verso : c2.frente),
           h("div", { key: "h", style: { fontSize: 10.5, fontWeight: 700, color: S.fcFlip ? "rgba(255,255,255,.55)" : C.faint } }, "Toque para virar")
         ]
       ),
       S.fcFlip
         ? h("div", { key: "cta", style: { margin: "16px 18px 0", display: "flex", gap: 10 } }, [
-            ghost("Errei", () => this.setState({ fcIdx: S.fcIdx + 1, fcFlip: false }), { flex: 1, color: C.red, borderColor: C.red }),
-            btn("ACERTEI ✓", () => this.setState({ fcIdx: S.fcIdx + 1, fcFlip: false, fcOk: S.fcOk + 1 }), { flex: 1, background: C.green, boxShadow: "0 6px 18px rgba(31,165,101,.35)" })
+            ghost("Errei", () => this.responderFlashcard(c2.id, false), { flex: 1, color: C.red, borderColor: C.red }),
+            btn("ACERTEI ✓", () => this.responderFlashcard(c2.id, true), { flex: 1, background: C.green, boxShadow: "0 6px 18px rgba(31,165,101,.35)" })
           ])
         : null
     ]);
@@ -3354,6 +3192,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
 
   scrRedacao() {
     const { C, h, card, btn, iconBox } = this.ui();
+    const { creditosRedacaoDisponiveis: disp, creditosRedacaoConsumidos: cons, creditosRedacaoTotais: tot } = this.props.dados;
     const steps = [
       ["pencil", "1. Escolha um tema", "Acesse a Base de Temas (botão abaixo) ou os Modelos de Redação em Estudos."],
       ["note", "2. Escreva sua redação", "Pode ser digitada ou escrita à mão (foto legível)."],
@@ -3370,8 +3209,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           iconBox("note", "rgba(255,255,255,.16)", "#fff", 64, 28),
           h("div", { key: "t", style: { flex: 1 } }, [
             h("div", { key: "a", style: { fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase" } }, "Seus créditos de redação"),
-            h("div", { key: "b", style: { fontSize: 24, fontWeight: 900 } }, "2 disponíveis"),
-            h("div", { key: "c", style: { fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600 } }, "1 já consumido · plano Voo Guiado")
+            h("div", { key: "b", style: { fontSize: 24, fontWeight: 900 } }, disp + " disponíve" + (disp === 1 ? "l" : "is")),
+            h("div", { key: "c", style: { fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600 } }, cons + " já consumido" + (cons === 1 ? "" : "s") + " de " + tot + " incluído" + (tot === 1 ? "" : "s") + " no seu plano")
           ])
         ])
       ),

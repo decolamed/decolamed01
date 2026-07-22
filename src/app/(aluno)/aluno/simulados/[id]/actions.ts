@@ -149,3 +149,44 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
   const resultado: ResultadoSimulado = { acertos, total, nota, notaFacape, gabarito, desempenhoPorMateria };
   return resultado;
 }
+
+/**
+ * Reconstrói o gabarito comentado de uma tentativa já finalizada (histórico
+ * de simulados), sem recalcular nem gravar nada — só busca as questões de
+ * verdade no servidor e cruza com as respostas já salvas na tentativa.
+ */
+export async function buscarGabaritoTentativa(tentativaId: string): Promise<ItemGabarito[] | null> {
+  const profile = await requireAcessoAluno();
+  const supabase = createClient();
+
+  const { data: tentativa } = await supabase
+    .from("simulado_tentativas")
+    .select("simulado_id, respostas")
+    .eq("id", tentativaId)
+    .eq("aluno_id", profile.id)
+    .maybeSingle();
+  if (!tentativa) return null;
+
+  const { data: itens } = await supabase
+    .from("simulado_questoes")
+    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto)")
+    .eq("simulado_id", tentativa.simulado_id)
+    .order("ordem");
+
+  const respostas = (tentativa.respostas as Record<string, string>) ?? {};
+  return (itens ?? []).map((item: any) => {
+    const escolhida = respostas[item.questao_id] ?? null;
+    const correta = escolhida !== null && escolhida === item.questoes.resposta_correta;
+    return {
+      questaoId: item.questao_id,
+      enunciado: item.questoes.enunciado,
+      materia: item.questoes.materia,
+      assunto: item.questoes.assunto,
+      alternativas: item.questoes.alternativas,
+      respostaCorreta: item.questoes.resposta_correta,
+      escolhida,
+      correta,
+      explicacao: item.questoes.explicacao
+    };
+  });
+}

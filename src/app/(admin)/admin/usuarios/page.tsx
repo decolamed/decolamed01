@@ -8,6 +8,7 @@ import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import type { Profile } from "@/types/database";
 import {
   criarAlunoManual,
+  criarProfessorManual,
   alterarPlano,
   reenviarConvite,
   reenviarSenha,
@@ -16,13 +17,16 @@ import {
   tornarAdmin,
   removerAdmin,
   tornarParceiro,
-  removerParceiro
+  removerParceiro,
+  tornarProfessor,
+  removerProfessor
 } from "./actions";
 
 const ROLE_LABEL: Record<string, string> = {
   aluno: "Aluno",
   admin: "Administrador",
-  parceiro: "Parceiro"
+  parceiro: "Parceiro",
+  professor: "Professor"
 };
 
 export default async function AdminUsuariosPage({
@@ -59,6 +63,7 @@ export default async function AdminUsuariosPage({
           <option value="">Todos os papéis</option>
           <option value="aluno">Alunos</option>
           <option value="parceiro">Parceiros</option>
+          <option value="professor">Professores</option>
           <option value="admin">Administradores</option>
         </select>
         <SubmitButton pendingText="..." className="rounded-lg bg-navy px-5 py-3 font-semibold text-white">
@@ -211,6 +216,32 @@ export default async function AdminUsuariosPage({
                         </form>
                       )
                     )}
+
+                    {u.role !== "admin" && (
+                      u.role !== "professor" ? (
+                        <form action={tornarProfessor}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <ConfirmSubmitButton
+                            pendingText="..."
+                            confirmMessage={`Tornar ${u.nome} professor?`}
+                            className="text-navy hover:underline"
+                          >
+                            Tornar professor
+                          </ConfirmSubmitButton>
+                        </form>
+                      ) : (
+                        <form action={removerProfessor}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <ConfirmSubmitButton
+                            pendingText="..."
+                            confirmMessage={`Remover a permissão de professor de ${u.nome}?`}
+                            className="text-red-600 hover:underline"
+                          >
+                            Remover permissão de professor
+                          </ConfirmSubmitButton>
+                        </form>
+                      )
+                    )}
                   </div>
                 </td>
               </tr>
@@ -282,6 +313,36 @@ export default async function AdminUsuariosPage({
             className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
           >
             Cadastrar aluno
+          </SubmitButton>
+        </form>
+      </div>
+
+      <div className="mt-8 max-w-2xl rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Adicionar professor manualmente</h2>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Cria o acesso de login para um professor (sem matrícula/plano — é um papel organizacional para
+          identificação no painel). O professor recebe um e-mail para definir a própria senha.
+        </p>
+        <form action={criarProfessorManual} className="mt-4 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-sm font-semibold" htmlFor="prof-nome">Nome</label>
+              <input id="prof-nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold" htmlFor="prof-email">E-mail</label>
+              <input id="prof-email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold" htmlFor="prof-telefone">Telefone/WhatsApp (opcional)</label>
+              <input id="prof-telefone" name="telefone" placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
+            </div>
+          </div>
+          <SubmitButton
+            pendingText="Cadastrando..."
+            className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+          >
+            Cadastrar professor
           </SubmitButton>
         </form>
       </div>
