@@ -346,16 +346,81 @@ parceiro (`parceiro_id` + `percentual_comissao`), gerenciado em
 | `/admin/vendas` | Dashboard de vendas: resumo (total vendido, líquido, ticket médio, vendas por plano) + tabela filtrável por período/plano/status/cupom/parceiro |
 | `/admin/configuracoes` | Textos/contatos do site (chave/valor em `configuracoes`) |
 
+O visual de todo o admin (sidebar, cards, tabelas, ícones) segue o design
+"Decola Med Admin" (Claude Design) — ver `components/admin/card.tsx` e
+`components/admin/icon.tsx` para as primitivas compartilhadas. Nenhuma
+lógica de negócio das páginas acima mudou nessa restilização: mesmas
+queries, mesmas server actions, mesmo RLS/service role de sempre.
+
+#### Seções de conteúdo (`/admin/cursos`, `/cronograma`, `/questoes`,
+`/simulados`, `/flashcards`, `/pdfs`, `/links`, `/banners`, `/conquistas`,
+`/notificacoes`, `/relatos`)
+
+Novas no admin, uma para cada área de conteúdo que o app do aluno já
+mostra (ver seção 6, `decola-app.tsx`). Todas são Client Components com
+estado em memória (`useState`, dados de exemplo iguais aos do app do
+aluno) e mostram um `PreviewBanner` deixando isso explícito — é uma prévia
+funcional (todo botão/toggle/formulário reage de verdade), mas nada
+persiste: atualizar a página volta pros dados de exemplo, e não há tabela
+no banco nem conexão com o que o aluno realmente vê. Implementar de
+verdade exige criar as tabelas correspondentes (ver seção 10) e trocar o
+`useState` inicial por fetch ao Supabase + server actions, no mesmo
+padrão das páginas de gestão acima.
+
 ### Aluno — `(aluno)/aluno` (protegido, `role = aluno`, matrícula ativa e dentro do prazo)
 
 | Rota | O quê |
 |---|---|
-| `/aluno` | Home com os módulos futuros (cursos, questões, flashcards, desempenho, redação, simulados) listados como "Em breve" — ainda sem tabelas nem implementação própria |
+| `/aluno` | App gamificado completo (ver abaixo) — mapa de missões, painel de desempenho, banco de questões, simulados, flashcards, cronograma, copiloto IA, ranking, conquistas, perfil e configurações |
 | `/aluno/acesso-expirado` | Exibida quando a matrícula está vencida/bloqueada/cancelada/pendente — mensagem + CTA de renovação/suporte |
+| `/aluno/briefing`, `/copiloto`, `/cronograma`, `/desempenho`, `/flashcards`, `/questoes`, `/raio-x`, `/ranking`, `/redacao`, `/simulados[/[id]]`, `/tutorial`, `/conquistas` | Páginas reais equivalentes às telas do app gamificado, já ligadas às tabelas do banco (seção 3) via Server Actions próprias — ver ressalva importante na seção 10: **ainda não há link nenhum saindo do `decola-app.tsx` para essas rotas** |
 
 **Convenção para páginas de conteúdo futuras**: sempre chamar
 `requireAcessoAluno()` (não só `requireAluno()`) no topo da página, senão o
 bloqueio de acesso vencido não é aplicado nela.
+
+#### `/aluno` — app gamificado (`decola-app.tsx`)
+
+Porte do protótipo navegável "Decola Med App" (Claude Design) para dentro do
+Next.js: `src/app/(aluno)/aluno/decola-app.tsx` é um único Client Component de
+classe (`DecolaApp`) que renderiza ~25 telas via um dispatcher interno
+(`app()` lê `state.screen`), sem roteamento próprio do Next — é uma SPA dentro
+da rota `/aluno`. `decola-app.module.css` isola o reset visual (fonte
+Montserrat, esconde scrollbar, keyframes) para não vazar pro resto do site.
+`src/app/(aluno)/aluno/layout.tsx` não tem chrome visual (só `requireAluno()`)
+porque o app cuida da própria navegação (cabeçalho, abas, menus).
+
+`page.tsx` (server) busca `profile` (via `requireAcessoAluno()`), a matrícula
+mais recente (pra decidir a prop `plano`: `"voo-guiado"` se o nome do plano
+contém "guiado", senão `"decolando"`) e o WhatsApp configurado em
+`configuracoes` (`site.contato.whatsapp`) — usado nos botões reais de
+WhatsApp (suporte e envio de redação). Esses são os únicos dados reais
+passados como prop; o restante (XP, missões, ranking, banco de questões,
+flashcards, simulados, cronograma/briefing) usa os mesmos dados de
+demonstração e a mesma persistência em `localStorage` do protótipo original
+— ainda não existem tabelas no banco pra isso (ver seção 10). "Alterar senha"
+(`scrSenha`) é a exceção: chama `supabase.auth.updateUser()` de verdade.
+
+O que foi deixado de fora do protótipo de propósito: telas de
+login/cadastro/onboarding (a autenticação real já roda antes desta página) e
+a barra de status falsa de celular (relógio/sinal/bateria — só fazia sentido
+dentro do preview do Claude Design). As imagens do mascote
+(`assets/mascote/copiloto-*.png`) já foram incorporadas de verdade —
+`mascoteBadge(name, size, opts)` mapeia cada contexto (`bot`, `trophy`,
+`award`, `check`, `cards`, `compass`, `alert`, `laptop`, `wink`) pro PNG
+correspondente em vez de um selo de ícone genérico.
+
+**Responsivo (design "Decola Med Desktop")**: `DecolaApp.wide()` (>= 1150px
+de largura, ouvindo `resize`) troca a barra de abas + cartão de celular
+centralizado por uma sidebar fixa em tela cheia (`sidebarDesktop()`), igual
+ao design de desktop importado depois — reaproveitando exatamente as mesmas
+telas (`scrMapa`, `scrPainel` etc.), só muda o chrome ao redor
+(`screenWrap()` decide qual dos dois renderizar). Não é um port separado do
+design de desktop: aquele arquivo tinha uma tela mais enxuta (sem
+missões/hangar/anotações/redação/tutorial/config, por exemplo) que já são
+cobertas pelo `decola-app.tsx` mobile — em vez de duplicar em um componente
+paralelo (que divergiria com o tempo), a sidebar do design de desktop foi
+absorvida como só mais um breakpoint do mesmo componente.
 
 ### Parceiro — `(parceiro)/parceiro` (protegido, `role = parceiro`)
 
@@ -428,15 +493,28 @@ reais no repositório, só no `.env.example` com os nomes vazios.
 
 ## 10. O que ainda não existe (débito técnico conhecido)
 
-Coisas que aparecem mencionadas no app (`(aluno)/aluno/page.tsx`) mas ainda
-não têm tabela nem implementação:
+**Atualização importante**: as migrações 008–017 (seção 3) já criaram tabelas
+reais para banco de questões, flashcards, simulados, créditos de redação,
+ranking, cronograma e a fundação do Copiloto IA, com RLS e Server Actions
+próprias (`src/app/(admin)/admin/{questoes,flashcards,simulados,...}/actions.ts`
+e `src/app/(aluno)/aluno/{questoes,flashcards,simulados,...}/actions.ts`).
+As seções de conteúdo do admin (`/admin/cursos` até `/admin/relatos`) já
+escrevem nessas tabelas de verdade através dos `*-manager.tsx` — não são
+mais só prévias com estado em memória.
 
-- Cursos / videoaulas
-- Banco de questões
-- Flashcards
-- Painel de desempenho
-- Correção de redação
-- Simulados
+**A ressalva que falta fechar**: o app gamificado (`decola-app.tsx`, a tela
+que a maioria dos alunos efetivamente usa em `/aluno`) continua auto-contido
+— suas telas de questões/flashcards/simulados/cronograma/copiloto/ranking
+ainda leem de `data()`/`localStorage`, exatamente como antes, e **não há
+nenhum link saindo do `decola-app.tsx` para as novas rotas reais**
+(`/aluno/questoes`, `/aluno/flashcards` etc. — confirmado por busca no
+código, nenhuma referência). Ou seja, hoje existem duas implementações
+paralelas para a mesma funcionalidade: a demo dentro da SPA (o que o aluno
+realmente vê) e a real nas rotas dedicadas (alcançável só por URL direta).
+Pra unificar, cada tela dentro de `decola-app.tsx` precisa trocar sua leitura
+de `data()`/localStorage por uma chamada às Server Actions que já existem
+nessas rotas novas — o trabalho de schema/RLS/actions já está pronto, falta
+o encanamento final dentro da SPA.
 
 Outros pontos conhecidos, não bloqueantes para produção mas bons de ter no
 radar:

@@ -34,6 +34,8 @@ async function criarPlano(formData: FormData) {
     descricao: String(formData.get("descricao") ?? ""),
     preco_centavos: Math.round(Number(formData.get("preco")) * 100),
     duracao_meses: duracao ? Number(duracao) : null,
+    creditos_redacao: Number(formData.get("creditos_redacao") ?? 0),
+    tem_copiloto: formData.get("tem_copiloto") === "on",
     beneficios,
     ativo: true,
     ordem: Number(formData.get("ordem") ?? 0)
@@ -163,7 +165,20 @@ export default async function AdminPlanosPage({
               placeholder="Ex: 12"
             />
             <Field label="Ordem de exibição" name="ordem" type="number" defaultValue="0" />
+            <Field
+              label="Créditos de redação incluídos"
+              name="creditos_redacao"
+              type="number"
+              defaultValue="0"
+            />
           </div>
+          <label className="flex items-center gap-2 rounded-lg border border-navy/10 bg-navy/5 p-3 text-sm">
+            <input type="checkbox" name="tem_copiloto" />
+            <span>
+              <strong>Ativar Copiloto adaptativo</strong> — este plano terá cronograma inteligente que se
+              adapta ao desempenho do aluno.
+            </span>
+          </label>
           <div>
             <label className="text-sm font-semibold">Descrição</label>
             <textarea name="descricao" rows={2} className="mt-1 w-full rounded-lg border p-3" />

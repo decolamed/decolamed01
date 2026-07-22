@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { SubmitButton } from "@/components/admin/submit-button";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile } from "@/types/database";
 
@@ -47,19 +50,52 @@ function StatusBadge({ ativo }: { ativo: boolean }) {
   );
 }
 
-export default async function AdminDetalhesUsuarioPage({ params }: { params: { id: string } }) {
+async function registrarConsumoRedacao(alunoId: string, formData: FormData) {
+  "use server";
+  const admin = await requireAdmin();
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("redacoes_creditos_consumidos").insert({
+    aluno_id: alunoId,
+    registrado_por: admin.id,
+    observacao: String(formData.get("observacao") ?? "").trim() || null
+  });
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  if (error) {
+    redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível registrar o consumo de crédito.")}`);
+  }
+  redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Correção de redação registrada.")}`);
+}
+
+export default async function AdminDetalhesUsuarioPage({
+  params,
+  searchParams
+}: {
+  params: { id: string };
+  searchParams: { erro?: string; sucesso?: string };
+}) {
   await requireAdmin();
   const supabase = createAdminClient();
 
   const { data: usuario } = await supabase
     .from("profiles")
-    .select("*, planos(nome)")
+    .select("*, planos(nome, creditos_redacao)")
     .eq("id", params.id)
     .maybeSingle();
 
   if (!usuario) notFound();
 
-  const profile = usuario as Profile & { planos: { nome: string } | null };
+  const profile = usuario as Profile & { planos: { nome: string; creditos_redacao: number } | null };
+
+  const { data: consumidos } = await supabase
+    .from("redacoes_creditos_consumidos")
+    .select("*")
+    .eq("aluno_id", params.id)
+    .order("created_at", { ascending: false });
+  const totalConsumidos = (consumidos ?? []).length;
+  const creditosTotais = profile.planos?.creditos_redacao ?? 0;
+  const creditosDisponiveis = Math.max(0, creditosTotais - totalConsumidos);
+
+  const registrarComId = registrarConsumoRedacao.bind(null, params.id);
 
   const { data: matriculasData } = await supabase
     .from("matriculas")
@@ -121,6 +157,7 @@ export default async function AdminDetalhesUsuarioPage({ params }: { params: { i
         <h1 className="font-display text-2xl font-bold text-navy-dark">{profile.nome}</h1>
         <StatusBadge ativo={profile.ativo} />
       </div>
+      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl bg-white p-6 shadow">
@@ -189,6 +226,29 @@ export default async function AdminDetalhesUsuarioPage({ params }: { params: { i
             {pagamentos.length} pagamento{pagamentos.length !== 1 ? "s" : ""} registrado
             {pagamentos.length !== 1 ? "s" : ""}
           </p>
+        </div>
+
+        <div className="rounded-2xl bg-white p-6 shadow">
+          <p className="text-sm text-navy-dark/60">Créditos de redação</p>
+          <p className="mt-1 font-display text-2xl font-extrabold text-navy-dark">
+            {creditosDisponiveis} <span className="text-sm font-normal text-navy-dark/50">de {creditosTotais}</span>
+          </p>
+          <p className="text-sm text-navy-dark/70">{totalConsumidos} já corrigida{totalConsumidos !== 1 ? "s" : ""}</p>
+          {creditosDisponiveis > 0 && (
+            <form action={registrarComId} className="mt-3 space-y-2">
+              <input
+                name="observacao"
+                placeholder="Observação (opcional)"
+                className="w-full rounded-lg border p-2 text-sm"
+              />
+              <SubmitButton
+                pendingText="Registrando..."
+                className="w-full rounded-lg bg-orange px-3 py-2 text-sm font-semibold text-white hover:bg-orange-dark"
+              >
+                Registrar correção realizada
+              </SubmitButton>
+            </form>
+          )}
         </div>
       </div>
 

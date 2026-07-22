@@ -7,7 +7,9 @@ import { SubmitButton } from "@/components/admin/submit-button";
 
 const CAMPOS = [
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
-  { chave: "site.contato.instagram", label: "Usuário do Instagram" }
+  { chave: "site.contato.instagram", label: "Usuário do Instagram" },
+  { chave: "redacao.whatsapp", label: "WhatsApp da professora de redação (somente números, com DDI)" },
+  { chave: "redacao.base_temas_url", label: "Link da Base de Temas de redação" }
 ];
 
 async function salvarConfiguracoes(formData: FormData) {

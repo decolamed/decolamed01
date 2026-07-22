@@ -2,6 +2,7 @@
 
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { rodarCopiloto } from "@/lib/copiloto/motor";
 
 /**
  * Registra a resposta do aluno e diz se acertou — a checagem sempre roda
@@ -31,6 +32,12 @@ export async function registrarResposta(questaoId: string, alternativaEscolhida:
     alternativa_escolhida: alternativaEscolhida,
     correta
   });
+
+  // Copiloto: analisa a resposta recém-registrada e cria recomendações
+  // se necessário (não bloqueia a resposta ao aluno se falhar).
+  rodarCopiloto({ alunoId: profile.id, ultimaAcao: "questao" }).catch((e) =>
+    console.error("[copiloto] falha no ponto de entrada de questão:", e)
+  );
 
   return {
     ok: true as const,

@@ -22,7 +22,12 @@ const config: Config = {
         orange: {
           DEFAULT: "#F36C21",
           dark: "#d95a12"
-        }
+        },
+        // Cores do design Admin
+        green: "#0d8a4d",
+        red: "#c53f36",
+        "blue-soft": "#EAF3FB",
+        "green-soft": "#d8f4e6"
       },
       fontFamily: {
         display: ["var(--font-baloo)", "sans-serif"],

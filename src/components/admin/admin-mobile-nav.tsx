@@ -31,7 +31,7 @@ export function AdminMobileNav({ nav }: { nav: NavItem[] }) {
       </button>
 
       {aberto && (
-        <nav className="absolute left-0 right-0 top-[64px] z-40 flex flex-col gap-1 border-b bg-navy-dark p-4 text-white shadow-lg">
+        <nav className="absolute left-0 right-0 top-[64px] z-40 flex flex-col gap-1 border-b bg-gradient-to-b from-[#0d4a79] to-navy-dark p-4 text-white shadow-lg">
           {nav.map((item) => (
             <Link
               key={item.href}

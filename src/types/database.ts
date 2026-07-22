@@ -21,6 +21,8 @@ export interface Plano {
   beneficios: string[];
   ativo: boolean;
   ordem: number;
+  creditos_redacao: number;
+  tem_copiloto: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -164,6 +166,7 @@ export interface Questao {
   resposta_correta: string;
   explicacao: string | null;
   dificuldade: Dificuldade;
+  fonte: string | null;
   ativo: boolean;
   criado_por: string | null;
   created_at: string;
@@ -177,6 +180,75 @@ export interface RespostaAluno {
   alternativa_escolhida: string;
   correta: boolean;
   created_at: string;
+}
+
+export interface Flashcard {
+  id: string;
+  materia: string;
+  assunto: string | null;
+  frente: string;
+  verso: string;
+  ativo: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlashcardRevisao {
+  id: string;
+  aluno_id: string;
+  flashcard_id: string;
+  lembrou: boolean;
+  created_at: string;
+}
+
+export interface Simulado {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  tempo_minutos: number;
+  ativo: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimuladoQuestao {
+  id: string;
+  simulado_id: string;
+  questao_id: string;
+  ordem: number;
+}
+
+export interface SimuladoTentativa {
+  id: string;
+  aluno_id: string;
+  simulado_id: string;
+  respostas: Record<string, string>;
+  acertos: number;
+  total: number;
+  nota: number;
+  nota_facape: number | null;
+  desempenho_por_materia: Record<string, { peso: number; acertos: number; total: number; precisao: number }>;
+  iniciado_em: string;
+  finalizado_em: string | null;
+  created_at: string;
+}
+
+export interface RedacaoCreditoConsumido {
+  id: string;
+  aluno_id: string;
+  registrado_por: string | null;
+  observacao: string | null;
+  created_at: string;
+}
+
+export interface CronogramaDia {
+  id: string;
+  dia_semana: number; // 0=domingo ... 6=sábado
+  titulo: string;
+  atividades: string[];
+  updated_at: string;
 }
 
 // Tipo genérico simplificado — supabase-js aceita este formato sem exigir

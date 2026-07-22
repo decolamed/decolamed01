@@ -1,0 +1,101 @@
+/* Escopo visual do app gamificado do aluno (Decola Med App).
+   Regras isoladas nesta classe para não vazar para o resto do site — o
+   design original assumia um iframe próprio (scrollbar escondida, reset
+   de box-sizing global etc.), o que não pode ser aplicado ao documento
+   inteiro aqui. */
+
+.shell {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+.shell :global(*) {
+  box-sizing: border-box;
+}
+
+.shell :global(a) {
+  color: #f36c21;
+  text-decoration: none;
+}
+
+.shell :global(::-webkit-scrollbar) {
+  width: 0;
+  height: 0;
+}
+
+@media (min-width: 560px) {
+  .shell {
+    margin-top: 24px;
+    margin-bottom: 24px;
+    min-height: calc(100vh - 48px);
+    min-height: calc(100dvh - 48px);
+    border-radius: 28px;
+    box-shadow: 0 30px 60px rgba(1, 20, 40, 0.35);
+  }
+}
+
+/* A partir daqui o app troca o cartão de celular centralizado por uma
+   sidebar fixa em tela cheia (layout "Decola Med Desktop") — ver
+   DecolaApp.wide()/sidebarDesktop() em decola-app.tsx. */
+@media (min-width: 1150px) {
+  .shell {
+    max-width: 100%;
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+}
+
+@keyframes dm-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes dm-fly {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(2deg);
+  }
+}
+
+@keyframes dm-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dm-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
