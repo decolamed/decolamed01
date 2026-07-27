@@ -2,8 +2,20 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
-import type { CronogramaDia } from "@/types/database";
+import type { CronogramaDia, TrilhaDia } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
+
+// Quantos dias se passaram desde a entrada do aluno na plataforma até hoje,
+// contando o dia da entrada como Dia 1 (mesma numeração usada em
+// /admin/trilha e no cronograma_unificado.md original).
+function calcularDiaTrilha(createdAt: string): number {
+  const entrada = new Date(createdAt);
+  const entradaSoData = new Date(entrada.getFullYear(), entrada.getMonth(), entrada.getDate());
+  const hoje = new Date();
+  const hojeSoData = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const diffDias = Math.round((hojeSoData.getTime() - entradaSoData.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDias + 1;
+}
 
 const DIAS_SEMANA_LABEL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
@@ -50,6 +62,55 @@ export default async function AlunoCronogramaPage() {
         </div>
 
         <CronogramaCopiloto missoes={missoes ?? []} hojeStr={hojeStr} />
+      </div>
+    );
+  }
+
+  // ==== MODO TRILHA (sequência linear Dia 1..N desde a entrada do aluno) ====
+  const diaTrilha = calcularDiaTrilha(profile.created_at);
+  const { data: diaDaTrilha } = await supabase
+    .from("trilha_dias")
+    .select("*")
+    .eq("dia_numero", diaTrilha)
+    .maybeSingle();
+
+  if (diaDaTrilha) {
+    const dia = diaDaTrilha as TrilhaDia;
+    return (
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="font-display text-2xl font-bold text-navy-dark">🗓️ Trilha do Curso</h1>
+          <Link href="/aluno" className="text-sm text-navy hover:underline">
+            ← Voltar ao painel
+          </Link>
+        </div>
+
+        <div
+          className="mt-6 rounded-2xl p-6 text-white"
+          style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
+        >
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/60">Dia {dia.dia_numero} da sua trilha</p>
+          <p className="mt-1 font-display text-xl font-bold">{dia.titulo}</p>
+          {dia.itens.length > 0 ? (
+            <ul className="mt-3 space-y-1.5">
+              {dia.itens.map((item, i) =>
+                item.url ? (
+                  <li key={i}>
+                    <a href={item.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-white/85 hover:underline">
+                      <span>✈️</span> {item.titulo}
+                    </a>
+                  </li>
+                ) : (
+                  <li key={i} className="flex items-center gap-2 text-sm text-white/85">
+                    <span>✈️</span> {item.titulo}
+                  </li>
+                )
+              )}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-white/70">Dia livre — aproveite pra revisar o que quiser.</p>
+          )}
+        </div>
       </div>
     );
   }

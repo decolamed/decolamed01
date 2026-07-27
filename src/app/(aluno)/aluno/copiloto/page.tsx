@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { CheckinCard } from "@/components/aluno/checkin-card";
 import { marcarRecomendacao } from "@/app/(aluno)/aluno/copiloto/actions";
 
 const ICONE_TIPO: Record<string, string> = {
@@ -22,15 +23,25 @@ export default async function AlunoCopilotoPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  const { data } = await supabase
-    .from("copiloto_recomendacoes")
-    .select("*")
-    .eq("aluno_id", profile.id)
-    .eq("status", "pendente")
-    .order("prioridade", { ascending: false })
-    .order("gerado_em", { ascending: false });
+  const [{ data }, { data: checkins }] = await Promise.all([
+    supabase
+      .from("copiloto_recomendacoes")
+      .select("*")
+      .eq("aluno_id", profile.id)
+      .eq("status", "pendente")
+      .order("prioridade", { ascending: false })
+      .order("gerado_em", { ascending: false }),
+    supabase
+      .from("copiloto_checkin")
+      .select("id, pergunta, contexto, opcoes")
+      .eq("aluno_id", profile.id)
+      .eq("respondida", false)
+      .order("created_at", { ascending: true })
+      .limit(2) // máximo 2 perguntas simultâneas
+  ]);
 
   const recs = data ?? [];
+  const perguntasPendentes = checkins ?? [];
 
   return (
     <div>
@@ -46,7 +57,7 @@ export default async function AlunoCopilotoPage() {
         subir sua nota.
       </p>
 
-      {recs.length === 0 ? (
+      {recs.length === 0 && perguntasPendentes.length === 0 ? (
         <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow">
           <span className="text-4xl">✨</span>
           <p className="mt-3 text-navy-dark/70">
@@ -56,6 +67,10 @@ export default async function AlunoCopilotoPage() {
         </div>
       ) : (
         <div className="mt-6 space-y-3">
+          {/* Check-ins aparecem primeiro */}
+          {perguntasPendentes.map((c: any) => (
+            <CheckinCard key={c.id} checkin={c} />
+          ))}
           {recs.map((r: any) => {
             const marcarConcluida = marcarRecomendacao.bind(null, r.id, "concluida" as const);
             const descartar = marcarRecomendacao.bind(null, r.id, "descartada" as const);

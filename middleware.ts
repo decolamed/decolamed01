@@ -2,30 +2,24 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { verificarAcessoMatricula } from "@/lib/matricula/acesso";
 
-const PROTECTED_ADMIN = "/admin";
-const PROTECTED_ALUNO = "/aluno";
-const PROTECTED_PARCEIRO = "/parceiro";
-
-// Para onde mandar cada role quando ele tentar abrir uma área que não é a dele.
 const HOME_POR_ROLE: Record<string, string> = {
   admin: "/admin",
   aluno: "/aluno",
   parceiro: "/parceiro",
-  // Professor ainda não tem área própria — usa o painel administrativo
-  // (mesmo acesso do admin por enquanto, só com o rótulo/role diferente
-  // para fins de gestão de usuários).
-  professor: "/admin"
+  professor: "/professor"
 };
 
 export async function middleware(request: NextRequest) {
   const { response, user, supabase } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
-  const isAdminRoute = pathname.startsWith(PROTECTED_ADMIN);
-  const isAlunoRoute = pathname.startsWith(PROTECTED_ALUNO);
-  const isParceiroRoute = pathname.startsWith(PROTECTED_PARCEIRO);
+  const isAdminRoute = pathname.startsWith("/admin");
+  const isAlunoRoute = pathname.startsWith("/aluno");
+  const isParceiroRoute = pathname.startsWith("/parceiro");
+  const isProfessorRoute = pathname.startsWith("/professor");
+  const isPreviewRoute = pathname.startsWith("/preview-aluno");
 
-  if (!isAdminRoute && !isAlunoRoute && !isParceiroRoute) {
+  if (!isAdminRoute && !isAlunoRoute && !isParceiroRoute && !isProfessorRoute && !isPreviewRoute) {
     return response;
   }
 
@@ -41,8 +35,6 @@ export async function middleware(request: NextRequest) {
     .eq("id", user.id)
     .single();
 
-  // Conta desativada pelo admin: derruba a sessão e manda para o login com
-  // um aviso, mesmo que o cookie de sessão ainda seja válido.
   if (profile && profile.ativo === false) {
     await supabase.auth.signOut();
     const loginUrl = new URL("/login", request.url);
@@ -53,19 +45,22 @@ export async function middleware(request: NextRequest) {
   const role = profile?.role ?? "aluno";
   const home = HOME_POR_ROLE[role] ?? "/aluno";
 
-  // Cada role só acessa a própria área — tentar abrir outra redireciona
-  // automaticamente para o painel correto, conforme especificado.
-  if ((isAdminRoute && role !== "admin" && role !== "professor") ||
-      (isAlunoRoute && role !== "aluno") ||
-      (isParceiroRoute && role !== "parceiro")) {
+  // Preview: só admin e parceiro podem ver a vitrine do app do aluno.
+  if (isPreviewRoute && role !== "admin" && role !== "parceiro") {
     return NextResponse.redirect(new URL(home, request.url));
   }
 
-  // Bloqueio real de acesso vencido/bloqueado/cancelado — camada 1 (rota).
-  // Roda 100% no servidor, usando `supabase` autenticado pela sessão (RLS
-  // garante que só a própria matrícula do aluno é lida). A rota
-  // /aluno/acesso-expirado fica de fora da checagem de propósito: é para lá
-  // que redirecionamos, então incluí-la geraria um loop de redirecionamento.
+  // Cada role só acessa a própria área.
+  if (
+    (isAdminRoute && role !== "admin") ||
+    (isAlunoRoute && role !== "aluno") ||
+    (isParceiroRoute && role !== "parceiro") ||
+    (isProfessorRoute && role !== "professor")
+  ) {
+    return NextResponse.redirect(new URL(home, request.url));
+  }
+
+  // Bloqueio de acesso vencido para alunos (camada 1 — rota).
   const ROTA_ACESSO_EXPIRADO = "/aluno/acesso-expirado";
   if (isAlunoRoute && role === "aluno" && pathname !== ROTA_ACESSO_EXPIRADO) {
     const acesso = await verificarAcessoMatricula(supabase, user.id);
@@ -80,5 +75,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/aluno/:path*", "/parceiro/:path*"]
+  matcher: ["/admin/:path*", "/aluno/:path*", "/parceiro/:path*", "/professor/:path*", "/preview-aluno/:path*"]
 };

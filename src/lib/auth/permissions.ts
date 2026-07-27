@@ -29,17 +29,12 @@ function redirectSeInativo(profile: Profile) {
 }
 
 // Usado no topo de páginas do painel administrativo.
-//
-// Professor ainda não tem área própria: por enquanto usa o mesmo painel do
-// admin (mesmo acesso), só com o role diferente para fins de gestão de
-// usuários/filtros. Se um dia precisar de permissões restritas por seção,
-// é aqui que essa distinção entraria.
 export async function requireAdmin(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   redirectSeInativo(profile);
-  if (profile.role !== "admin" && profile.role !== "professor") {
-    redirect(profile.role === "parceiro" ? "/parceiro" : "/aluno");
+  if (profile.role !== "admin") {
+    redirect(profile.role === "parceiro" ? "/parceiro" : profile.role === "professor" ? "/professor" : "/aluno");
   }
   return profile;
 }
@@ -49,7 +44,8 @@ export async function requireAluno(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   redirectSeInativo(profile);
-  if (profile.role === "admin" || profile.role === "professor") redirect("/admin");
+  if (profile.role === "admin") redirect("/admin");
+  if (profile.role === "professor") redirect("/professor");
   if (profile.role === "parceiro") redirect("/parceiro");
   return profile;
 }
@@ -59,8 +55,35 @@ export async function requireParceiro(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   redirectSeInativo(profile);
-  if (profile.role === "admin" || profile.role === "professor") redirect("/admin");
+  if (profile.role === "admin") redirect("/admin");
+  if (profile.role === "professor") redirect("/professor");
   if (profile.role !== "parceiro") redirect("/aluno");
+  return profile;
+}
+
+// Usado no topo da página do painel do professor (redação).
+export async function requireProfessor(): Promise<Profile> {
+  const profile = await getCurrentProfile();
+  if (!profile) redirect("/login");
+  redirectSeInativo(profile);
+  if (profile.role === "admin") redirect("/admin");
+  if (profile.role === "parceiro") redirect("/parceiro");
+  if (profile.role !== "professor") redirect("/aluno");
+  return profile;
+}
+
+// Usado em /preview-aluno — a vitrine somente-leitura do app do aluno
+// (botão "Ver app do aluno" do admin, "Demonstração grátis" do parceiro).
+// Fica fora dos prefixos /admin, /aluno e /parceiro de propósito (o
+// middleware bloquearia qualquer papel que não fosse exatamente dono
+// daquele prefixo), então a checagem de permissão é só esta função.
+export async function requirePreviewAluno(): Promise<Profile> {
+  const profile = await getCurrentProfile();
+  if (!profile) redirect("/login");
+  redirectSeInativo(profile);
+  if (profile.role !== "admin" && profile.role !== "professor" && profile.role !== "parceiro") {
+    redirect("/aluno");
+  }
   return profile;
 }
 

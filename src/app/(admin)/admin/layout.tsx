@@ -28,8 +28,10 @@ const GRUPO_GESTAO = [
 const GRUPO_CONTEUDO = [
   { href: "/admin/cursos", label: "Cursos & Aulas", icon: "video" },
   { href: "/admin/cronograma", label: "Cronograma & Missões", icon: "calendar" },
+  { href: "/admin/trilha", label: "Trilha do Curso", icon: "calendar" },
   { href: "/admin/questoes", label: "Banco de Questões", icon: "target" },
   { href: "/admin/simulados", label: "Simulados", icon: "file" },
+  { href: "/admin/atividades", label: "Atividades", icon: "target" },
   { href: "/admin/flashcards", label: "Flashcards", icon: "cards" },
   { href: "/admin/pdfs", label: "PDFs", icon: "file" },
   { href: "/admin/links", label: "Links Externos", icon: "link2" },
@@ -77,7 +79,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </nav>
         <div className="flex-1" />
         <Link
-          href="/aluno"
+          href="/preview-aluno"
+          target="_blank"
           className="mb-1.5 flex items-center gap-2.5 rounded-[11px] bg-white/[0.08] px-3 py-2.5 text-[11.5px] font-bold text-white"
         >
           <Icon name="plane" size={15} className="text-[#F8935A]" />

@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 const HOME_POR_ROLE: Record<string, string> = {
   admin: "/admin",
   aluno: "/aluno",
-  parceiro: "/parceiro"
+  parceiro: "/parceiro",
+  professor: "/professor"
 };
 
 export function LoginForm() {

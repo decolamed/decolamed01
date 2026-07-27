@@ -97,6 +97,11 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
             <Card key={card.id}>
               <div className="mb-2.5 flex items-center gap-2">
                 <span className="rounded-full bg-green/10 px-2.5 py-1 text-[10px] font-extrabold text-green">{card.materia}</span>
+                {(card as any).gerado_por_ia && (
+                  <span className="rounded-full bg-orange/10 px-2.5 py-1 text-[10px] font-extrabold text-orange-dark" title="Gerado pelo Copiloto via Gemini">
+                    🤖 IA
+                  </span>
+                )}
                 {card.assunto && <span className="rounded-full bg-navy-dark/5 px-2.5 py-1 text-[10px] font-bold text-navy-dark/60">{card.assunto}</span>}
                 <div className="flex-1" />
                 {editing ? (

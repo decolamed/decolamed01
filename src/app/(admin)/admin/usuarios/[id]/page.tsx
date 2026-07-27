@@ -39,10 +39,7 @@ const EVENTO_LABEL: Record<string, string> = {
   usuario_promovido_admin: "Promovido a administrador",
   usuario_rebaixado_admin: "Permissão de administrador removida",
   usuario_promovido_parceiro: "Promovido a parceiro",
-  usuario_rebaixado_parceiro: "Permissão de parceiro removida",
-  professor_criado_manual: "Cadastrado manualmente como professor",
-  usuario_promovido_professor: "Promovido a professor",
-  usuario_rebaixado_professor: "Permissão de professor removida"
+  usuario_rebaixado_parceiro: "Permissão de parceiro removida"
 };
 
 function StatusBadge({ ativo }: { ativo: boolean }) {

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 
@@ -14,18 +15,21 @@ async function salvarPeso(formData: FormData) {
 
   const materia = String(formData.get("materia") ?? "").trim();
   const peso = Number(formData.get("peso") ?? 1);
+  const qtdQuestoes = Number(formData.get("qtd_questoes") ?? 10);
+  const totalQuestoesProva = Number(formData.get("total_questoes_prova") ?? 50);
   const observacao = String(formData.get("observacao") ?? "").trim() || null;
 
   if (!materia) redirect(`${PATH}?erro=${encodeURIComponent("Informe o nome da matéria.")}`);
-  if (isNaN(peso) || peso < 0) redirect(`${PATH}?erro=${encodeURIComponent("O peso precisa ser um número maior ou igual a 0.")}`);
+  if (isNaN(peso) || peso < 0) redirect(`${PATH}?erro=${encodeURIComponent("Peso precisa ser ≥ 0.")}`);
+  if (isNaN(qtdQuestoes) || qtdQuestoes < 0) redirect(`${PATH}?erro=${encodeURIComponent("Qtd. de questões precisa ser ≥ 0.")}`);
 
   const { error } = await supabase.from("materias_peso").upsert(
-    { materia, peso, observacao },
+    { materia, peso, qtd_questoes: qtdQuestoes, total_questoes_prova: totalQuestoesProva, observacao },
     { onConflict: "materia" }
   );
   revalidatePath(PATH);
-  if (error) redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível salvar o peso.")}`);
-  redirect(`${PATH}?sucesso=${encodeURIComponent(`Peso de ${materia} salvo.`)}`);
+  if (error) redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível salvar.")}`);
+  redirect(`${PATH}?sucesso=${encodeURIComponent(`${materia} salva — algoritmo atualizado automaticamente.`)}`);
 }
 
 async function excluirPeso(formData: FormData) {
@@ -43,75 +47,125 @@ export default async function AdminPesosPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data } = await supabase.from("materias_peso").select("*").order("peso", { ascending: false });
+  const { data } = await supabase
+    .from("materias_peso")
+    .select("*")
+    .order("pontos_potenciais", { ascending: false })
+    .order("materia");
+
+  // Calcula relevância pra exibir na tabela
   const lista = data ?? [];
+  const totalPontos = lista.reduce((s: number, p: any) => s + (p.peso * p.qtd_questoes), 0);
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Pesos oficiais da FACAPE</h1>
-      <p className="mt-1 text-sm text-navy-dark/60">
-        Esses pesos são usados pelo Copiloto (e no cálculo de nota do simulado) para priorizar o que o aluno
-        deve revisar. Consulte a tabela oficial mais recente da FACAPE e mantenha os valores atualizados.
-      </p>
+      <PageHeader
+        title="Pesos e Questões — FACAPE"
+        subtitle="Edite o peso e a quantidade de questões de cada matéria. O algoritmo do Copiloto recalcula a relevância automaticamente."
+      />
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <div className="mt-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
+      {/* Explicação da fórmula */}
+      <Card className="mb-4 border-l-4 border-orange">
+        <p className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Como o algoritmo calcula a relevância</p>
+        <p className="mt-1 text-sm font-semibold text-navy-dark">
+          relevância = (peso × qtd. questões) ÷ soma de todos os (peso × qtd. questões)
+        </p>
+        <p className="mt-1 text-xs text-navy-dark/60">
+          Exemplo: Português (peso 2 × 10 questões = 20 pts) e Física (peso 2 × 5 questões = 10 pts) — mesmo peso,
+          mas Português tem o dobro de relevância na prova. O algoritmo prioriza corretamente.
+        </p>
+      </Card>
+
+      {/* Tabela atual */}
+      <div className="mb-6 overflow-x-auto rounded-2xl bg-white shadow">
+        <table className="w-full text-sm">
+          <thead className="bg-navy/5">
             <tr>
-              <th className="p-3">Matéria</th>
-              <th className="p-3">Peso</th>
-              <th className="p-3">Observação</th>
-              <th className="p-3">Ações</th>
+              <th className="p-3 text-left text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Matéria</th>
+              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Peso</th>
+              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Qtd. Questões</th>
+              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Pontos Potenciais</th>
+              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Relevância %</th>
+              <th className="p-3 text-left text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Observação</th>
+              <th className="p-3" />
             </tr>
           </thead>
           <tbody>
-            {lista.map((p: any) => (
-              <tr key={p.materia} className="border-t">
-                <td className="p-3 font-semibold">{p.materia}</td>
-                <td className="p-3">{p.peso}</td>
-                <td className="p-3 text-navy-dark/60">{p.observacao ?? "—"}</td>
-                <td className="p-3">
-                  <form action={excluirPeso}>
-                    <input type="hidden" name="materia" value={p.materia} />
-                    <SubmitButton pendingText="..." className="text-red-600 hover:underline">Excluir</SubmitButton>
-                  </form>
-                </td>
-              </tr>
-            ))}
+            {lista.map((p: any) => {
+              const pontos = p.peso * p.qtd_questoes;
+              const relevancia = totalPontos > 0 ? ((pontos / totalPontos) * 100).toFixed(1) : "0.0";
+              return (
+                <tr key={p.materia} className="border-t">
+                  <td className="p-3 font-bold text-navy-dark">{p.materia}</td>
+                  <td className="p-3 text-center text-navy-dark">{p.peso}</td>
+                  <td className="p-3 text-center text-navy-dark">{p.qtd_questoes}</td>
+                  <td className="p-3 text-center font-bold text-navy-dark">{pontos}</td>
+                  <td className="p-3 text-center">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-extrabold ${
+                      Number(relevancia) >= 25 ? "bg-red/10 text-red" :
+                      Number(relevancia) >= 15 ? "bg-orange/10 text-orange-dark" :
+                      "bg-navy/5 text-navy-dark/60"
+                    }`}>
+                      {relevancia}%
+                    </span>
+                  </td>
+                  <td className="p-3 text-xs text-navy-dark/50">{p.observacao ?? "—"}</td>
+                  <td className="p-3">
+                    <form action={excluirPeso}>
+                      <input type="hidden" name="materia" value={p.materia} />
+                      <SubmitButton pendingText="..." className="text-xs text-red hover:underline">
+                        Excluir
+                      </SubmitButton>
+                    </form>
+                  </td>
+                </tr>
+              );
+            })}
             {lista.length === 0 && (
-              <tr><td colSpan={4} className="p-6 text-center text-navy-dark/50">Nenhum peso configurado ainda.</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-sm text-navy-dark/50">Nenhuma matéria cadastrada.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <div className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">
-        <h2 className="font-display font-bold text-navy-dark">Adicionar / atualizar peso</h2>
-        <p className="mt-1 text-xs text-navy-dark/50">
-          Se a matéria já existir, o peso será atualizado; senão, criada.
+      {/* Formulário de adição/atualização */}
+      <Card className="max-w-xl">
+        <h2 className="text-sm font-extrabold text-navy-dark">Adicionar / atualizar matéria</h2>
+        <p className="mt-0.5 text-xs text-navy-dark/50">
+          Se a matéria já existir, os valores são atualizados — o algoritmo do Copiloto ajusta automaticamente.
         </p>
-        <form action={salvarPeso} className="mt-4 space-y-4">
-          <div>
-            <label className="text-sm font-semibold" htmlFor="materia">Matéria</label>
-            <input id="materia" name="materia" required placeholder="Biologia" className="mt-1 w-full rounded-lg border p-3" />
+        <form action={salvarPeso} className="mt-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Matéria</label>
+              <input name="materia" required placeholder="Biologia" className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
+            </div>
+            <div>
+              <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Peso (multiplicador por questão)</label>
+              <input name="peso" type="number" step="0.5" min="0" defaultValue="1" required className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
+            </div>
+            <div>
+              <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Qtd. de questões na prova</label>
+              <input name="qtd_questoes" type="number" min="0" defaultValue="10" required className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
+            </div>
+            <div>
+              <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Total de questões objetivas da prova</label>
+              <input name="total_questoes_prova" type="number" min="1" defaultValue="50" required className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
+            </div>
           </div>
           <div>
-            <label className="text-sm font-semibold" htmlFor="peso">Peso (ex: 2.0)</label>
-            <input id="peso" name="peso" type="number" step="0.1" min="0" defaultValue="1.0" required className="mt-1 w-full rounded-lg border p-3" />
-          </div>
-          <div>
-            <label className="text-sm font-semibold" htmlFor="observacao">Observação (opcional)</label>
-            <input id="observacao" name="observacao" className="mt-1 w-full rounded-lg border p-3" />
+            <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Observação (opcional)</label>
+            <input name="observacao" className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-semibold text-navy-dark outline-none focus:border-navy" />
           </div>
           <SubmitButton
             pendingText="Salvando..."
-            className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+            className="rounded-[11px] bg-orange px-6 py-3 text-xs font-bold uppercase tracking-wide text-white hover:bg-orange-dark"
           >
-            Salvar peso
+            Salvar
           </SubmitButton>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

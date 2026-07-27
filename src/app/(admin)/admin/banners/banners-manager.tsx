@@ -17,7 +17,7 @@ const CORES = [
 export function BannersManager({ banners: inicial }: { banners: any[] }) {
   const [banners, setBanners] = useState(inicial);
   const [editId, setEditId] = useState<string | "novo" | null>(null);
-  const [draft, setDraft] = useState<{ titulo: string; link: string; bg: string; ativo: boolean }>({ titulo: "", link: "", bg: CORES[0][1], ativo: false });
+  const [draft, setDraft] = useState({ titulo: "", link: "", bg: CORES[0][1], ativo: false });
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
 

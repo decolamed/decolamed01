@@ -189,6 +189,7 @@ export interface Flashcard {
   frente: string;
   verso: string;
   ativo: boolean;
+  gerado_por_ia: boolean;
   criado_por: string | null;
   created_at: string;
   updated_at: string;
@@ -220,6 +221,42 @@ export interface SimuladoQuestao {
   ordem: number;
 }
 
+export type AtividadeGabaritoModo = "imediato" | "apos_envio";
+
+export interface Atividade {
+  id: string;
+  titulo: string;
+  materia: string | null;
+  descricao: string | null;
+  gabarito_modo: AtividadeGabaritoModo;
+  tempo_limite_minutos: number | null;
+  peso_facape: number;
+  ativo: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AtividadeQuestao {
+  id: string;
+  atividade_id: string;
+  questao_id: string;
+  ordem: number;
+}
+
+export interface AtividadeTentativa {
+  id: string;
+  aluno_id: string;
+  atividade_id: string;
+  respostas: Record<string, string>;
+  acertos: number;
+  total: number;
+  nota: number;
+  iniciado_em: string;
+  finalizado_em: string | null;
+  created_at: string;
+}
+
 export interface SimuladoTentativa {
   id: string;
   aluno_id: string;
@@ -243,11 +280,48 @@ export interface RedacaoCreditoConsumido {
   created_at: string;
 }
 
+export type CronogramaItemTipo = "aula" | "pdf" | "link" | "questoes" | "simulado" | "flashcards";
+
+export interface CronogramaItem {
+  tipo: CronogramaItemTipo;
+  ref_id: string | null; // id do conteúdo/simulado/link referenciado; null para "questoes" (usa só a matéria)
+  url: string | null; // só pra aula/pdf/link — evita nova consulta pra abrir o conteúdo
+  materia: string | null;
+  titulo: string;
+}
+
 export interface CronogramaDia {
   id: string;
   dia_semana: number; // 0=domingo ... 6=sábado
   titulo: string;
   atividades: string[];
+  itens: CronogramaItem[];
+  updated_at: string;
+}
+
+// Trilha do curso: sequência linear de dias (Dia 1, Dia 2, ...) contados a
+// partir da entrada do aluno na plataforma — diferente do cronograma_dias
+// acima, que é um ciclo semanal fixo (dia_semana 0-6) igual pra sempre.
+// Reaproveita o formato de CronogramaItem, com tipos extras pra atividades
+// que ainda não têm conteúdo estruturado no banco (leitura de livro,
+// redação, revisão geral).
+export type TrilhaItemTipo = CronogramaItemTipo | "revisao" | "redacao" | "leitura" | "atividade";
+
+export interface TrilhaItem {
+  tipo: TrilhaItemTipo;
+  ref_id: string | null;
+  url: string | null;
+  materia: string | null;
+  titulo: string;
+}
+
+export interface TrilhaDia {
+  id: string;
+  dia_numero: number; // 1, 2, 3... contado a partir da entrada do aluno
+  titulo: string;
+  atividades: string[];
+  itens: TrilhaItem[];
+  created_at: string;
   updated_at: string;
 }
 
@@ -323,6 +397,37 @@ export interface Banner {
   titulo: string;
   link: string | null;
   bg: string;
+  ativo: boolean;
+  ordem: number;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ConteudoBibliotecaTipo = "aula" | "artigo" | "pdf" | "video_externo";
+
+export interface ConteudoBiblioteca {
+  id: string;
+  tipo: ConteudoBibliotecaTipo;
+  titulo: string;
+  materia: string;
+  assunto: string | null;
+  url: string | null;
+  duracao_minutos: number;
+  descricao: string | null;
+  ativo: boolean;
+  gerado_por_ia: boolean;
+  metadados_youtube: Record<string, unknown> | null;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LinkExterno {
+  id: string;
+  titulo: string;
+  url: string;
+  categoria: string | null;
   ativo: boolean;
   ordem: number;
   criado_por: string | null;

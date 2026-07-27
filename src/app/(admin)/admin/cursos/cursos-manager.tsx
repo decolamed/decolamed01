@@ -70,7 +70,10 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-bold text-navy-dark">{a.titulo}</p>
-                    <p className="text-xs font-semibold text-navy-dark/40">{a.assunto ? `${a.assunto} · ` : ""}{a.duracao_minutos} min</p>
+                    <p className="text-xs font-semibold text-navy-dark/40">
+                      {a.assunto ? `${a.assunto} · ` : ""}{a.duracao_minutos} min
+                      {a.gerado_por_ia && <span className="ml-1.5 rounded-full bg-orange/10 px-2 py-0.5 text-[10px] font-extrabold text-orange-dark">🤖 IA · YouTube verificado</span>}
+                    </p>
                   </div>
                   <Toggle on={a.ativo} onClick={() => alternar(a.id, a.ativo)} />
                   <button type="button" onClick={() => excluir(a.id)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-red/10 text-red" title="Excluir">

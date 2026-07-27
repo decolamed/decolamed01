@@ -346,108 +346,16 @@ parceiro (`parceiro_id` + `percentual_comissao`), gerenciado em
 | `/admin/vendas` | Dashboard de vendas: resumo (total vendido, líquido, ticket médio, vendas por plano) + tabela filtrável por período/plano/status/cupom/parceiro |
 | `/admin/configuracoes` | Textos/contatos do site (chave/valor em `configuracoes`) |
 
-O visual de todo o admin (sidebar, cards, tabelas, ícones) segue o design
-"Decola Med Admin" (Claude Design) — ver `components/admin/card.tsx` e
-`components/admin/icon.tsx` para as primitivas compartilhadas. Nenhuma
-lógica de negócio das páginas acima mudou nessa restilização: mesmas
-queries, mesmas server actions, mesmo RLS/service role de sempre.
-
-#### Seções de conteúdo (`/admin/cursos`, `/cronograma`, `/questoes`,
-`/simulados`, `/flashcards`, `/pdfs`, `/links`, `/banners`, `/conquistas`,
-`/notificacoes`, `/relatos`)
-
-Novas no admin, uma para cada área de conteúdo que o app do aluno já
-mostra (ver seção 6, `decola-app.tsx`). Todas são Client Components com
-estado em memória (`useState`, dados de exemplo iguais aos do app do
-aluno) e mostram um `PreviewBanner` deixando isso explícito — é uma prévia
-funcional (todo botão/toggle/formulário reage de verdade), mas nada
-persiste: atualizar a página volta pros dados de exemplo, e não há tabela
-no banco nem conexão com o que o aluno realmente vê. Implementar de
-verdade exige criar as tabelas correspondentes (ver seção 10) e trocar o
-`useState` inicial por fetch ao Supabase + server actions, no mesmo
-padrão das páginas de gestão acima.
-
 ### Aluno — `(aluno)/aluno` (protegido, `role = aluno`, matrícula ativa e dentro do prazo)
 
 | Rota | O quê |
 |---|---|
-| `/aluno` | App gamificado completo (ver abaixo) — mapa de missões, painel de desempenho, banco de questões, simulados, flashcards, cronograma, copiloto IA, ranking, conquistas, perfil e configurações |
+| `/aluno` | Home com os módulos futuros (cursos, questões, flashcards, desempenho, redação, simulados) listados como "Em breve" — ainda sem tabelas nem implementação própria |
 | `/aluno/acesso-expirado` | Exibida quando a matrícula está vencida/bloqueada/cancelada/pendente — mensagem + CTA de renovação/suporte |
-| `/aluno/briefing`, `/copiloto`, `/cronograma`, `/desempenho`, `/flashcards`, `/questoes`, `/raio-x`, `/ranking`, `/redacao`, `/simulados[/[id]]`, `/tutorial`, `/conquistas` | Páginas reais equivalentes às telas do app gamificado, já ligadas às tabelas do banco (seção 3) via Server Actions próprias — ver ressalva importante na seção 10: **ainda não há link nenhum saindo do `decola-app.tsx` para essas rotas** |
 
 **Convenção para páginas de conteúdo futuras**: sempre chamar
 `requireAcessoAluno()` (não só `requireAluno()`) no topo da página, senão o
 bloqueio de acesso vencido não é aplicado nela.
-
-#### `/aluno` — app gamificado (`decola-app.tsx`)
-
-Porte do protótipo navegável "Decola Med App" (Claude Design) para dentro do
-Next.js: `src/app/(aluno)/aluno/decola-app.tsx` é um único Client Component de
-classe (`DecolaApp`) que renderiza ~25 telas via um dispatcher interno
-(`app()` lê `state.screen`), sem roteamento próprio do Next — é uma SPA dentro
-da rota `/aluno`. `decola-app.module.css` isola o reset visual (fonte
-Montserrat, esconde scrollbar, keyframes) para não vazar pro resto do site.
-`src/app/(aluno)/aluno/layout.tsx` não tem chrome visual (só `requireAluno()`)
-porque o app cuida da própria navegação (cabeçalho, abas, menus).
-
-`page.tsx` (server) busca, em paralelo, tudo que o app precisa direto das
-tabelas reais (seção 3): `profile`, matrícula/plano, WhatsApp configurado,
-banco de questões e flashcards ativos, simulados + `simulado_questoes` (sem
-`resposta_correta` — nunca vai pra props de Client Component, só o servidor
-vê isso), tentativas de simulado, `ranking_geral`, `respostas_aluno` +
-`flashcard_revisoes` (agrupadas por matéria), `materias_peso`,
-`aluno_missoes`/`cronograma_dias` (dependendo de `planos.tem_copiloto`),
-`copiloto_recomendacoes` pendentes, `notificacoes`, `aluno_briefing` e
-créditos de redação — tudo isso vira o prop único `dados` (`DecolaAppDados`
-em `decola-app.tsx`), montado por `data()`. **Não existe mais estado de
-demonstração nem persistência em `localStorage` para dado acadêmico** —
-questões, flashcards, simulados, ranking, conquistas, missões, cronograma,
-copiloto, notificações, redação e briefing são 100% lidos e gravados nas
-tabelas reais.
-
-Cada mutação chama a mesma Server Action que a rota dedicada equivalente
-usa (`registrarResposta`, `registrarRevisao`, `submeterSimulado`,
-`marcarMissaoConcluida`, `marcarRecomendacao`, `marcarNotificacaoLida`,
-`salvarBriefing`) — nenhuma lógica de gravação foi duplicada; o app
-gamificado e as rotas `/aluno/questoes`, `/aluno/flashcards` etc. reusam
-exatamente as mesmas `actions.ts`. A correção de questões/simulados nunca
-acontece no cliente: `mapQuestao()` remove `resposta_correta` do que vai pra
-tela, e só depois de `registrarResposta()`/`submeterSimulado()` responderem
-é que a UI sabe o que estava certo — o mesmo padrão de segurança das rotas
-dedicadas.
-
-Duas peças ficaram de fora desta integração, de propósito:
-- **Hangar/Estudos** continuam sendo um menu estático (contadores como "86
-  aulas", "215 materiais") — não há tabela de aulas/vídeos/PDFs com conteúdo
-  navegável hoje; o único contador real ali é o de flashcards.
-- **Conquistas** (badges) são calculadas em `badgesReais()`, espelhando
-  exatamente os critérios de `/aluno/conquistas/page.tsx` — não há tabela de
-  conquistas própria (nem precisa: é só uma leitura derivada dos contadores
-  reais).
-
-"Alterar senha" (`scrSenha`) continua chamando `supabase.auth.updateUser()`
-de verdade, como antes.
-
-O que foi deixado de fora do protótipo de propósito: telas de
-login/cadastro/onboarding (a autenticação real já roda antes desta página) e
-a barra de status falsa de celular (relógio/sinal/bateria — só fazia sentido
-dentro do preview do Claude Design). As imagens do mascote
-(`assets/mascote/copiloto-*.png`) já foram incorporadas de verdade —
-`mascoteBadge(name, size, opts)` mapeia cada contexto (`bot`, `trophy`,
-`award`, `check`, `cards`, `compass`, `alert`, `laptop`, `wink`) pro PNG
-correspondente em vez de um selo de ícone genérico.
-
-**Responsivo (design "Decola Med Desktop")**: `DecolaApp.wide()` (>= 1150px
-de largura, ouvindo `resize`) troca a barra de abas + cartão de celular
-centralizado por uma sidebar fixa em tela cheia (`sidebarDesktop()`), igual
-ao design de desktop importado depois — reaproveitando exatamente as mesmas
-telas (`scrMapa`, `scrPainel` etc.), só muda o chrome ao redor
-(`screenWrap()` decide qual dos dois renderizar). Não é um port separado do
-design de desktop: aquele arquivo tinha uma tela mais enxuta (sem
-missões/hangar/anotações/redação/tutorial/config, por exemplo) que já são
-cobertas pelo `decola-app.tsx` mobile — em vez de duplicar em um componente
-paralelo (que divergiria com o tempo), a sidebar do design de desktop foi
-absorvida como só mais um breakpoint do mesmo componente.
 
 ### Parceiro — `(parceiro)/parceiro` (protegido, `role = parceiro`)
 
@@ -520,63 +428,18 @@ reais no repositório, só no `.env.example` com os nomes vazios.
 
 ## 10. O que ainda não existe (débito técnico conhecido)
 
-**Atualização importante**: as migrações 008–017 (seção 3) já criaram tabelas
-reais para banco de questões, flashcards, simulados, créditos de redação,
-ranking, cronograma e a fundação do Copiloto IA, com RLS e Server Actions
-próprias (`src/app/(admin)/admin/{questoes,flashcards,simulados,...}/actions.ts`
-e `src/app/(aluno)/aluno/{questoes,flashcards,simulados,...}/actions.ts`).
-As seções de conteúdo do admin (`/admin/cursos` até `/admin/relatos`) já
-escrevem nessas tabelas de verdade através dos `*-manager.tsx` — não são
-mais só prévias com estado em memória.
+Coisas que aparecem mencionadas no app (`(aluno)/aluno/page.tsx`) mas ainda
+não têm tabela nem implementação:
 
-**Atualização (resolvido)**: o app gamificado (`decola-app.tsx`) já foi
-integrado à infraestrutura real — ver a subseção `/aluno` — app gamificado
-acima. Não há mais duas implementações paralelas: a SPA e as rotas
-dedicadas (`/aluno/questoes`, `/aluno/flashcards` etc.) chamam as mesmas
-Server Actions e leem das mesmas tabelas. As rotas dedicadas continuam
-existindo como pontos de entrada alternativos (por exemplo, para links
-enviados pelo Copiloto) e são úteis pra testar uma funcionalidade
-isoladamente, mas não são mais a única forma real de usar o sistema.
+- Cursos / videoaulas
+- Banco de questões
+- Flashcards
+- Painel de desempenho
+- Correção de redação
+- Simulados
 
-**Atualização (Parte 1 concluída)**: do levantamento de 15 pontos do
-protótipo original, os itens abaixo já foram resolvidos:
-
-- **Papel "Professor"**: migração `018_professor_role.sql` adicionou
-  `professor` ao enum `user_role`. `/admin/usuarios` já filtra por ele, tem
-  formulário próprio de cadastro manual (`criarProfessorManual`, sem
-  matrícula/plano — só cria o login) e ações `tornarProfessor`/
-  `removerProfessor`. **Decisão de escopo**: professor ainda não tem área
-  própria no app — por enquanto usa o mesmo painel do admin (mesmo nível de
-  acesso), só com o role diferente para fins de gestão/relatório. Isso evita
-  um loop de redirecionamento no middleware (todo role precisa de um "home"
-  válido) sem inventar uma área nova fora do que foi pedido. Se no futuro
-  for necessário restringir o que um professor pode ver dentro do admin,
-  é em `requireAdmin()` (`src/lib/auth/permissions.ts`) e no middleware
-  (`middleware.ts`, raiz do projeto) que essa distinção entra.
-- **Banners reais no app do aluno**: `bannerRow()` em `decola-app.tsx` lia
-  um array hardcoded de 3 banners fake — agora lê de `this.props.dados.banners`
-  (tabela `banners`, já com CRUD real em `/admin/banners`). Convenção do
-  campo `link`: valores começando com `"app/"` navegam para dentro do
-  próprio app (`irParaLinkBanner()` faz `nav(link.slice(4))`); qualquer outro
-  valor abre como link externo no browser in-app.
-- **Notificações**: fluxo admin → aluno (`/admin/notificacoes` →
-  `enviarNotificacao` → tabela `notificacoes` → RLS `usuario_id = auth.uid()
-  OR is_admin()`) já estava correto, só foi verificado. Foi adicionado um
-  "Histórico de envios" agregando `notificacoes` por (título, `created_at`)
-  já que o envio insere uma linha por destinatário e não existe uma tabela
-  de campanha própria.
-- **Relatos de erro**: fluxo aluno → admin (`relato-actions.ts` →
-  `/admin/relatos/actions.ts`) já estava correto ponta a ponta, verificado
-  sem necessidade de mudança.
-- **Responsividade tablet**: adicionado um breakpoint intermediário em
-  `decola-app.module.css` (`min-width: 768px`, antes do salto direto para a
-  sidebar de desktop em 1150px) que aumenta a largura do cartão para 680px
-  em vez de deixar o cartão de celular de 480px flutuando no meio de um
-  viewport bem maior. O chrome continua sendo o de mobile (barra de abas)
-  nessa faixa — criar uma terceira variante de chrome (tipo a sidebar do
-  desktop) só para tablet foi considerado desproporcional ao ganho.
-
-Pontos que continuam pendentes (Parte 2, ainda não iniciada):
+Outros pontos conhecidos, não bloqueantes para produção mas bons de ter no
+radar:
 
 - **Renovação de plano por um aluno já existente**: hoje o webhook do Asaas
   assume que todo `pre_cadastro` novo é um aluno novo (`inviteUserByEmail`).
@@ -588,26 +451,5 @@ Pontos que continuam pendentes (Parte 2, ainda não iniciada):
 - **Pagamento de comissão ao parceiro**: `comissoes_parceiro` já tem o
   campo `status` (`pendente`/`paga`/`cancelada`) e `data_pagamento`, mas
   ainda não existe UI para o admin marcar uma comissão como paga.
-- **Checkout Asaas retornando erro ao gerar cobrança**: fluxo de criação de
-  plano → link → matrícula está com uma falha em produção ("Não foi possível
-  gerar a cobrança") a diagnosticar — precisa checar logs reais do Asaas
-  (`get_logs`/credenciais/sandbox vs. produção), não só o código.
-- **Importação em lote** (questões via PDF/texto, aulas via links do
-  YouTube, flashcards via PDF/texto): não implementado. É um recurso novo
-  (parsing de documento/vídeo), não uma reconexão de algo que já existia —
-  precisa de uma biblioteca de parsing de PDF e decisão de produto sobre
-  como validar o resultado antes de salvar.
-- **Cronograma dinâmico (dias/missões arbitrários com anexos variados)**:
-  o cronograma admin atual (`cronograma_dias`) é uma semana fixa de 7 linhas;
-  `aluno_missoes` já suporta datas arbitrárias e missões individuais, mas
-  não há UI no admin para o admin compor um cronograma de N dias anexando
-  aulas/questões/simulados/flashcards/redações a cada missão.
-- **Módulo de "Atividades"** (avaliação configurável a partir de questões,
-  com opções de gabarito imediato/no final, peso FACAPE, tempo limite):
-  não existe uma entidade própria — hoje o mais próximo é `simulados`.
-- **Onboarding de primeiro acesso + instalação PWA**: `TutorialSlideboard`
-  já existe e explica a plataforma; o botão "Instalar aplicativo" ainda não
-  foi conectado ao evento `beforeinstallprompt` do navegador.
-- **Perfil individual do aluno no admin com cronograma próprio editável**:
-  `/admin/usuarios/[id]` mostra dados cadastrais, mas não o cronograma real
-  daquele aluno nem permite ajustá-lo sem afetar o cronograma geral.
+- **Notificações**: tabela `notificacoes` existe e tem RLS, mas não há
+  nenhuma tela que grave ou exiba notificações ainda.

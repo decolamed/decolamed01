@@ -1,91 +1,45 @@
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
-import { PageHeader, Card } from "@/components/admin/card";
-import { AdminAlert } from "@/components/admin/admin-alert";
-import { SubmitButton } from "@/components/admin/submit-button";
-import type { CronogramaDia } from "@/types/database";
+import { CronogramaManager } from "./cronograma-manager";
+import type { CronogramaDia, ConteudoBiblioteca, LinkExterno, Simulado } from "@/types/database";
 
-const PATH = "/admin/cronograma";
-const DIAS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-
-async function salvarDia(diaSemana: number, formData: FormData) {
-  "use server";
+export default async function AdminCronogramaPage() {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const atividades = String(formData.get("atividades") ?? "")
-    .split("\n")
-    .map((linha) => linha.trim())
-    .filter(Boolean);
+  const [{ data: dias }, { data: conteudos }, { data: links }, { data: simulados }, { data: materiasData }, { data: questoesData }, { data: flashcardsData }] = await Promise.all([
+    supabase.from("cronograma_dias").select("*"),
+    supabase.from("conteudos_biblioteca").select("*").eq("ativo", true).order("titulo"),
+    supabase.from("links_externos").select("*").eq("ativo", true).order("titulo"),
+    supabase.from("simulados").select("*").eq("ativo", true).order("titulo"),
+    supabase.from("materias_peso").select("materia").order("materia"),
+    supabase.from("questoes").select("materia").eq("ativo", true),
+    supabase.from("flashcards").select("materia").eq("ativo", true)
+  ]);
 
-  const { error } = await supabase.from("cronograma_dias").upsert(
-    {
-      dia_semana: diaSemana,
-      titulo: String(formData.get("titulo") ?? "Missão do dia").trim() || "Missão do dia",
-      atividades
-    },
-    { onConflict: "dia_semana" }
-  );
+  const todosConteudos = (conteudos as ConteudoBiblioteca[]) ?? [];
 
-  revalidatePath(PATH);
-  revalidatePath("/aluno/cronograma");
-  if (error) redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível salvar esse dia.")}`);
-  redirect(`${PATH}?sucesso=${encodeURIComponent(`${DIAS[diaSemana]} atualizado(a).`)}`);
-}
-
-export default async function AdminCronogramaPage({
-  searchParams
-}: {
-  searchParams: { erro?: string; sucesso?: string };
-}) {
-  await requireAdmin();
-  const supabase = createAdminClient();
-
-  const { data } = await supabase.from("cronograma_dias").select("*");
-  const porDia = new Map((data as CronogramaDia[] ?? []).map((d) => [d.dia_semana, d]));
+  // Quantas questões/flashcards já existem por matéria — mostrado junto do
+  // seletor pra o admin saber, na hora de anexar, se realmente tem conteúdo
+  // suficiente cadastrado naquela matéria antes de montar a missão do dia.
+  const contarPorMateria = (linhas: { materia: string }[] | null) => {
+    const mapa = new Map<string, number>();
+    (linhas ?? []).forEach((l) => mapa.set(l.materia, (mapa.get(l.materia) ?? 0) + 1));
+    return mapa;
+  };
+  const questoesPorMateria = contarPorMateria(questoesData);
+  const flashcardsPorMateria = contarPorMateria(flashcardsData);
 
   return (
-    <div>
-      <PageHeader
-        title="Cronograma & Missões"
-        subtitle="Cronograma Base fixo, igual para todos os alunos (o Copiloto adapta a partir daqui para quem tem o plano PRO)"
-      />
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {DIAS.map((nome, i) => {
-          const dia = porDia.get(i);
-          const salvarComDia = salvarDia.bind(null, i);
-          return (
-            <Card key={i}>
-              <h2 className="text-sm font-extrabold text-navy-dark">{nome}</h2>
-              <form action={salvarComDia} className="mt-3 space-y-2">
-                <input
-                  name="titulo"
-                  defaultValue={dia?.titulo ?? "Missão do dia"}
-                  placeholder="Título da missão"
-                  className="w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-xs font-bold text-navy-dark outline-none focus:border-navy"
-                />
-                <textarea
-                  name="atividades"
-                  rows={4}
-                  defaultValue={(dia?.atividades ?? []).join("\n")}
-                  placeholder={"Uma atividade por linha, ex:\nAula · Citologia · 35 min\n20 questões · Banco de Questões"}
-                  className="w-full resize-y rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
-                />
-                <SubmitButton
-                  pendingText="Salvando..."
-                  className="rounded-[11px] bg-orange px-4 py-2 text-xs font-bold text-white hover:bg-orange-dark"
-                >
-                  Salvar {nome}
-                </SubmitButton>
-              </form>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
+    <CronogramaManager
+      dias={(dias as CronogramaDia[]) ?? []}
+      aulas={todosConteudos.filter((c) => c.tipo === "aula")}
+      pdfs={todosConteudos.filter((c) => c.tipo === "pdf" || c.tipo === "artigo")}
+      links={(links as LinkExterno[]) ?? []}
+      simulados={(simulados as Simulado[]) ?? []}
+      materias={(materiasData ?? []).map((m: any) => m.materia)}
+      questoesPorMateria={Object.fromEntries(questoesPorMateria)}
+      flashcardsPorMateria={Object.fromEntries(flashcardsPorMateria)}
+    />
   );
 }
