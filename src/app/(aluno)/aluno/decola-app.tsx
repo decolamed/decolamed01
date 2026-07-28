@@ -11,6 +11,7 @@ import { marcarRecomendacao } from "./copiloto/actions";
 import { marcarNotificacaoLida } from "./notificacoes-actions";
 import { salvarBriefingApp } from "./briefing/actions";
 import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
+import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -165,6 +166,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     playerUrl: "",
     playerBack: "estudos",
     playerPosicaoInicial: 0,
+    mostrarOnboarding: false,
     brief: (function (self: any) {
       const b = self.props.dados.briefing;
       if (b) {
@@ -3098,9 +3100,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         card(
           { padding: "6px 16px" },
           [
+            ["plane", "Ver introdução da plataforma"],
             ["compass", "Ver tutorial da plataforma"],
             ["bot", "Ajuda pelo WhatsApp oficial"],
-            ["plane", "Instalar aplicativo"],
+            ["external", "Instalar aplicativo"],
             ["alert", "Comunicar erro na plataforma"]
           ].map((r, i) =>
             h(
@@ -3108,12 +3111,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               {
                 key: i,
                 onClick: [
+                  () => this.setState({ mostrarOnboarding: true }),
                   () => this.nav("tutorial", { tutStep: 0 }),
                   () => window.open(this.props.whatsappSuporte, "_blank", "noopener,noreferrer"),
                   () => this.setState({ screen: "tutorial", tutStep: 0 }),
                   () => this.setState({ errOpen: true, errSent: false, errText: "", errCat: "Outro" })
                 ][i],
-                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 3 ? "1px solid " + C.line : "none", cursor: "pointer" }
+                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 4 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
               [I(r[0], 18, C.sub), h("span", { key: "t", style: { flex: 1, fontSize: 13, fontWeight: 700 } }, r[1]), I("chevR", 15, C.faint)]
             )
@@ -4181,6 +4185,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   render() {
-    return React.createElement("div", { className: styles.shell }, this.app());
+    return React.createElement("div", { className: styles.shell }, [
+      this.app(),
+      this.state.mostrarOnboarding ? React.createElement(OnboardingCarousel, { key: "onboarding", onFinish: () => this.setState({ mostrarOnboarding: false }) }) : null
+    ]);
   }
 }
