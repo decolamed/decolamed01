@@ -25,7 +25,8 @@ import type {
   AlunoBriefing,
   Banner,
   ConteudoBiblioteca,
-  LinkExterno
+  LinkExterno,
+  ImagemQuestao
 } from "@/types/database";
 
 interface DecolaAppDados {
@@ -34,7 +35,7 @@ interface DecolaAppDados {
   flashcards: Flashcard[];
   simulados: Simulado[];
   simuladoQuestoesCount: Record<string, number>;
-  simuladoQuestoes: Record<string, { id: string; enunciado: string; alternativas: { id: string; texto: string }[]; materia: string; assunto: string | null }[]>;
+  simuladoQuestoes: Record<string, { id: string; enunciado: string; alternativas: { id: string; texto: string }[]; materia: string; assunto: string | null; imagens: ImagemQuestao[] }[]>;
   tentativas: SimuladoTentativa[];
   ranking: RankingLinha[];
   respostas: { correta: boolean; created_at: string; questoes: { materia: string; assunto: string | null } | null }[];
@@ -509,8 +510,55 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       q: q.enunciado,
       alts: q.alternativas.map((a) => a.texto),
       altIds: q.alternativas.map((a) => a.id),
-      dificuldade: q.dificuldade
+      dificuldade: q.dificuldade,
+      imagens: q.imagens ?? []
     };
+  }
+  // Cabeçalho compacto (matéria/assunto em destaque + código/fonte como
+  // legenda) reaproveitado em toda tela que exibe uma questão — antes cada
+  // uma tinha sua própria fileira de badges empilhados, ocupando bem mais
+  // altura e divergindo em estilo entre si.
+  questaoMeta(q: { materia: string; tema: string; code?: string; fonte?: string | null }) {
+    const { h, C } = this.ui();
+    return h("div", { key: "meta", style: { margin: "14px 18px 0" } }, [
+      h(
+        "div",
+        { key: "eyebrow", style: { display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 } },
+        [
+          h("span", { key: "m", style: { fontSize: 11.5, fontWeight: 800, color: C.green, letterSpacing: ".02em", textTransform: "uppercase", flexShrink: 0 } }, q.materia),
+          h("span", { key: "dot", style: { fontSize: 11.5, color: C.faint, flexShrink: 0 } }, "·"),
+          h("span", { key: "t", style: { fontSize: 12.5, fontWeight: 700, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, q.tema)
+        ]
+      ),
+      h(
+        "div",
+        { key: "sub", style: { marginTop: 2, fontSize: 10.5, fontWeight: 600, color: C.faint, fontFamily: "monospace", letterSpacing: ".01em" } },
+        (q.code || "Q000000") + (q.fonte ? "  ·  " + q.fonte : "")
+      )
+    ]);
+  }
+  // Imagens/figuras reais da questão (diagramas, gráficos das provas
+  // FACAPE) — mesmo componente visual usado nas rotas dedicadas
+  // (ImagensQuestao), reimplementado aqui porque este componente usa h()
+  // em vez de JSX.
+  questaoImagens(q: { imagens?: { url: string; legenda: string | null; ordem: number }[] }) {
+    const { h, C } = this.ui();
+    return (q.imagens ?? [])
+      .slice()
+      .sort((a, b) => a.ordem - b.ordem)
+      .map((img, i) =>
+        h("figure", { key: "img" + i, style: { margin: "12px 0 0" } }, [
+          h("img", { key: "i", src: img.url, alt: img.legenda ?? "Imagem da questão", style: { maxWidth: "100%", borderRadius: 12, border: "1.5px solid " + C.line, display: "block" } }),
+          img.legenda ? h("figcaption", { key: "c", style: { marginTop: 4, fontSize: 10.5, color: C.faint } }, img.legenda) : null
+        ])
+      );
+  }
+  questaoCard(q: { q: string; imagens?: { url: string; legenda: string | null; ordem: number }[] }) {
+    const { h, card } = this.ui();
+    return h("div", { key: "q", style: { margin: "10px 18px 0" } }, card({}, [
+      h("div", { key: "t", style: { fontSize: 15, fontWeight: 700, lineHeight: 1.55 } }, q.q),
+      ...this.questaoImagens(q)
+    ]));
   }
   data() {
     const P = this.props.dados;
@@ -605,7 +653,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       fonte: null as string | null,
       q: q.enunciado,
       alts: q.alternativas.map((a: { id: string; texto: string }) => a.texto),
-      altIds: q.alternativas.map((a: { id: string; texto: string }) => a.id)
+      altIds: q.alternativas.map((a: { id: string; texto: string }) => a.id),
+      imagens: q.imagens ?? []
     }));
   }
 
@@ -1734,23 +1783,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         [
           this.head(S.qMateria ? "Praticar · " + S.qMateria : "Praticar questões", { back: "questoes", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.qIdx + 1 + " / " + qs.length) }),
           h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar(((S.qIdx + (done ? 1 : 0)) / qs.length) * 100)),
-          h("div", { key: "meta", style: { margin: "14px 18px 0" } }, [
-            h(
-              "div",
-              { key: "eyebrow", style: { display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 } },
-              [
-                h("span", { key: "m", style: { fontSize: 11.5, fontWeight: 800, color: C.green, letterSpacing: ".02em", textTransform: "uppercase", flexShrink: 0 } }, q.materia),
-                h("span", { key: "dot", style: { fontSize: 11.5, color: C.faint, flexShrink: 0 } }, "·"),
-                h("span", { key: "t", style: { fontSize: 12.5, fontWeight: 700, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, q.tema)
-              ]
-            ),
-            h(
-              "div",
-              { key: "sub", style: { marginTop: 2, fontSize: 10.5, fontWeight: 600, color: C.faint, fontFamily: "monospace", letterSpacing: ".01em" } },
-              q.code + (q.fonte ? "  ·  " + q.fonte : "")
-            )
-          ]),
-          h("div", { key: "q", style: { margin: "10px 18px 0" } }, card({}, h("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.55 } }, q.q))),
+          this.questaoMeta(q),
+          this.questaoCard(q),
           h(
             "div",
             { key: "alts", style: { margin: "12px 18px 0", display: "flex", flexDirection: "column", gap: 9 } },
@@ -2026,7 +2060,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           I("refresh", 15, C.orange),
           h("span", { key: "t", style: { fontSize: 11.5, fontWeight: 800, color: C.orange } }, "Revisão dirigida · " + q.tema)
         ]),
-        h("div", { key: "q", style: { margin: "12px 18px 0" } }, card({}, h("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.55 } }, q.q))),
+        this.questaoCard(q),
         h(
           "div",
           { key: "alts", style: { margin: "12px 18px 0", display: "flex", flexDirection: "column", gap: 9 } },
@@ -2172,7 +2206,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       respostaCorreta: respostas[q.id] ?? q.altIds[0],
       escolhida: respostas[q.id] ?? null,
       correta: true,
-      explicacao: "Modo demonstração — numa conta de aluno de verdade, aqui aparece a correção real."
+      explicacao: "Modo demonstração — numa conta de aluno de verdade, aqui aparece a correção real.",
+      imagens: []
     }));
     const porMateria = new Map<string, number>();
     qs.forEach((q) => porMateria.set(q.materia, (porMateria.get(q.materia) ?? 0) + 1));
@@ -2226,13 +2261,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ]),
       h("div", { key: "pb", style: { margin: "0 18px", display: "flex" } }, this.ui().bar((answered / qs.length) * 100)),
       h("div", { key: "body", style: { flex: 1, overflowY: "auto", paddingBottom: 20 } }, [
-        h("div", { key: "meta", style: { margin: "14px 18px 0", display: "flex", gap: 8 } }, [
-          h("span", { key: "m", style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "5px 11px", borderRadius: 99 } }, q.materia),
-          h("span", { key: "qc", style: { fontSize: 10, fontWeight: 800, color: C.faint, background: C.chip, padding: "5px 9px", borderRadius: 99, fontFamily: "monospace" } }, q.code || "Q000000"),
-          h("span", { key: "t", style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "5px 11px", borderRadius: 99 } }, q.tema),
-          q.fonte ? h("span", { key: "fn", style: { fontSize: 11, fontWeight: 800, color: C.dark ? "#8fc3e8" : "#0b6aa8", background: C.blueSoft, padding: "5px 11px", borderRadius: 99 } }, q.fonte) : null
-        ]),
-        h("div", { key: "q", style: { margin: "12px 18px 0" } }, card({}, h("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.55 } }, q.q))),
+        this.questaoMeta(q),
+        this.questaoCard(q),
         h(
           "div",
           { key: "alts", style: { margin: "12px 18px 0", display: "flex", flexDirection: "column", gap: 9 } },
@@ -3311,10 +3341,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return this.screenWrap([
       this.head("Flashcards", { back: "estudos", right: h("div", { style: { fontSize: 12, fontWeight: 800, color: C.sub } }, S.fcIdx + 1 + " / " + cards.length) }),
       h("div", { key: "p", style: { margin: "0 18px", display: "flex" } }, bar((S.fcIdx / cards.length) * 100)),
-      h("div", { key: "meta", style: { margin: "14px 18px 0", display: "flex", gap: 8 } }, [
-        h("span", { key: "m", style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "5px 11px", borderRadius: 99 } }, c2.materia),
-        h("span", { key: "a", style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "5px 11px", borderRadius: 99 } }, c2.assunto || c2.materia)
-      ]),
+      h(
+        "div",
+        { key: "meta", style: { margin: "14px 18px 0", display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 } },
+        [
+          h("span", { key: "m", style: { fontSize: 11.5, fontWeight: 800, color: C.green, letterSpacing: ".02em", textTransform: "uppercase", flexShrink: 0 } }, c2.materia),
+          c2.assunto ? h("span", { key: "dot", style: { fontSize: 11.5, color: C.faint, flexShrink: 0 } }, "·") : null,
+          c2.assunto ? h("span", { key: "a", style: { fontSize: 12.5, fontWeight: 700, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, c2.assunto) : null
+        ]
+      ),
       h(
         "div",
         {

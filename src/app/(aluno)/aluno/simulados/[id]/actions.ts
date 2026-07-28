@@ -171,7 +171,7 @@ export async function buscarGabaritoTentativa(tentativaId: string): Promise<Item
 
   const { data: itens } = await supabase
     .from("simulado_questoes")
-    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto)")
+    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto, imagens)")
     .eq("simulado_id", tentativa.simulado_id)
     .order("ordem");
 
@@ -188,7 +188,8 @@ export async function buscarGabaritoTentativa(tentativaId: string): Promise<Item
       respostaCorreta: item.questoes.resposta_correta,
       escolhida,
       correta,
-      explicacao: item.questoes.explicacao
+      explicacao: item.questoes.explicacao,
+      imagens: item.questoes.imagens ?? []
     };
   });
 }

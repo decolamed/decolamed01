@@ -17,7 +17,8 @@ import type {
   AlunoBriefing,
   Banner,
   ConteudoBiblioteca,
-  LinkExterno
+  LinkExterno,
+  ImagemQuestao
 } from "@/types/database";
 
 const POOL_LIMITE = 60;
@@ -79,7 +80,7 @@ export default async function AlunoHomePage() {
     // Sem resposta_correta: essas linhas viram props de um Client Component
     // (o app do aluno inteiro), e tudo que vai pra props chega ao HTML/JS do
     // navegador — a correção só acontece no servidor, em submeterSimulado().
-    supabase.from("simulado_questoes").select("simulado_id, ordem, questoes(id, enunciado, alternativas, materia, assunto)").order("ordem"),
+    supabase.from("simulado_questoes").select("simulado_id, ordem, questoes(id, enunciado, alternativas, materia, assunto, imagens)").order("ordem"),
     supabase
       .from("simulado_tentativas")
       .select("*")
@@ -146,7 +147,7 @@ export default async function AlunoHomePage() {
           acc[r.simulado_id] = (acc[r.simulado_id] ?? 0) + 1;
           return acc;
         }, {} as Record<string, number>),
-        simuladoQuestoes: (simuladoQuestoesData ?? []).reduce((acc: Record<string, { id: string; enunciado: string; alternativas: { id: string; texto: string }[]; materia: string; assunto: string | null }[]>, r: any) => {
+        simuladoQuestoes: (simuladoQuestoesData ?? []).reduce((acc: Record<string, { id: string; enunciado: string; alternativas: { id: string; texto: string }[]; materia: string; assunto: string | null; imagens: ImagemQuestao[] }[]>, r: any) => {
           if (!r.questoes) return acc;
           (acc[r.simulado_id] ??= []).push(r.questoes);
           return acc;
