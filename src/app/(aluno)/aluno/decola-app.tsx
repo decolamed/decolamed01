@@ -461,6 +461,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return h(
       "svg",
       {
+        key: name,
         width: size,
         height: size,
         viewBox: "0 0 24 24",
@@ -679,6 +680,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     };
     const src = mapa[name] ?? "/assets/mascote/copiloto-default.png";
     return h("img", {
+      key: "mascote-" + name,
       src,
       alt: "Copiloto Decola",
       width: size,
@@ -1334,7 +1336,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 8 } }, "Próximas missões planejadas"),
                 ...upcoming.map((u, i) =>
                   h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: i < upcoming.length - 1 ? "1px solid " + C.line : "none" } }, [
-                    I("lock", 14, C.faint),
+                    h("span", { key: "l" }, I("lock", 14, C.faint)),
                     h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 700, color: C.sub } }, u[0]),
                     h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 700, color: C.faint } }, u[1])
                   ])
@@ -1428,7 +1430,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const max = Math.max(...vals),
       min = Math.min(...vals);
     const pts = vals.map((v, i) => i * (w / (vals.length - 1)) + "," + (hgt - 3 - ((v - min) / (max - min || 1)) * (hgt - 6))).join(" ");
-    return h("svg", { width: w, height: hgt }, h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }));
+    return h("svg", { key: "spark", width: w, height: hgt }, h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }));
   }
 
   scrPainel() {
