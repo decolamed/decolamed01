@@ -11,7 +11,7 @@ const SLIDES = [
   {
     emoji: "✈️",
     titulo: "Bem-vindo à Decola Med",
-    texto: "Sua plataforma de preparação para o FACAPE: aulas, questões, flashcards e simulados num só lugar, com um cronograma que te guia dia a dia."
+    texto: "Sua plataforma de preparação para o vestibular de Medicina: aulas, questões, flashcards e simulados num só lugar, com um cronograma que te guia dia a dia."
   },
   {
     emoji: "🗓️",

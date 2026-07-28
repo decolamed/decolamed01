@@ -60,6 +60,10 @@ interface DecolaAppDados {
   linksExternos: LinkExterno[];
   estudosBotoes: EstudosBotao[];
   baseTemasUrl: string | null;
+  // Nome do vestibular/instituição vindo de /admin/configuracoes (ver
+  // lib/site/marca.ts) — nada de instituição escrita no código, pra
+  // plataforma poder atender outros processos seletivos.
+  nomeVestibular: string;
   hojeStr: string;
 }
 
@@ -260,7 +264,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       }
     }, 5000);
     // PWA: Chrome/Android/desktop disparam beforeinstallprompt quando o app
-    // é instalável (manifest.json + sw.js registrados em layout.tsx);
+    // é instalável (manifest.webmanifest + sw.js registrados em layout.tsx);
     // guardamos o evento pra poder chamar .prompt() depois, no clique do
     // usuário (não dá pra chamar prompt() fora de um gesto do usuário).
     // Safari/iOS nunca dispara esse evento — lá o botão cai no fallback de
@@ -515,7 +519,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return {
       hangar: [
         { ic: "calendar", t: "Plano de Voo", d: "Cronograma inteligente", tone: "peach" },
-        { ic: "radar", t: "Raio-X FACAPE", d: "Assuntos mais cobrados", tone: "peach" }
+        { ic: "radar", t: "Raio-X " + this.props.dados.nomeVestibular.toUpperCase(), d: "Assuntos mais cobrados", tone: "peach" }
       ],
       estudos: [
         { ic: "video", t: "Videoaulas", d: aulas.length + (aulas.length === 1 ? " aula" : " aulas") },
@@ -909,37 +913,38 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     this.setState({ screen: "questoes", practice: false, moreOpen: false, notifOpen: false, simView: null });
     this.montarRevisao(materia, materia);
   }
-  // Sequência real de hoje: missões de aluno_missoes (plano com Copiloto) ou,
-  // na falta delas, os itens do dia de hoje no cronograma (trilha_dias,
-  // plano sem Copiloto) — sempre a mesma fonte usada em scrPlano()/aluno/cronograma.
+  // Sequência real de hoje: o cronograma (trilha_dias) é a base de todo
+  // mundo e vem primeiro; as missões individuais (aluno_missoes — Copiloto
+  // ou cadastradas pelo admin) entram depois, como acréscimo. Mesma regra de
+  // scrPlano() e /aluno/cronograma: nenhuma das duas fontes exclui a outra.
   todaySeq() {
-    const hoje = this.missoesHoje();
-    const list: any[] = hoje.map((m) => ({
-      id: m.id,
-      ic: this.iconeMissao(m.tipo),
-      t: m.titulo,
-      d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
-      ia: m.origem === "copiloto",
-      done: m.concluida,
-      act: () => this.navMissao(m),
-      toggle: () => this.toggleMissao(m.id)
-    }));
-    if (!list.length) {
-      const dia = this.props.dados.trilhaHoje;
-      (dia?.itens || []).forEach((item, i) => {
-        const chave = dia ? this.chaveDeItemTrilha(dia.dia_numero, i, item) : null;
-        list.push({
-          id: "trilha-" + i,
-          ic: this.iconeMissao(item.tipo),
-          t: item.titulo,
-          d: dia!.titulo,
-          ia: false,
-          done: this.estaConcluido(chave),
-          act: () => this.abrirItemTrilha(item),
-          toggle: chave ? () => this.toggleItemGenerico(chave) : null
-        });
+    const list: any[] = [];
+    const dia = this.props.dados.trilhaHoje;
+    (dia?.itens || []).forEach((item, i) => {
+      const chave = this.chaveDeItemTrilha(dia!.dia_numero, i, item);
+      list.push({
+        id: "trilha-" + i,
+        ic: this.iconeMissao(item.tipo),
+        t: item.titulo,
+        d: dia!.titulo,
+        ia: false,
+        done: this.estaConcluido(chave),
+        act: () => this.abrirItemTrilha(item),
+        toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
-    }
+    });
+    this.missoesHoje().forEach((m) => {
+      list.push({
+        id: m.id,
+        ic: this.iconeMissao(m.tipo),
+        t: m.titulo,
+        d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
+        ia: m.origem === "copiloto",
+        done: m.concluida,
+        act: () => this.navMissao(m),
+        toggle: () => this.toggleMissao(m.id)
+      });
+    });
     const pr0 = this.priorities();
     if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview(), toggle: null });
     return list;
@@ -1004,17 +1009,26 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // Abre de verdade o conteúdo anexado a um item do cronograma (trilha_dias
   // — ver TrilhaItem em types/database.ts e /admin/trilha) — cada tipo
   // navega pro lugar certo já existente no app, sem duplicar nenhuma tela.
+  //
+  // Todo caminho aqui precisa terminar numa tela real: itens salvos sem a
+  // referência esperada (ex.: um "simulado" sem ref_id, que existia no
+  // cronograma antigo) caem na LISTA daquele tipo em vez de abrir uma tela
+  // quebrada — nenhum item pode virar um clique que não faz nada.
   abrirItemTrilha(item: TrilhaItem) {
     if (item.tipo === "aula") {
-      this.abrirAula(item.ref_id, item.titulo, item.url || "", "plano");
+      if (!item.url) return this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "plano" });
+      this.abrirAula(item.ref_id, item.titulo, item.url, "plano");
     } else if (item.tipo === "pdf" || item.tipo === "link") {
-      this.openBrowser(item.titulo, item.url || "", "plano");
+      if (!item.url) return this.nav("conteudo", { contTitle: item.tipo === "pdf" ? "PDFs" : "Links úteis", contTipo: item.tipo, contBack: "plano" });
+      this.openBrowser(item.titulo, item.url, "plano");
     } else if (item.tipo === "questoes") {
       this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
       if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === item.materia)), false);
       else this.nav("flashcards-select");
+    } else if (item.tipo === "simulado" && !item.ref_id) {
+      this.nav("simulados");
     } else if (item.tipo === "simulado") {
       this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
     } else if (item.tipo === "revisao") {
@@ -2183,7 +2197,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                     this.mascoteBadge("compass", 46, { bg: C.orangeSoft, color: C.orange, shadow: "none" }),
                     h("div", { key: "t" }, [
                       h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, "Rota de Revisão detectada"),
-                      h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Assunto mapeado: " + q.tema + " · Matriz FACAPE")
+                      h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Assunto mapeado: " + q.tema)
                     ])
                   ]),
                   h("div", { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55, marginBottom: 12 } }, "Registrei este erro no seu Raio-X."),
@@ -2275,7 +2289,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       h("div", { key: "cta", style: { margin: "16px 18px 0" } }, btn("PRATICAR AGORA →", () => this.setState({ practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }))),
       h("div", { key: "note", style: { margin: "12px 18px 0", padding: "12px 14px", borderRadius: 14, background: C.chip, fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.55, display: "flex", gap: 9 } }, [
         I("bot", 16, C.orange),
-        "Cada questão é ligada a um conteúdo da matriz FACAPE. Ao errar, o Copiloto registra o assunto, atualiza seu Raio-X e monta uma rota de revisão personalizada."
+        "Cada questão é ligada a um conteúdo da matriz oficial. Ao errar, o Copiloto registra o assunto, atualiza seu Raio-X e monta uma rota de revisão personalizada."
       ])
     ]);
   }
@@ -2458,7 +2472,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             card({ background: C.headGrad, border: "none", color: "#fff" }, [
               h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } }, "Simulado em destaque"),
               h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, destaque.t),
-              h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 4 } }, destaque.q + " questões · " + destaque.time + " · pesos oficiais FACAPE"),
+              h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 4 } }, destaque.q + " questões · " + destaque.time + " · pesos oficiais"),
               destaque.q > 0
                 ? btn("INICIAR SIMULADO", () => this.iniciarSimulado(destaque.id), { marginTop: 14, background: "#F36C21" })
                 : h("div", { key: "sc", style: { marginTop: 12, fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,.75)" } }, "Ainda sem questões cadastradas.")
@@ -2469,7 +2483,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "stats", style: { margin: "14px 18px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 } },
         [
-          [media != null ? media + "%" : "—", "média (FACAPE)"],
+          [media != null ? media + "%" : "—", "média (ponderada)"],
           [String(tentativas.length), "realizados"],
           [melhor != null ? melhor + "%" : "—", "melhor nota"]
         ].map((s, i) => card({ padding: "14px 10px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: i === 0 ? C.green : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
@@ -2662,7 +2676,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           h("div", { key: "t", style: { fontSize: 23, fontWeight: 900, marginTop: 18 } }, "Simulado concluído!"),
           h("div", { key: "d", style: { fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 6 } }, "Parabéns, piloto. Voo finalizado com segurança."),
           h("div", { key: "pct", style: { fontSize: 52, fontWeight: 900, color: pct >= 70 ? C.green : C.orange, marginTop: 14 } }, pct + "%"),
-          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } }, "Nota FACAPE · ponderada pelos pesos das disciplinas"),
+          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } }, "Nota ponderada pelos pesos das disciplinas"),
           h("div", { key: "obj", style: { marginTop: 10, fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "7px 13px", borderRadius: 99 } }, Math.round(r.nota) + "% de acertos simples"),
           h(
             "div",
@@ -2771,7 +2785,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.head("Ranking", { back: "mapa" }),
       h("div", { key: "tabs", style: { display: "flex", gap: 8, padding: "6px 18px 4px" } }, [
         chip("Geral", t === "geral", () => this.setState({ rankTab: "geral" })),
-        chip("FACAPE", t === "facape", () => this.setState({ rankTab: "facape" })),
+        chip("Ponderado", t === "facape", () => this.setState({ rankTab: "facape" })),
         chip("Amigos", t === "amigos", () => this.setState({ rankTab: "amigos" }))
       ]),
       h(
@@ -3298,144 +3312,157 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ]
     );
   }
+  // Uma linha de item do cronograma dentro do cartão-destaque de hoje —
+  // extraída porque a mesma linha aparece no cronograma e no resumo do dia,
+  // e duplicar esse bloco já tinha causado divergência entre as duas telas.
+  linhaItemTrilha(diaNumero: number, item: TrilhaItem, i: number) {
+    const { C, h, I } = this.ui();
+    const chave = this.chaveDeItemTrilha(diaNumero, i, item);
+    const concluido = this.estaConcluido(chave);
+    return h(
+      "div",
+      { key: i, style: { display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
+      [
+        h(
+          "div",
+          {
+            key: "c",
+            onClick: (e: any) => {
+              e.stopPropagation();
+              if (chave) this.toggleItemGenerico(chave);
+            },
+            title: concluido ? "Desmarcar" : "Marcar como concluído",
+            style: {
+              width: 22,
+              height: 22,
+              borderRadius: 99,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: chave ? "pointer" : "default",
+              background: concluido ? C.green : "rgba(255,255,255,.15)"
+            }
+          },
+          concluido ? I("check", 11, "#fff", 3) : null
+        ),
+        h(
+          "div",
+          { key: "t", onClick: () => this.abrirItemTrilha(item), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
+          item.titulo
+        ),
+        h("div", { key: "go", onClick: () => this.abrirItemTrilha(item), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
+      ]
+    );
+  }
   scrPlano() {
-    const { C, h, I, card, btn, iconBox } = this.ui();
-    // Também entra no modo "missões individuais" (em vez do cronograma fixo
-    // compartilhado) quando o aluno tem missões próprias mesmo sem Copiloto
-    // — é o que permite ao admin dar um cronograma individual pra um aluno
-    // específico em /admin/usuarios/[id], sem mexer no cronograma geral.
-    const temCopiloto = this.props.dados.temCopiloto || this.state.missoesLocal.length > 0;
+    const { C, h, card, btn, iconBox } = this.ui();
+    // O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive
+    // de quem tem Copiloto. As missões individuais (aluno_missoes, geradas
+    // pelo Copiloto ou cadastradas à mão pelo admin) são um ACRÉSCIMO
+    // adaptativo em cima dele, não um substituto.
+    //
+    // Antes, esta tela ramificava em `if (temCopiloto)` e nunca chegava ao
+    // cronograma: um aluno do plano PRO sem missões geradas via "nenhuma
+    // missão cadastrada" mesmo com os 40 dias preenchidos pelo admin. Por
+    // isso a condição agora é sobre os DADOS que existem, não sobre o plano.
+    const temCopiloto = this.props.dados.temCopiloto;
+    const diaTrilha = this.props.dados.trilhaHoje;
     const B = this.state.brief || {};
     const pr = this.priorities();
-    if (temCopiloto) {
-      const hoje = this.missoesHoje();
-      const hojeStr = this.props.dados.hojeStr;
-      const proximas = (this.state.missoesLocal as AlunoMissao[])
-        .filter((m) => m.data > hojeStr)
-        .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
-      const porDia = new Map<string, AlunoMissao[]>();
-      proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
-      return this.screenWrap([
-        this.head("Cronograma de Estudos", { back: "mapa" }),
-        h(
-          "div",
-          { key: "info", style: { margin: "6px 18px 0" } },
-          card({ padding: 14 }, [
-            h("span", { key: "p", style: { fontSize: 9.5, fontWeight: 900, color: "#fff", background: C.orange, padding: "4px 10px", borderRadius: 99, letterSpacing: ".05em" } }, "VOO GUIADO · PRO"),
-            h(
-              "div",
-              { key: "t", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginTop: 8, lineHeight: 1.55 } },
-              "Rota adaptativa: o Copiloto ajusta suas missões conforme seu desempenho real em questões, flashcards e simulados." + (B.prova ? " Prova em " + B.prova.split("-").reverse().join("/") + "." : "")
-            )
-          ])
-        ),
-        h(
-          "div",
-          { key: "hoje", style: { margin: "12px 18px 0" } },
-          card({ padding: 15 }, [
-            h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 900, marginBottom: 8 } }, "Hoje"),
-            hoje.length
-              ? hoje.map((m, i) => this.linhaMissao(m, i, hoje.length))
-              : h("div", { key: "vazio", style: { fontSize: 11.5, color: C.sub, fontWeight: 600 } }, "Nenhuma missão planejada para hoje.")
-          ])
-        ),
-        pr.length
-          ? h(
-              "div",
-              { key: "prio", style: { margin: "12px 18px 0" } },
-              card({ border: "1.5px solid " + C.orange }, [
-                h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center" } }, [
-                  iconBox("bolt", C.orangeSoft, C.orange, 40, 19),
-                  h("div", { key: "t", style: { flex: 1 } }, [
-                    h("div", { key: "a", style: { fontSize: 13, fontWeight: 900 } }, "Maior ganho agora: " + pr[0].tema),
-                    h("div", { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, pr[0].why)
-                  ])
-                ])
-              ])
-            )
-          : null,
-        ...Array.from(porDia.entries()).map(([data, ms]) =>
-          h(
-            "div",
-            { key: "dia" + data, style: { margin: "12px 18px 0" } },
-            card({ padding: 15 }, [
-              h(
-                "div",
-                { key: "t", style: { fontSize: 12, fontWeight: 800, color: C.sub, textTransform: "capitalize", marginBottom: 8 } },
-                new Date(data + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
-              ),
-              ...ms.map((m, i) => this.linhaMissao(m, i, ms.length))
-            ])
-          )
-        ),
-        proximas.length === 0 && hoje.length === 0
-          ? h("div", { key: "vazio2", style: { margin: "12px 18px 0" } }, card({ textAlign: "center", padding: 20 }, "Nenhuma missão cadastrada ainda. Fale com a coordenação ou aguarde o próximo ajuste do Copiloto."))
-          : null
-      ]);
-    }
-    // Plano sem Copiloto: mostra a missão de hoje do cronograma (trilha_dias
-    // — cadastrado pelo admin em /admin/trilha). A "trilha" é só a visão do
-    // dia da missão do próprio cronograma, não um módulo separado.
-    const diaTrilha = this.props.dados.trilhaHoje;
+    const hoje = this.missoesHoje();
+    const hojeStr = this.props.dados.hojeStr;
+    const proximas = (this.state.missoesLocal as AlunoMissao[])
+      .filter((m) => m.data > hojeStr)
+      .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
+    const porDia = new Map<string, AlunoMissao[]>();
+    proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
+    const semNada = !diaTrilha && hoje.length === 0 && proximas.length === 0;
     return this.screenWrap([
       this.head("Cronograma de Estudos", { back: "mapa" }),
-      h(
-        "div",
-        { key: "hero", style: { margin: "6px 18px 0" } },
-        card({ background: C.headGrad, border: "none", color: "#fff" }, [
-          h(
+      temCopiloto
+        ? h(
             "div",
-            { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } },
-            "Hoje" + (diaTrilha ? " · Dia " + diaTrilha.dia_numero : "")
-          ),
-          h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, diaTrilha?.titulo ?? "Sem missão cadastrada hoje"),
-          diaTrilha && diaTrilha.itens?.length
-            ? h(
+            { key: "info", style: { margin: "6px 18px 0" } },
+            card({ padding: 14 }, [
+              h("span", { key: "p", style: { fontSize: 9.5, fontWeight: 900, color: "#fff", background: C.orange, padding: "4px 10px", borderRadius: 99, letterSpacing: ".05em" } }, "VOO GUIADO · PRO"),
+              h(
                 "div",
-                { key: "at", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6 } },
-                diaTrilha.itens.map((item, i) => {
-                  const chave = this.chaveDeItemTrilha(diaTrilha.dia_numero, i, item);
-                  const concluido = this.estaConcluido(chave);
-                  return h(
-                    "div",
-                    { key: i, style: { display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
-                    [
-                      h(
-                        "div",
-                        {
-                          key: "c",
-                          onClick: (e: any) => {
-                            e.stopPropagation();
-                            if (chave) this.toggleItemGenerico(chave);
-                          },
-                          style: {
-                            width: 22,
-                            height: 22,
-                            borderRadius: 99,
-                            flexShrink: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: chave ? "pointer" : "default",
-                            background: concluido ? C.green : "rgba(255,255,255,.15)"
-                          }
-                        },
-                        concluido ? I("check", 11, "#fff", 3) : null
-                      ),
-                      h(
-                        "div",
-                        { key: "t", onClick: () => this.abrirItemTrilha(item), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
-                        item.titulo
-                      ),
-                      h("div", { key: "go", onClick: () => this.abrirItemTrilha(item), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
-                    ]
-                  );
-                })
+                { key: "t", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginTop: 8, lineHeight: 1.55 } },
+                "Rota adaptativa: além do cronograma, o Copiloto acrescenta missões conforme seu desempenho real em questões, flashcards e simulados." + (B.prova ? " Prova em " + B.prova.split("-").reverse().join("/") + "." : "")
               )
-            : h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 6 } }, "Dia livre — aproveite pra revisar o que quiser.")
-        ])
+            ])
+          )
+        : null,
+      // Missão do dia do cronograma — a "trilha" é exatamente esta visão.
+      diaTrilha
+        ? h(
+            "div",
+            { key: "hero", style: { margin: "12px 18px 0" } },
+            card({ background: C.headGrad, border: "none", color: "#fff" }, [
+              h(
+                "div",
+                { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } },
+                "Hoje · Dia " + diaTrilha.dia_numero
+              ),
+              h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, diaTrilha.titulo),
+              diaTrilha.itens?.length
+                ? h(
+                    "div",
+                    { key: "at", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6 } },
+                    diaTrilha.itens.map((item, i) => this.linhaItemTrilha(diaTrilha.dia_numero, item, i))
+                  )
+                : h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 6 } }, "Dia livre — aproveite pra revisar o que quiser.")
+            ])
+          )
+        : null,
+      // Missões individuais de hoje (Copiloto ou cadastradas pelo admin),
+      // somadas ao cronograma acima em vez de substituí-lo.
+      hoje.length
+        ? h(
+            "div",
+            { key: "hojeMissoes", style: { margin: "12px 18px 0" } },
+            card({ padding: 15 }, [
+              h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 900, marginBottom: 8 } }, temCopiloto ? "Missões extras de hoje" : "Missões de hoje"),
+              ...hoje.map((m, i) => this.linhaMissao(m, i, hoje.length))
+            ])
+          )
+        : null,
+      pr.length
+        ? h(
+            "div",
+            { key: "prio", style: { margin: "12px 18px 0" } },
+            card({ border: "1.5px solid " + C.orange }, [
+              h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center" } }, [
+                iconBox("bolt", C.orangeSoft, C.orange, 40, 19),
+                h("div", { key: "t", style: { flex: 1 } }, [
+                  h("div", { key: "a", style: { fontSize: 13, fontWeight: 900 } }, "Maior ganho agora: " + pr[0].tema),
+                  h("div", { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, pr[0].why)
+                ])
+              ])
+            ])
+          )
+        : null,
+      ...Array.from(porDia.entries()).map(([data, ms]) =>
+        h(
+          "div",
+          { key: "dia" + data, style: { margin: "12px 18px 0" } },
+          card({ padding: 15 }, [
+            h(
+              "div",
+              { key: "t", style: { fontSize: 12, fontWeight: 800, color: C.sub, textTransform: "capitalize", marginBottom: 8 } },
+              new Date(data + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
+            ),
+            ...ms.map((m, i) => this.linhaMissao(m, i, ms.length))
+          ])
+        )
       ),
-      h(
+      semNada
+        ? h("div", { key: "vazio", style: { margin: "12px 18px 0" } }, card({ textAlign: "center", padding: 20 }, "Nenhuma missão cadastrada para hoje. Fale com a coordenação."))
+        : null,
+      temCopiloto
+        ? null
+        : h(
         "div",
         { key: "pro", style: { margin: "14px 18px 4px" } },
         card({ border: "1.5px solid " + C.orange, background: C.dark ? "linear-gradient(150deg,#3a2410,#0c3557 60%)" : "linear-gradient(150deg,#fff4ec,#fff)" }, [

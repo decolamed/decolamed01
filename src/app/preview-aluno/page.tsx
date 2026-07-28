@@ -1,5 +1,6 @@
 import { requirePreviewAluno } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getNomeVestibular } from "@/lib/site/marca";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
 
@@ -15,6 +16,7 @@ const POOL_LIMITE = 60;
 export default async function PreviewAlunoPage() {
   const profile = await requirePreviewAluno();
   const supabase = createAdminClient();
+  const nomeVestibular = await getNomeVestibular();
 
   const [
     { data: questoesData },
@@ -78,6 +80,7 @@ export default async function PreviewAlunoPage() {
         linksExternos: (linksData as LinkExterno[]) ?? [],
         estudosBotoes: [],
         baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
+        nomeVestibular,
         hojeStr: new Date().toISOString().slice(0, 10)
       }}
     />

@@ -9,6 +9,8 @@ import { getGeminiApiKey, salvarGeminiApiKey, removerGeminiApiKey, gerarTextoGem
 import { getYoutubeApiKey, salvarYoutubeApiKey, removerYoutubeApiKey } from "@/lib/youtube/client";
 
 const CAMPOS = [
+  { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
+  { chave: "site.marca.icone_url", label: "Ícone do aplicativo (URL de um PNG quadrado, 512x512, fundo opaco) — vazio usa o padrão" },
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
   { chave: "site.contato.instagram", label: "Usuário do Instagram" },
   { chave: "redacao.whatsapp", label: "WhatsApp da professora de redação (somente números, com DDI)" },

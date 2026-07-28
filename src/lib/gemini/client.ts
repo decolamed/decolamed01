@@ -93,7 +93,7 @@ export async function gerarFlashcardsIA(
   const apiKey = await getGeminiApiKey();
   if (!apiKey) return [];
 
-  const prompt = `Você é um professor especialista em ${materia}, preparando material para alunos de vestibular de Medicina (nível FACAPE).
+  const prompt = `Você é um professor especialista em ${materia}, preparando material para alunos de vestibular de Medicina.
 
 Crie exatamente ${quantidade} flashcards de estudo sobre "${assunto}".
 

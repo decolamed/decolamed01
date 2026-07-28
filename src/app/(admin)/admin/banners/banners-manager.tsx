@@ -70,7 +70,7 @@ export function BannersManager({ banners: inicial }: { banners: any[] }) {
             <p className="font-extrabold">{draft.titulo || "Prévia do banner"}</p>
           </div>
           <FieldLabel>Título</FieldLabel>
-          <TextInput value={draft.titulo} onChange={(e) => setDraft({ ...draft, titulo: e.target.value })} placeholder="Aulão FACAPE ao vivo" />
+          <TextInput value={draft.titulo} onChange={(e) => setDraft({ ...draft, titulo: e.target.value })} placeholder="Ex.: Aulão ao vivo" />
           <FieldLabel>Link de destino</FieldLabel>
           <TextInput value={draft.link} onChange={(e) => setDraft({ ...draft, link: e.target.value })} placeholder="app/estudos" />
           <FieldLabel>Cor/Fundo</FieldLabel>

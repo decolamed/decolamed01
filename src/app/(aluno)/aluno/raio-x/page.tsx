@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { getNomeVestibular, VESTIBULAR_PADRAO } from "@/lib/site/marca";
 
 interface DesempenhoMateria {
   materia: string;
@@ -23,6 +24,8 @@ interface DesempenhoAssunto {
 export default async function AlunoRaioXPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
+  const nomeVestibular = await getNomeVestibular();
+  const rotuloVestibular = nomeVestibular === VESTIBULAR_PADRAO ? "" : nomeVestibular.toUpperCase();
 
   // Pega todas as respostas de questões do aluno com matéria/assunto/peso
   const [{ data: respostas }, { data: pesos }, { data: tentativas }] = await Promise.all([
@@ -112,13 +115,13 @@ export default async function AlunoRaioXPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">🩻 Raio-X FACAPE</h1>
+        <h1 className="font-display text-2xl font-bold text-navy-dark">🩻 Raio-X {rotuloVestibular}</h1>
         <Link href="/aluno" className="text-sm text-navy hover:underline">
           ← Voltar ao painel
         </Link>
       </div>
       <p className="mt-1 text-sm text-navy-dark/60">
-        Análise do seu desempenho usando os pesos oficiais da FACAPE — quanto maior o peso da matéria, mais
+        Análise do seu desempenho usando os pesos oficiais das disciplinas — quanto maior o peso da matéria, mais
         importante é acertar nela.
       </p>
 
@@ -139,7 +142,7 @@ export default async function AlunoRaioXPage() {
                 Média dos seus {notasSimulados.length} último(s) simulado(s)
               </p>
               <p className="mt-1 font-display text-3xl font-extrabold text-navy-dark">{notaMediaFacape}%</p>
-              <p className="text-xs text-navy-dark/50">Nota FACAPE ponderada</p>
+              <p className="text-xs text-navy-dark/50">Nota ponderada</p>
             </div>
           )}
 

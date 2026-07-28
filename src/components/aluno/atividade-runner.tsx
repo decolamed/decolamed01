@@ -86,7 +86,7 @@ export function AtividadeRunner({
           <div className="mt-4 flex flex-col items-center gap-1">
             <p className="font-display text-5xl font-extrabold text-orange">{resultado.nota}%</p>
             {resultado.pesoFacape !== 1 && (
-              <p className="text-xs text-navy-dark/50">Peso {resultado.pesoFacape}x na nota FACAPE</p>
+              <p className="text-xs text-navy-dark/50">Peso {resultado.pesoFacape}x na nota ponderada</p>
             )}
           </div>
           <Link href="/aluno/atividades" className="mt-6 inline-block rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5">

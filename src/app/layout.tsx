@@ -24,7 +24,19 @@ export const metadata: Metadata = {
   title: "Decola Med — Preparação estratégica para Medicina",
   description:
     "Plataforma de preparação para aprovação em Medicina. Cronograma inteligente, questões comentadas, simulados e acompanhamento de desempenho.",
-  manifest: "/manifest.json",
+  // Manifesto dinâmico (src/app/manifest.webmanifest/route.ts) — permite
+  // trocar o ícone do app pelo painel administrativo sem novo deploy.
+  manifest: "/manifest.webmanifest",
+  // apple-touch-icon precisa ser um PNG opaco: o iOS não respeita
+  // transparência e pintaria de branco o fundo da logo (que também é
+  // branca), deixando o ícone "vazio" na tela de início.
+  icons: {
+    icon: [
+      { url: "/assets/icone-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/assets/icone-512.png", sizes: "512x512", type: "image/png" }
+    ],
+    apple: [{ url: "/assets/icone-apple-180.png", sizes: "180x180", type: "image/png" }]
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
