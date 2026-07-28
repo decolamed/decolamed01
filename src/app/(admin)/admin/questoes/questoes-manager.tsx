@@ -4,9 +4,7 @@ import { useState, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput, TextArea, FieldLabel } from "@/components/admin/interactive";
-import { ImportadorTexto } from "@/components/admin/importador-texto";
-import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
-import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, type QuestaoForm } from "./actions";
+import { salvarQuestao, excluirQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
 const DIFICULDADE_LABEL: Record<string, "Fácil" | "Média" | "Difícil"> = { facil: "Fácil", media: "Média", dificil: "Difícil" };
@@ -25,55 +23,13 @@ function codigo(id: string) {
   return "Q" + id.slice(0, 6).toUpperCase();
 }
 
-export function QuestoesManager({
-  questoes,
-  materiasExistentes,
-  usoPorQuestao
-}: {
-  questoes: Questao[];
-  materiasExistentes: string[];
-  usoPorQuestao: Record<string, { tipo: "Simulado" | "Atividade"; titulo: string }[]>;
-}) {
+export function QuestoesManager({ questoes, materiasExistentes }: { questoes: Questao[]; materiasExistentes: string[] }) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<QuestaoForm>(VAZIO);
   const [pending, startTransition] = useTransition();
   const { toast, show } = useToast();
-
-  const [importando, setImportando] = useState(false);
-  const [previa, setPrevia] = useState<QuestaoParseada[] | null>(null);
-  const [materiaLote, setMateriaLote] = useState("Biologia");
-  const [dificuldadeLote, setDificuldadeLote] = useState<"Fácil" | "Média" | "Difícil">("Média");
-
-  function analisarTexto(texto: string) {
-    setPrevia(parseQuestoesTexto(texto));
-  }
-
-  function importarLote() {
-    if (!previa) return;
-    const validas = previa.filter((p) => !p.erro);
-    const forms: QuestaoForm[] = validas.map((p) => {
-      const alternativas: Record<string, string> = {};
-      p.alternativas.forEach((a) => (alternativas[a.letra] = a.texto));
-      return {
-        enunciado: p.enunciado,
-        materia: materiaLote,
-        assunto: "",
-        dificuldade: dificuldadeLote,
-        gabarito: p.gabarito ?? "a",
-        comentario: "",
-        fonte: "",
-        alternativas
-      };
-    });
-    startTransition(async () => {
-      const res = await salvarQuestoesEmLote(forms);
-      show(`${res.sucesso} questão(ões) importada(s)${res.falha ? `, ${res.falha} falharam` : ""}.`);
-      setPrevia(null);
-      setImportando(false);
-    });
-  }
 
   const materias = ["Todas", ...materiasExistentes];
   const termo = busca.trim().toLowerCase();
@@ -128,59 +84,7 @@ export function QuestoesManager({
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Banco de Questões" subtitle="Crie e edite questões ligadas à matriz FACAPE — grava direto no banco" />
-        <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar em massa"}</GhostButton>
-      </div>
-
-      {importando && (
-        <Card className="mb-3">
-          <h2 className="text-sm font-extrabold text-navy-dark">Importar questões em massa</h2>
-          <p className="mt-1 text-xs text-navy-dark/50">
-            Cole o texto (ou envie um PDF) com uma questão por bloco, alternativas com letra e o gabarito indicado
-            (ex.: &quot;Gabarito: B&quot;). Você revisa tudo antes de importar de verdade.
-          </p>
-          <div className="mt-3">
-            <ImportadorTexto
-              onAnalisar={analisarTexto}
-              placeholder={"1) Qual organela é responsável pela respiração celular?\na) Complexo de Golgi\nb) Mitocôndria\nc) Ribossomo\nGabarito: B"}
-            />
-          </div>
-
-          {previa && (
-            <div className="mt-4">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-navy-dark">Aplicar a todas:</span>
-                <TextInput value={materiaLote} onChange={(e) => setMateriaLote(e.target.value)} placeholder="Matéria" className="!w-40" />
-                <div className="flex gap-1">
-                  {(["Fácil", "Média", "Difícil"] as const).map((n) => (
-                    <Chip key={n} active={dificuldadeLote === n} onClick={() => setDificuldadeLote(n)}>{n}</Chip>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                {previa.map((p, i) => (
-                  <div key={i} className={`rounded-xl border p-3 text-xs ${p.erro ? "border-red/30 bg-red/5" : "border-green/30 bg-green/5"}`}>
-                    <p className="font-semibold text-navy-dark">{p.enunciado || "(sem enunciado)"}</p>
-                    {p.alternativas.length > 0 && (
-                      <p className="mt-1 text-navy-dark/60">
-                        {p.alternativas.map((a) => `${a.letra.toUpperCase()}) ${a.texto}`).join(" · ")}
-                      </p>
-                    )}
-                    <p className={`mt-1 font-bold ${p.erro ? "text-red" : "text-green-700"}`}>
-                      {p.erro ?? `OK · Gabarito ${p.gabarito?.toUpperCase()}`}
-                    </p>
-                  </div>
-                ))}
-                {previa.length === 0 && <p className="text-xs text-navy-dark/50">Nenhum bloco reconhecido nesse texto.</p>}
-              </div>
-              <PrimaryButton onClick={importarLote} className={`mt-3 ${pending ? "opacity-60" : ""}`}>
-                {pending ? "Importando..." : `Importar ${previa.filter((p) => !p.erro).length} questão(ões) válida(s)`}
-              </PrimaryButton>
-            </div>
-          )}
-        </Card>
-      )}
+      <PageHeader title="Banco de Questões" subtitle="Crie e edite questões ligadas à matriz FACAPE — grava direto no banco" />
 
       <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
         <div>
@@ -221,16 +125,6 @@ export function QuestoesManager({
                       <Icon name="trash" size={12} />
                     </button>
                   </div>
-                  {(usoPorQuestao[q.id]?.length ?? 0) > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-navy-dark/10 pt-2">
-                      <span className="text-[10px] font-bold text-navy-dark/40">Usada em:</span>
-                      {usoPorQuestao[q.id].map((u, i) => (
-                        <span key={i} className="rounded-full bg-navy-dark/5 px-2 py-0.5 text-[10px] font-bold text-navy-dark/60">
-                          {u.tipo} · {u.titulo}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))}
               {lista.length === 0 && <p className="py-4 text-center text-sm text-navy-dark/50">Nenhuma questão encontrada.</p>}

@@ -12,10 +12,7 @@ export type TipoHistoricoAdmin =
   | "usuario_promovido_admin"
   | "usuario_rebaixado_admin"
   | "usuario_promovido_parceiro"
-  | "usuario_rebaixado_parceiro"
-  | "professor_criado_manual"
-  | "usuario_promovido_professor"
-  | "usuario_rebaixado_professor";
+  | "usuario_rebaixado_parceiro";
 
 /**
  * Grava uma linha de auditoria. Nunca deve derrubar a ação principal caso

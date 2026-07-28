@@ -43,8 +43,8 @@ export function TrilhaManager({ dias }: Props) {
           {totalComTituloGenerico > 0 && (
             <span className="text-orange-dark">
               {" "}
-              · {totalComTituloGenerico} ainda com título genérico (&quot;Aula N&quot;) — abra o dia e toque em &quot;Buscar
-              títulos reais&quot; para corrigir.
+              · {totalComTituloGenerico} ainda com título genérico ("Aula N") — abra o dia e toque em "Buscar
+              títulos reais" para corrigir.
             </span>
           )}
         </p>

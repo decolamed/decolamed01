@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { LogoutButton } from "@/components/auth/logout-button";
 
 interface NavItem {
   href: string;
@@ -32,7 +31,7 @@ export function AdminMobileNav({ nav }: { nav: NavItem[] }) {
       </button>
 
       {aberto && (
-        <nav className="absolute left-0 right-0 top-[64px] z-40 flex max-h-[calc(100vh-64px)] flex-col gap-1 overflow-y-auto border-b bg-gradient-to-b from-[#0d4a79] to-navy-dark p-4 text-white shadow-lg">
+        <nav className="absolute left-0 right-0 top-[64px] z-40 flex flex-col gap-1 border-b bg-gradient-to-b from-[#0d4a79] to-navy-dark p-4 text-white shadow-lg">
           {nav.map((item) => (
             <Link
               key={item.href}
@@ -43,19 +42,6 @@ export function AdminMobileNav({ nav }: { nav: NavItem[] }) {
               {item.label}
             </Link>
           ))}
-          <div className="mt-2 border-t border-white/10 pt-2">
-            <Link
-              href="/preview-aluno"
-              target="_blank"
-              onClick={() => setAberto(false)}
-              className="block rounded-lg px-3 py-3 text-sm font-bold hover:bg-white/10"
-            >
-              Ver app do aluno →
-            </Link>
-            <div className="px-3 py-2">
-              <LogoutButton />
-            </div>
-          </div>
         </nav>
       )}
     </div>

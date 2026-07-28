@@ -15,16 +15,13 @@ export default async function AlunoRedacaoPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  const [{ data: perfilComPlano }, { data: consumidos }, { data: configs }, { data: ajustes }] = await Promise.all([
+  const [{ data: perfilComPlano }, { data: consumidos }, { data: configs }] = await Promise.all([
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
     supabase.from("redacoes_creditos_consumidos").select("id").eq("aluno_id", profile.id),
-    supabase.from("configuracoes").select("chave, valor").in("chave", ["redacao.whatsapp", "redacao.base_temas_url"]),
-    supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", profile.id)
+    supabase.from("configuracoes").select("chave, valor").in("chave", ["redacao.whatsapp", "redacao.base_temas_url"])
   ]);
 
-  const creditosDoPlano = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
-  const ajustesManuais = (ajustes ?? []).reduce((soma, a: any) => soma + a.quantidade, 0);
-  const creditosTotais = creditosDoPlano + ajustesManuais;
+  const creditosTotais = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
   const totalConsumidos = (consumidos ?? []).length;
   const creditosDisponiveis = Math.max(0, creditosTotais - totalConsumidos);
 

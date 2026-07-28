@@ -15,22 +15,6 @@ async function criarCupom(formData: FormData) {
   const parceiroId = String(formData.get("parceiro_id") ?? "");
   const percentualComissao = String(formData.get("percentual_comissao") ?? "");
 
-  // A tabela só garante valor > 0 — sem isso, um percentual digitado errado
-  // (ex.: 500 em vez de 50) passa direto pro banco. O checkout já trava o
-  // preço final em 0 no mínimo (nunca fica negativo), mas um cupom assim
-  // ainda liberaria o plano de graça sem ninguém perceber o erro de digitação.
-  const tipo = String(formData.get("tipo"));
-  const valorNum = Number(formData.get("valor"));
-  if (tipo === "percentual" && (valorNum <= 0 || valorNum > 100)) {
-    redirect(`/admin/cupons?erro=${encodeURIComponent("Cupom percentual precisa ser um valor entre 1 e 100.")}`);
-  }
-  if (percentualComissao) {
-    const comissaoNum = Number(percentualComissao);
-    if (comissaoNum < 0 || comissaoNum > 100) {
-      redirect(`/admin/cupons?erro=${encodeURIComponent("Percentual de comissão precisa estar entre 0 e 100.")}`);
-    }
-  }
-
   const { error } = await supabase.from("cupons").insert({
     codigo: String(formData.get("codigo")).trim().toUpperCase(),
     tipo: String(formData.get("tipo")),
@@ -62,12 +46,6 @@ async function vincularParceiro(formData: FormData) {
   const supabase = createAdminClient();
   const parceiroId = String(formData.get("parceiro_id") ?? "");
   const percentualComissao = String(formData.get("percentual_comissao") ?? "");
-  if (percentualComissao) {
-    const comissaoNum = Number(percentualComissao);
-    if (comissaoNum < 0 || comissaoNum > 100) {
-      redirect(`/admin/cupons?erro=${encodeURIComponent("Percentual de comissão precisa estar entre 0 e 100.")}`);
-    }
-  }
   const { error } = await supabase
     .from("cupons")
     .update({

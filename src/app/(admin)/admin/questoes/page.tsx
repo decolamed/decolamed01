@@ -7,36 +7,9 @@ export default async function AdminQuestoesPage() {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const [{ data }, { data: emSimulados }, { data: emAtividades }] = await Promise.all([
-    supabase.from("questoes").select("*").order("created_at", { ascending: false }),
-    supabase.from("simulado_questoes").select("questao_id, simulados(titulo)"),
-    supabase.from("atividade_questoes").select("questao_id, atividades(titulo)")
-  ]);
+  const { data } = await supabase.from("questoes").select("*").order("created_at", { ascending: false });
   const questoes = (data as Questao[]) ?? [];
   const materiasExistentes = Array.from(new Set(questoes.map((q) => q.materia))).sort();
 
-  // Onde cada questão já está sendo usada — pra evitar reaproveitar sem
-  // querer (ou pra confirmar de propósito) a mesma questão em vários
-  // lugares, direto na tela do banco.
-  const usoPorQuestao = new Map<string, { tipo: "Simulado" | "Atividade"; titulo: string }[]>();
-  (emSimulados ?? []).forEach((r: any) => {
-    if (!r.simulados) return;
-    const lista = usoPorQuestao.get(r.questao_id) ?? [];
-    lista.push({ tipo: "Simulado", titulo: r.simulados.titulo });
-    usoPorQuestao.set(r.questao_id, lista);
-  });
-  (emAtividades ?? []).forEach((r: any) => {
-    if (!r.atividades) return;
-    const lista = usoPorQuestao.get(r.questao_id) ?? [];
-    lista.push({ tipo: "Atividade", titulo: r.atividades.titulo });
-    usoPorQuestao.set(r.questao_id, lista);
-  });
-
-  return (
-    <QuestoesManager
-      questoes={questoes}
-      materiasExistentes={materiasExistentes}
-      usoPorQuestao={Object.fromEntries(usoPorQuestao)}
-    />
-  );
+  return <QuestoesManager questoes={questoes} materiasExistentes={materiasExistentes} />;
 }

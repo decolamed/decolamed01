@@ -54,43 +54,6 @@ export async function salvarQuestao(form: QuestaoForm) {
   return { ok: true as const };
 }
 
-// Importação em massa (via texto colado ou PDF — ver parse-questoes.ts e
-// pdf-actions.ts): reaproveita a mesma validação/insert de salvarQuestao(),
-// uma linha por vez, retornando quantas entraram e quantas falharam.
-export async function salvarQuestoesEmLote(forms: QuestaoForm[]) {
-  const admin = await requireAdmin();
-  const supabase = createAdminClient();
-
-  let sucesso = 0;
-  let falha = 0;
-  for (const form of forms) {
-    const alternativas = LETRAS.map((letra) => ({ id: letra, texto: (form.alternativas[letra] ?? "").trim() })).filter(
-      (a) => a.texto.length > 0
-    );
-    if (!form.enunciado.trim() || alternativas.length < 2 || !alternativas.some((a) => a.id === form.gabarito)) {
-      falha++;
-      continue;
-    }
-    const { error } = await supabase.from("questoes").insert({
-      enunciado: form.enunciado.trim(),
-      materia: form.materia,
-      assunto: form.assunto.trim() || null,
-      dificuldade: DIFICULDADE_PARA_BANCO[form.dificuldade] ?? "media",
-      resposta_correta: form.gabarito,
-      explicacao: form.comentario.trim() || null,
-      fonte: form.fonte?.trim() || null,
-      alternativas,
-      ativo: true,
-      criado_por: admin.id
-    });
-    if (error) falha++;
-    else sucesso++;
-  }
-
-  revalidatePath(PATH);
-  return { sucesso, falha };
-}
-
 export async function excluirQuestao(id: string) {
   await requireAdmin();
   const supabase = createAdminClient();

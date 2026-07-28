@@ -17,17 +17,12 @@ const MATERIAS_PADRAO = [
 ];
 
 /**
- * Faz de fato o upsert do briefing — sem redirect, pra poder ser chamada
- * tanto pelo formulário dedicado (/aluno/briefing, que redireciona ao
- * concluir) quanto pelo app gamificado (decola-app.tsx, que chama a Server
- * Action direto por um método de classe e precisa só do resultado, sem
- * navegação — redirect() só funciona de verdade quando disparado a partir
- * de uma submissão de <form>, não de uma chamada direta).
+ * Salva o briefing do aluno (recebe todos os dados dos 3 passos de uma vez).
  * Espera:
  *   data_prova, inicio_estudos, dias_por_semana, horas_por_dia,
  *   sentimento_<Materia> = "Domínio" | "Atenção" | "Turbulência"
  */
-async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { ok: false; erro: string }> {
+export async function salvarBriefing(formData: FormData) {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
@@ -46,9 +41,15 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
     if (SENTIMENTOS_VALIDOS.has(valor)) sentimentos[materia] = valor;
   }
 
-  if (!dataProva) return { ok: false, erro: "Informe a data da prova." };
-  if (diasPorSemana < 1 || diasPorSemana > 7) return { ok: false, erro: "Dias por semana precisa estar entre 1 e 7." };
-  if (horasPorDia < 1 || horasPorDia > 12) return { ok: false, erro: "Horas por dia precisa estar entre 1 e 12." };
+  if (!dataProva) {
+    redirect(`/aluno/briefing?erro=${encodeURIComponent("Informe a data da prova.")}`);
+  }
+  if (diasPorSemana < 1 || diasPorSemana > 7) {
+    redirect(`/aluno/briefing?erro=${encodeURIComponent("Dias por semana precisa estar entre 1 e 7.")}`);
+  }
+  if (horasPorDia < 1 || horasPorDia > 12) {
+    redirect(`/aluno/briefing?erro=${encodeURIComponent("Horas por dia precisa estar entre 1 e 12.")}`);
+  }
 
   // Compatibilidade com colunas antigas (dias_estuda / horas_por_dia_semana /
   // horas_por_dia_fim_semana): guardamos o mesmo número em ambos e todos os
@@ -74,30 +75,12 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
   );
 
   if (error) {
-    console.error("Falha ao salvar aluno_briefing:", error);
-    return { ok: false, erro: "Não foi possível salvar o briefing." };
+    redirect(`/aluno/briefing?erro=${encodeURIComponent("Não foi possível salvar o briefing.")}`);
   }
 
   revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
-  return { ok: true };
-}
-
-// Usada pelo <form action={...}> de /aluno/briefing — redireciona de
-// verdade porque é uma submissão de formulário real.
-export async function salvarBriefing(formData: FormData) {
-  const resultado = await salvarBriefingCore(formData);
-  if (!resultado.ok) {
-    redirect(`/aluno/briefing?erro=${encodeURIComponent(resultado.erro)}`);
-  }
   redirect("/aluno/tutorial");
-}
-
-// Usada pelo app gamificado (decola-app.tsx) — chamada direta de um método
-// de classe, sem <form> nem navegação de página; o componente decide o que
-// fazer com o resultado (mostrar erro, trocar de tela internamente etc.).
-export async function salvarBriefingApp(formData: FormData) {
-  return salvarBriefingCore(formData);
 }
 
 export { MATERIAS_PADRAO };

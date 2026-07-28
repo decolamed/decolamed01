@@ -6,12 +6,7 @@ export default function LoginPage() {
   return (
     <div className="rounded-3xl bg-white p-8 shadow-xl">
       <div className="flex justify-center">
-        <div
-          className="flex items-center justify-center rounded-2xl p-4 shadow-lg"
-          style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
-        >
-          <Image src="/assets/logo.png" alt="Decola Med" width={72} height={72} priority />
-        </div>
+        <Image src="/assets/logo.png" alt="Decola Med" width={72} height={72} />
       </div>
       <h1 className="mt-4 text-center font-display text-2xl font-bold text-navy-dark">Entrar</h1>
 

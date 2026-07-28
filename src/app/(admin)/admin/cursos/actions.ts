@@ -23,41 +23,6 @@ export async function criarConteudo(tipo: "aula" | "pdf", titulo: string, materi
   return { ok: true as const };
 }
 
-// Importação em massa de aulas via YouTube — ver buscarInfoYoutube() em
-// src/lib/importacao/youtube.ts, que já buscou título/matéria sugerida
-// antes desta chamada. Mesmo padrão de retorno de salvarQuestoesEmLote().
-export async function criarConteudosEmLote(
-  itens: { titulo: string; materia: string; assunto: string | null; url: string; duracao: number }[]
-) {
-  const admin = await requireAdmin();
-  const supabase = createAdminClient();
-
-  let sucesso = 0;
-  let falha = 0;
-  for (const item of itens) {
-    if (!item.titulo.trim() || !item.materia.trim()) {
-      falha++;
-      continue;
-    }
-    const { error } = await supabase.from("conteudos_biblioteca").insert({
-      tipo: "aula",
-      titulo: item.titulo.trim(),
-      materia: item.materia.trim(),
-      assunto: item.assunto?.trim() || null,
-      url: item.url.trim() || null,
-      duracao_minutos: item.duracao,
-      ativo: true,
-      criado_por: admin.id
-    });
-    if (error) falha++;
-    else sucesso++;
-  }
-
-  revalidatePath("/admin/cursos");
-  revalidatePath("/admin/pdfs");
-  return { sucesso, falha };
-}
-
 export async function alternarAtivoConteudo(id: string, ativo: boolean) {
   await requireAdmin();
   const supabase = createAdminClient();
