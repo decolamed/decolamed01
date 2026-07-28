@@ -45,8 +45,11 @@ export async function middleware(request: NextRequest) {
   const role = profile?.role ?? "aluno";
   const home = HOME_POR_ROLE[role] ?? "/aluno";
 
-  // Preview: só admin e parceiro podem ver a vitrine do app do aluno.
-  if (isPreviewRoute && role !== "admin" && role !== "parceiro") {
+  // Preview: admin, professor e parceiro podem ver a vitrine do app do
+  // aluno — precisa bater exatamente com requirePreviewAluno()
+  // (src/lib/auth/permissions.ts), senão o middleware bloqueia antes da
+  // página nem rodar, mesmo pra quem a página deixaria entrar.
+  if (isPreviewRoute && role !== "admin" && role !== "parceiro" && role !== "professor") {
     return NextResponse.redirect(new URL(home, request.url));
   }
 
