@@ -327,6 +327,19 @@ export interface TrilhaDia {
   updated_at: string;
 }
 
+// Progresso genérico por item (aluno_progresso_itens) — chave identifica o
+// item ("aula:<conteudo_id>" ou "trilha:<dia_numero>:<indice>"), ver
+// comentário da migração 035 para o esquema completo.
+export interface AlunoProgressoItem {
+  aluno_id: string;
+  chave: string;
+  concluida: boolean;
+  concluida_em: string | null;
+  posicao_segundos: number;
+  duracao_segundos: number | null;
+  updated_at: string;
+}
+
 export interface MateriaPeso {
   materia: string;
   peso: number;

@@ -10,6 +10,7 @@ import { marcarMissaoConcluida } from "./cronograma/actions";
 import { marcarRecomendacao } from "./copiloto/actions";
 import { marcarNotificacaoLida } from "./notificacoes-actions";
 import { salvarBriefingApp } from "./briefing/actions";
+import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -21,6 +22,7 @@ import type {
   AlunoMissao,
   TrilhaDia,
   TrilhaItem,
+  AlunoProgressoItem,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -44,6 +46,7 @@ interface DecolaAppDados {
   pesos: MateriaPeso[];
   missoes: AlunoMissao[];
   trilhaHoje: TrilhaDia | null;
+  progressoItens: Record<string, AlunoProgressoItem>;
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
   briefing: AlunoBriefing | null;
@@ -153,6 +156,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     contTitle: null,
     contTipo: null as "aula" | "pdf" | "link" | null,
     contBack: "estudos",
+    playerChave: null as string | null,
+    playerTitulo: "",
+    playerUrl: "",
+    playerBack: "estudos",
+    playerPosicaoInicial: 0,
     brief: (function (self: any) {
       const b = self.props.dados.briefing;
       if (b) {
@@ -205,6 +213,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     })(this),
     recsLocal: (function (self: any) {
       return self.props.dados.recomendacoes as CopilotoRecomendacao[];
+    })(this),
+    progressoLocal: (function (self: any) {
+      return self.props.dados.progressoItens as Record<string, AlunoProgressoItem>;
     })(this)
   };
 
@@ -212,6 +223,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   _b: any;
   _r: any;
   _bip: any;
+  // Instância do YouTube IFrame Player da videoaula atual (scrPlayer()) — vive
+  // fora do state porque é um objeto imperativo da API do YouTube, não dado
+  // serializável de UI. _ytVideoIdAtual evita recriar o player à toa quando
+  // o React só re-renderiza a mesma aula (ex.: progresso salvo no state).
+  _ytPlayer: any = null;
+  _ytVideoIdAtual: string | null = null;
+  _ytProgressoInterval: any = null;
   _installed: any;
   _deferredInstallPrompt: any = null;
 
@@ -261,6 +279,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     clearInterval(this._b);
     window.removeEventListener("beforeinstallprompt", this._bip);
     window.removeEventListener("appinstalled", this._installed);
+    this.destruirPlayerYoutube();
   }
   // Chamado pelo botão "Instalar aplicativo" do tutorial. Se o navegador
   // suporta o prompt nativo (capturado em beforeinstallprompt), dispara ele;
@@ -854,7 +873,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     else if (m.tipo === "flashcards") this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 });
     else if (m.tipo === "simulado") this.nav("simulados");
     else if (m.tipo === "revisao" && m.materia) this.montarRevisao(m.materia, m.assunto || m.materia);
-    else this.nav("estudos");
+    else if (m.tipo === "aula") {
+      const conteudo = m.ref_id ? this.props.dados.conteudos.find((c) => c.id === m.ref_id) : null;
+      if (conteudo) this.abrirAula(conteudo.id, conteudo.titulo, conteudo.url || "", "mapa");
+      else this.nav("estudos");
+    } else this.nav("estudos");
   }
   toggleMissao(id: string) {
     const atual = this.state.missoesLocal.find((m: AlunoMissao) => m.id === id);
@@ -889,16 +912,27 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
       ia: m.origem === "copiloto",
       done: m.concluida,
-      act: () => this.navMissao(m)
+      act: () => this.navMissao(m),
+      toggle: () => this.toggleMissao(m.id)
     }));
     if (!list.length) {
       const dia = this.props.dados.trilhaHoje;
       (dia?.itens || []).forEach((item, i) => {
-        list.push({ id: "trilha-" + i, ic: this.iconeMissao(item.tipo), t: item.titulo, d: dia!.titulo, ia: false, done: false, act: () => this.abrirItemTrilha(item) });
+        const chave = dia ? this.chaveDeItemTrilha(dia.dia_numero, i, item) : null;
+        list.push({
+          id: "trilha-" + i,
+          ic: this.iconeMissao(item.tipo),
+          t: item.titulo,
+          d: dia!.titulo,
+          ia: false,
+          done: this.estaConcluido(chave),
+          act: () => this.abrirItemTrilha(item),
+          toggle: chave ? () => this.toggleItemGenerico(chave) : null
+        });
       });
     }
     const pr0 = this.priorities();
-    if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview() });
+    if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview(), toggle: null });
     return list;
   }
   nav(screen: string, extra?: any) {
@@ -962,7 +996,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // — ver TrilhaItem em types/database.ts e /admin/trilha) — cada tipo
   // navega pro lugar certo já existente no app, sem duplicar nenhuma tela.
   abrirItemTrilha(item: TrilhaItem) {
-    if (item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link") {
+    if (item.tipo === "aula") {
+      this.abrirAula(item.ref_id, item.titulo, item.url || "", "plano");
+    } else if (item.tipo === "pdf" || item.tipo === "link") {
       this.openBrowser(item.titulo, item.url || "", "plano");
     } else if (item.tipo === "questoes") {
       this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
@@ -974,6 +1010,177 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.startReview();
     }
     // "livre": dia de descanso, sem ação de navegação.
+  }
+  // Chave estável de progresso por item — "aula:<id>" é compartilhada por
+  // qualquer tela que abra a mesma aula (cronograma, Estudos, missão do
+  // Copiloto), então o progresso/conclusão é o mesmo em todo lugar. Os
+  // demais tipos não têm registro individual em outra tabela, então usam a
+  // posição do item dentro do dia da trilha.
+  chaveAula(conteudoId: string): string {
+    return "aula:" + conteudoId;
+  }
+  chaveItemTrilha(diaNumero: number, indice: number): string {
+    return "trilha:" + diaNumero + ":" + indice;
+  }
+  chaveDeItemTrilha(diaNumero: number, indice: number, item: TrilhaItem): string | null {
+    if (item.tipo === "aula") return item.ref_id ? this.chaveAula(item.ref_id) : null;
+    return this.chaveItemTrilha(diaNumero, indice);
+  }
+  progressoDe(chave: string | null): AlunoProgressoItem | undefined {
+    return chave ? this.state.progressoLocal[chave] : undefined;
+  }
+  estaConcluido(chave: string | null): boolean {
+    return !!this.progressoDe(chave)?.concluida;
+  }
+  // Alternância manual de conclusão — usada tanto pelo botão "Marcar como
+  // concluída" do player quanto pelo checkbox de qualquer item do
+  // cronograma (aula, pdf, link, questões, flashcards, simulado, revisão).
+  // Atualiza o estado local de forma otimista e grava em segundo plano.
+  toggleItemGenerico(chave: string) {
+    const atual = this.state.progressoLocal[chave] as AlunoProgressoItem | undefined;
+    const nova = !atual?.concluida;
+    this.setState((s: any) => ({
+      progressoLocal: {
+        ...s.progressoLocal,
+        [chave]: {
+          aluno_id: this.props.alunoId,
+          posicao_segundos: atual?.posicao_segundos ?? 0,
+          duracao_segundos: atual?.duracao_segundos ?? null,
+          ...atual,
+          chave,
+          concluida: nova,
+          concluida_em: nova ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        }
+      }
+    }));
+    if (!this.props.demoMode) alternarConclusaoItem(chave, nova).catch((e) => console.error("Falha ao alternar conclusão do item:", e));
+  }
+  // Vídeo mais recente que o aluno começou e ainda não terminou — alimenta
+  // o card "Continuar assistindo" em Estudos.
+  continuarAssistindo(): { conteudo: ConteudoBiblioteca; progresso: AlunoProgressoItem } | null {
+    const candidatos = Object.values(this.state.progressoLocal as Record<string, AlunoProgressoItem>)
+      .filter((p) => p.chave.startsWith("aula:") && !p.concluida && p.posicao_segundos > 5)
+      .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+    for (const p of candidatos) {
+      const conteudo = this.props.dados.conteudos.find((c) => c.id === p.chave.slice("aula:".length));
+      if (conteudo) return { conteudo, progresso: p };
+    }
+    return null;
+  }
+  // Abre a videoaula no player integrado (scrPlayer()), em vez do navegador
+  // interno genérico — vídeos merecem uma experiência dedicada (sem barra de
+  // endereço) com progresso salvo automaticamente. conteudoId pode ser null
+  // pra itens antigos sem referência real; nesse caso o vídeo ainda abre,
+  // só sem progresso/"continuar assistindo" (não há chave estável pra isso).
+  abrirAula(conteudoId: string | null, titulo: string, url: string, back: string) {
+    const chave = conteudoId ? this.chaveAula(conteudoId) : null;
+    const posicaoInicial = this.progressoDe(chave)?.posicao_segundos || 0;
+    this.nav("player", { playerChave: chave, playerTitulo: titulo, playerUrl: url, playerBack: back, playerPosicaoInicial: posicaoInicial });
+  }
+  // Extrai só o ID do vídeo (não a URL /embed/ inteira) — é o que a
+  // YouTube IFrame Player API espera em { videoId }.
+  youtubeVideoId(url: string): string | null {
+    const m = (url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{6,})/i);
+    return m ? m[1] : null;
+  }
+  // Injeta o script da YouTube IFrame Player API uma única vez (mesmo se
+  // várias aulas forem abertas na mesma sessão) e encadeia callbacks de
+  // onYouTubeIframeAPIReady sem sobrescrever um já registrado por outra
+  // parte da página.
+  carregarYoutubeApi(aoPronto: () => void) {
+    const w = window as any;
+    if (w.YT && w.YT.Player) {
+      aoPronto();
+      return;
+    }
+    const anterior = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      anterior?.();
+      aoPronto();
+    };
+    if (!document.getElementById("dm-yt-iframe-api")) {
+      const script = document.createElement("script");
+      script.id = "dm-yt-iframe-api";
+      script.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(script);
+    }
+  }
+  criarYoutubePlayer(elId: string, videoId: string, posicaoInicial: number) {
+    const w = window as any;
+    if (!document.getElementById(elId)) return; // aluno já navegou pra outra tela antes da API carregar
+    this._ytPlayer = new w.YT.Player(elId, {
+      videoId,
+      playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1 },
+      events: {
+        onReady: (e: any) => {
+          if (posicaoInicial > 3) e.target.seekTo(posicaoInicial, true);
+          this.pararChecagemDeProgresso();
+          this._ytProgressoInterval = setInterval(() => this.salvarProgressoDoPlayer(false), 8000);
+        },
+        onStateChange: (e: any) => {
+          if (e.data === w.YT.PlayerState.ENDED) this.salvarProgressoDoPlayer(true);
+        }
+      }
+    });
+  }
+  // Ref do container do player — cria a instância do YT.Player quando o div
+  // aparece (aula aberta) e destrói quando desaparece (aluno saiu da tela ou
+  // trocou de vídeo), evitando players "fantasma" tocando em segundo plano.
+  refPlayerYoutube(el: HTMLDivElement | null, videoId: string, posicaoInicial: number) {
+    if (!el) {
+      this.destruirPlayerYoutube();
+      return;
+    }
+    if (this._ytVideoIdAtual === videoId && this._ytPlayer) return;
+    this.destruirPlayerYoutube();
+    this._ytVideoIdAtual = videoId;
+    this.carregarYoutubeApi(() => this.criarYoutubePlayer(el.id, videoId, posicaoInicial));
+  }
+  pararChecagemDeProgresso() {
+    if (this._ytProgressoInterval) clearInterval(this._ytProgressoInterval);
+    this._ytProgressoInterval = null;
+  }
+  destruirPlayerYoutube() {
+    this.pararChecagemDeProgresso();
+    if (this._ytPlayer) {
+      try {
+        this._ytPlayer.destroy();
+      } catch {}
+      this._ytPlayer = null;
+    }
+    this._ytVideoIdAtual = null;
+  }
+  // Salva posição/duração atuais (pra "Continuar assistindo") e marca
+  // conclusão automática acima de 90% do vídeo — chamado periodicamente
+  // enquanto o player toca e uma vez ao terminar o vídeo.
+  salvarProgressoDoPlayer(finalizado: boolean) {
+    const chave = this.state.playerChave as string | null;
+    if (!chave || !this._ytPlayer || this.props.demoMode) return;
+    const posicao = Math.floor(this._ytPlayer.getCurrentTime?.() || 0);
+    const duracao = Math.floor(this._ytPlayer.getDuration?.() || 0);
+    if (!duracao) return;
+    const concluidaAntes = this.estaConcluido(chave);
+    const concluida = finalizado || posicao / duracao >= 0.9 || concluidaAntes;
+    this.setState((s: any) => ({
+      progressoLocal: {
+        ...s.progressoLocal,
+        [chave]: {
+          aluno_id: this.props.alunoId,
+          chave,
+          posicao_segundos: posicao,
+          duracao_segundos: duracao,
+          concluida,
+          concluida_em: concluida ? s.progressoLocal[chave]?.concluida_em ?? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        }
+      }
+    }));
+    salvarProgressoVideo(chave, posicao, duracao, finalizado).catch((e) => console.error("Falha ao salvar progresso do vídeo:", e));
+  }
+  fecharPlayer() {
+    this.salvarProgressoDoPlayer(false);
+    this.nav(this.state.playerBack || "estudos");
   }
   // Navega para dentro do app quando o link do banner é "app/<tela>"
   // (convenção usada no formulário de banners do admin — ver
@@ -1404,9 +1611,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                     key: "n",
                     onClick: (e: any) => {
                       e.stopPropagation();
-                      if (typeof o.id === "string" && !o.id.startsWith("cron-") && o.id !== "rev-copiloto") this.toggleMissao(o.id);
+                      o.toggle?.();
                     },
-                    title: dn ? "Desmarcar" : "Marcar como concluído",
+                    title: o.toggle ? (dn ? "Desmarcar" : "Marcar como concluído") : undefined,
                     style: {
                       width: 28,
                       height: 28,
@@ -1415,7 +1622,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      cursor: "pointer",
+                      cursor: o.toggle ? "pointer" : "default",
                       fontSize: 12,
                       fontWeight: 900,
                       background: dn ? C.green : isNext ? C.orange : C.chip,
@@ -1677,14 +1884,42 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   scrEstudos() {
     const { C, h, I, card, iconBox } = this.ui();
     const d = this.data();
-    const ultimaAula = this.props.dados.conteudos.filter((c) => c.tipo === "aula")[0];
+    const continuar = this.continuarAssistindo();
+    const ultimaAula = !continuar ? this.props.dados.conteudos.filter((c) => c.tipo === "aula")[0] : null;
     return this.screenWrap([
       this.head("Estudos", { back: "mapa" }),
       h("div", { key: "search", style: { margin: "6px 18px 0", display: "flex", gap: 10, alignItems: "center", background: C.card, border: "1px solid " + C.line, borderRadius: 14, padding: "12px 14px" } }, [
         I("search", 17, C.faint),
         h("input", { key: "i", placeholder: "Buscar conteúdo, assuntos...", style: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: C.txt, fontWeight: 600, fontFamily: "inherit" } })
       ]),
-      ultimaAula
+      continuar
+        ? h(
+            "div",
+            { key: "cont", style: { margin: "14px 18px 0" } },
+            card({}, [
+              h("div", { key: "l", style: { fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 8 } }, "Continuar assistindo"),
+              h("div", { key: "r", style: { display: "flex", gap: 12, alignItems: "center" } }, [
+                iconBox("video", C.greenSoft, C.green, 46, 20),
+                h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                  h("div", { key: "a", style: { fontSize: 14, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, continuar.conteudo.titulo),
+                  h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 4 } }, continuar.conteudo.assunto || continuar.conteudo.materia),
+                  continuar.progresso.duracao_segundos
+                    ? h("div", { key: "bar", style: { marginTop: 8, height: 4, borderRadius: 99, background: C.chip, overflow: "hidden" } }, h("div", { style: { height: "100%", width: Math.min(100, Math.round((continuar.progresso.posicao_segundos / continuar.progresso.duracao_segundos) * 100)) + "%", background: C.green } }))
+                    : null
+                ]),
+                h(
+                  "div",
+                  {
+                    key: "p",
+                    onClick: () => this.abrirAula(continuar.conteudo.id, continuar.conteudo.titulo, continuar.conteudo.url || "", "estudos"),
+                    style: { width: 40, height: 40, borderRadius: 99, background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }
+                  },
+                  h("div", { style: { width: 0, height: 0, borderTop: "7px solid transparent", borderBottom: "7px solid transparent", borderLeft: "11px solid #fff", marginLeft: 3 } })
+                )
+              ])
+            ])
+          )
+        : ultimaAula
         ? h(
             "div",
             { key: "cont", style: { margin: "14px 18px 0" } },
@@ -1700,7 +1935,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   "div",
                   {
                     key: "p",
-                    onClick: () => this.openBrowser(ultimaAula.titulo, ultimaAula.url || "", "estudos"),
+                    onClick: () => this.abrirAula(ultimaAula.id, ultimaAula.titulo, ultimaAula.url || "", "estudos"),
                     style: { width: 40, height: 40, borderRadius: 99, background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }
                   },
                   h("div", { style: { width: 0, height: 0, borderTop: "7px solid transparent", borderBottom: "7px solid transparent", borderLeft: "11px solid #fff", marginLeft: 3 } })
@@ -3118,13 +3353,44 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             ? h(
                 "div",
                 { key: "at", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6 } },
-                diaTrilha.itens.map((item, i) =>
-                  h(
+                diaTrilha.itens.map((item, i) => {
+                  const chave = this.chaveDeItemTrilha(diaTrilha.dia_numero, i, item);
+                  const concluido = this.estaConcluido(chave);
+                  return h(
                     "div",
-                    { key: i, onClick: () => this.abrirItemTrilha(item), style: { display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
-                    [h("span", { key: "e" }, "✈️"), h("span", { key: "t", style: { fontSize: 12, color: "#fff", fontWeight: 700, flex: 1 } }, item.titulo), I("chevR", 14, "rgba(255,255,255,.7)")]
-                  )
-                )
+                    { key: i, style: { display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
+                    [
+                      h(
+                        "div",
+                        {
+                          key: "c",
+                          onClick: (e: any) => {
+                            e.stopPropagation();
+                            if (chave) this.toggleItemGenerico(chave);
+                          },
+                          style: {
+                            width: 22,
+                            height: 22,
+                            borderRadius: 99,
+                            flexShrink: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: chave ? "pointer" : "default",
+                            background: concluido ? C.green : "rgba(255,255,255,.15)"
+                          }
+                        },
+                        concluido ? I("check", 11, "#fff", 3) : null
+                      ),
+                      h(
+                        "div",
+                        { key: "t", onClick: () => this.abrirItemTrilha(item), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
+                        item.titulo
+                      ),
+                      h("div", { key: "go", onClick: () => this.abrirItemTrilha(item), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
+                    ]
+                  );
+                })
               )
             : h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 6 } }, "Dia livre — aproveite pra revisar o que quiser.")
         ])
@@ -3207,6 +3473,72 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           : h("div", { style: { padding: 26, textAlign: "center", fontSize: 12.5, color: C.sub, fontWeight: 600 } }, "Nenhum conteúdo para exibir.")
       ),
       h("div", { key: "foot", style: { padding: "10px 16px 26px", textAlign: "center", fontSize: 10.5, fontWeight: 700, color: C.faint, background: C.navBg, borderTop: "1px solid " + C.line } }, "Navegador interno · Decola Med")
+    ]);
+  }
+
+  // Player dedicado de videoaula — nada de barra de endereço/botões de
+  // navegador (ver scrBrowser() acima, reservado a pdf/link/páginas
+  // externas): aqui é só o vídeo em destaque, com progresso salvo sozinho e
+  // um botão claro pra marcar a aula como concluída manualmente.
+  scrPlayer() {
+    const { C, h, I } = this.ui();
+    const S = this.state;
+    const url = S.playerUrl || "";
+    const videoId = this.youtubeVideoId(url);
+    const progresso = this.progressoDe(S.playerChave);
+    const concluida = this.estaConcluido(S.playerChave);
+    return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000", overflow: "hidden" } }, [
+      h("div", { key: "video", style: { position: "relative", width: "100%", paddingTop: "56.25%", background: "#000", flexShrink: 0 } }, [
+        h(
+          "div",
+          {
+            key: "back",
+            onClick: () => this.fecharPlayer(),
+            style: { position: "absolute", top: 12, left: 12, zIndex: 2, width: 38, height: 38, borderRadius: 99, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }
+          },
+          I("arrowL", 18, "#fff")
+        ),
+        videoId
+          ? h("div", { key: "yt", id: "dm-yt-player-" + videoId, ref: (el: any) => this.refPlayerYoutube(el, videoId, S.playerPosicaoInicial), style: { position: "absolute", inset: 0 } })
+          : url
+          ? h("iframe", {
+              key: "if",
+              src: this.normalizarUrl(url),
+              title: S.playerTitulo,
+              style: { position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" },
+              allow: "autoplay; encrypted-media; picture-in-picture",
+              allowFullScreen: true
+            })
+          : h("div", { key: "empty", style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.6)", fontSize: 12.5, fontWeight: 700 } }, "Nenhum vídeo para exibir.")
+      ]),
+      h("div", { key: "info", style: { flex: 1, overflow: "auto", background: C.bg, borderRadius: "18px 18px 0 0", marginTop: -14, position: "relative", zIndex: 1, padding: "20px 18px 90px" } }, [
+        h("div", { key: "t", style: { fontSize: 16, fontWeight: 900, color: C.txt, lineHeight: 1.3 } }, S.playerTitulo),
+        S.playerChave
+          ? h(
+              "div",
+              {
+                key: "toggle",
+                onClick: () => this.toggleItemGenerico(S.playerChave),
+                style: { marginTop: 16, display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "13px 15px", borderRadius: 14, background: concluida ? C.greenSoft : C.chip }
+              },
+              [
+                h(
+                  "div",
+                  { key: "c", style: { width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: concluida ? C.green : C.card, border: concluida ? "none" : "1.5px solid " + C.line } },
+                  concluida ? I("check", 13, "#fff", 3) : null
+                ),
+                h("span", { key: "s", style: { fontSize: 12.5, fontWeight: 800, color: concluida ? C.green : C.txt } }, concluida ? "Aula concluída" : "Marcar como concluída")
+              ]
+            )
+          : null,
+        progresso && progresso.duracao_segundos
+          ? h(
+              "div",
+              { key: "prog", style: { marginTop: 14, fontSize: 10.5, fontWeight: 700, color: C.faint } },
+              "Assistido até " + Math.min(100, Math.floor((progresso.posicao_segundos / progresso.duracao_segundos) * 100)) + "% na última vez"
+            )
+          : null
+      ])
     ]);
   }
 
@@ -3304,10 +3636,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const tipo = S.contTipo as "aula" | "pdf" | "link" | null;
     const items =
       tipo === "link"
-        ? this.props.dados.linksExternos.map((l) => ({ ic: "link2", t: l.titulo, d: l.url, url: l.url }))
+        ? this.props.dados.linksExternos.map((l) => ({ id: l.id, ic: "link2", t: l.titulo, d: l.url, url: l.url }))
         : this.props.dados.conteudos
             .filter((c) => (tipo === "aula" ? c.tipo === "aula" : c.tipo === "pdf" || c.tipo === "artigo"))
-            .map((c) => ({ ic: tipo === "aula" ? "video" : "file", t: c.titulo, d: c.assunto ? `${c.assunto} · ${c.materia}` : c.materia, url: c.url }));
+            .map((c) => ({ id: c.id, ic: tipo === "aula" ? "video" : "file", t: c.titulo, d: c.assunto ? `${c.assunto} · ${c.materia}` : c.materia, url: c.url }));
     return this.screenWrap([
       this.head(t, { back: S.contBack || "estudos" }),
       items.length
@@ -3325,7 +3657,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   ]),
                   I("chevR", 17, C.faint)
                 ],
-                () => this.openBrowser(m.t, m.url || "", S.contBack || "estudos")
+                () => (tipo === "aula" ? this.abrirAula(m.id, m.t, m.url || "", S.contBack || "estudos") : this.openBrowser(m.t, m.url || "", S.contBack || "estudos"))
               )
             )
           )
@@ -3726,6 +4058,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       briefing: () => this.scrBriefing(),
       plano: () => this.scrPlano(),
       browser: () => this.scrBrowser(),
+      player: () => this.scrPlayer(),
       conteudo: () => this.scrConteudo(),
       senha: () => this.scrSenha(),
       flashcards: () => this.scrFlashcards(),

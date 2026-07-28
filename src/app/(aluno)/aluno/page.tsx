@@ -13,6 +13,7 @@ import type {
   RankingLinha,
   AlunoMissao,
   TrilhaDia,
+  AlunoProgressoItem,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -56,6 +57,7 @@ export default async function AlunoHomePage() {
     { data: pesosData },
     { data: missoesData },
     { data: trilhaDiasData },
+    { data: progressoItensData },
     { data: recomendacoesData },
     { data: notificacoesData },
     { data: briefingData },
@@ -109,6 +111,7 @@ export default async function AlunoHomePage() {
     // segunda consulta dependente de matricula.acesso_liberado_em (que só
     // sai deste mesmo Promise.all).
     supabase.from("trilha_dias").select("*"),
+    supabase.from("aluno_progresso_itens").select("*").eq("aluno_id", profile.id),
     supabase
       .from("copiloto_recomendacoes")
       .select("*")
@@ -172,6 +175,13 @@ export default async function AlunoHomePage() {
         pesos: (pesosData as MateriaPeso[]) ?? [],
         missoes: (missoesData as AlunoMissao[]) ?? [],
         trilhaHoje,
+        progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
+          (acc: Record<string, AlunoProgressoItem>, p) => {
+            acc[p.chave] = p;
+            return acc;
+          },
+          {}
+        ),
         recomendacoes: (recomendacoesData as CopilotoRecomendacao[]) ?? [],
         notificacoes: (notificacoesData as Notificacao[]) ?? [],
         briefing: (briefingData as AlunoBriefing | null) ?? null,
