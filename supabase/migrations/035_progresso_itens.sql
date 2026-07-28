@@ -39,6 +39,10 @@ create trigger trg_aluno_progresso_itens_updated_at
 
 alter table public.aluno_progresso_itens enable row level security;
 
+-- (select auth.uid()) em vez de auth.uid() puro: o Postgres resolve o
+-- select uma única vez por consulta (InitPlan) em vez de reavaliar a
+-- função a cada linha — recomendação oficial do Supabase para políticas
+-- de RLS em tabelas que podem crescer bastante.
 create policy "aluno_progresso_itens_own" on public.aluno_progresso_itens
-  for all using (aluno_id = auth.uid() or is_admin())
-  with check (aluno_id = auth.uid() or is_admin());
+  for all using (aluno_id = (select auth.uid()) or is_admin())
+  with check (aluno_id = (select auth.uid()) or is_admin());
