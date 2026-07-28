@@ -6,9 +6,20 @@ import type { Profile } from "@/types/database";
 // Busca o usuário logado + seu profile (com role). Retorna null se deslogado.
 export async function getCurrentProfile(): Promise<Profile | null> {
   const supabase = createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+
+  // getUser() lança (em vez de devolver um erro comum) quando o refresh
+  // token do cookie já foi invalidado — ex.: girou numa outra aba/
+  // requisição concorrente, ou expirou de verdade. Tratamos isso como
+  // "deslogado" (mesmo efeito de sessão expirada por segurança) em vez de
+  // deixar o erro estourar como falha 500 no meio de uma página protegida.
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (e) {
+    console.error("Sessão inválida em getCurrentProfile, tratando como deslogado:", e);
+    return null;
+  }
 
   if (!user) return null;
 

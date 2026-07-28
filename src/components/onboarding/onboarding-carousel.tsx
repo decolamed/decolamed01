@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 // Onboarding genérico (sem depender de sessão/dados de aluno) — por isso
 // pode ser mostrado tanto ANTES do login (primeiro acesso ao site, ver
@@ -40,7 +41,7 @@ export function OnboardingCarousel({ onFinish }: { onFinish: () => void }) {
       style={{ background: "radial-gradient(1200px 700px at 50% -10%, #0e3a5c 0%, #0a2438 60%, #071a2a 100%)" }}
     >
       <div className="flex items-center px-5 pt-6">
-        <img src="/assets/logo.png" alt="Decola Med" className="h-6" />
+        <Image src="/assets/logo.png" alt="Decola Med" width={120} height={24} className="h-6 w-auto" />
         <div className="flex-1" />
         <button type="button" onClick={onFinish} className="text-xs font-bold text-white/50">
           Pular
