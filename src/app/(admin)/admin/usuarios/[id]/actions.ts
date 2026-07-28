@@ -7,9 +7,9 @@ import { createAdminClient } from "@/lib/supabase/server";
 import type { AlunoMissaoTipo } from "@/types/database";
 
 // Cronograma individual de um aluno específico (aluno_missoes) — não mexe
-// em cronograma_dias (o cronograma geral, compartilhado por todo mundo sem
+// em trilha_dias (o cronograma geral, compartilhado por todo mundo sem
 // Copiloto). decola-app.tsx passa a usar essas missões em vez do
-// cronograma fixo assim que o aluno tiver pelo menos uma (ver scrPlano()).
+// cronograma compartilhado assim que o aluno tiver pelo menos uma (ver scrPlano()).
 export async function adicionarMissaoIndividual(alunoId: string, formData: FormData) {
   const admin = await requireAdmin();
   const supabase = createAdminClient();

@@ -327,8 +327,8 @@ export default async function AdminDetalhesUsuarioPage({
 
       <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Cronograma individual</h2>
       <p className="mt-1 text-sm text-navy-dark/60">
-        Missões só deste aluno — não afeta o cronograma geral (/admin/cronograma). Assim que ele tiver pelo menos
-        uma missão aqui, o app passa a mostrar essas missões em vez do cronograma fixo compartilhado.
+        Missões só deste aluno — não afeta o cronograma geral (/admin/trilha). Assim que ele tiver pelo menos
+        uma missão aqui, o app passa a mostrar essas missões em vez do cronograma compartilhado.
       </p>
       <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow">
         <ul className="divide-y">

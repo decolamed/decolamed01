@@ -302,32 +302,13 @@ export interface RedacaoCreditoConsumido {
   created_at: string;
 }
 
-export type CronogramaItemTipo = "aula" | "pdf" | "link" | "questoes" | "simulado" | "flashcards";
-
-export interface CronogramaItem {
-  tipo: CronogramaItemTipo;
-  ref_id: string | null; // id do conteúdo/simulado/link referenciado; null para "questoes" (usa só a matéria)
-  url: string | null; // só pra aula/pdf/link — evita nova consulta pra abrir o conteúdo
-  materia: string | null;
-  titulo: string;
-}
-
-export interface CronogramaDia {
-  id: string;
-  dia_semana: number; // 0=domingo ... 6=sábado
-  titulo: string;
-  atividades: string[];
-  itens: CronogramaItem[];
-  updated_at: string;
-}
-
-// Trilha de 40 dias (trilha_dias): já existe em produção, criada fora do
-// fluxo de migrations deste repositório (mesmo padrão de conteudos_biblioteca
-// / links_externos, migração 019). dia_numero é relativo ao início do aluno
-// na trilha, não a um dia do calendário. Cada item de `itens` é hoje
-// {url, tipo, ref_id, titulo, materia} — ref_id ainda não está preenchido
-// (aulas com título genérico "Aula N"), o que é o próximo passo de refino.
-export type TrilhaItemTipo = "aula" | "questoes" | "flashcards" | "simulado" | "revisao" | "livre";
+// Trilha de dias (trilha_dias) — ESTE é o cronograma: uma sequência linear
+// de dias (dia_numero, relativo ao início do aluno na plataforma, não a um
+// dia do calendário) totalmente editável pelo admin em /admin/trilha, com
+// adicionar/remover/editar dia e anexar aulas, PDFs, links externos,
+// questões, flashcards e simulados a cada um. Substitui o antigo
+// cronograma_dias (semanal, fixo em 7 dias) — ver migração que o remove.
+export type TrilhaItemTipo = "aula" | "pdf" | "link" | "questoes" | "flashcards" | "simulado" | "revisao" | "livre";
 
 export interface TrilhaItem {
   tipo: TrilhaItemTipo;
@@ -343,6 +324,19 @@ export interface TrilhaDia {
   titulo: string;
   itens: TrilhaItem[];
   atividades: unknown[]; // coluna legada, não usada pelo admin novo
+  updated_at: string;
+}
+
+// Progresso genérico por item (aluno_progresso_itens) — chave identifica o
+// item ("aula:<conteudo_id>" ou "trilha:<dia_numero>:<indice>"), ver
+// comentário da migração 035 para o esquema completo.
+export interface AlunoProgressoItem {
+  aluno_id: string;
+  chave: string;
+  concluida: boolean;
+  concluida_em: string | null;
+  posicao_segundos: number;
+  duracao_segundos: number | null;
   updated_at: string;
 }
 
@@ -451,6 +445,23 @@ export interface LinkExterno {
   categoria: string | null;
   ativo: boolean;
   ordem: number;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Botões personalizados da aba Estudos (estudos_botoes) — ver comentário da
+// migração 036 pra como cada `tipo` abre pro aluno.
+export type EstudosBotaoTipo = "link" | "aula" | "pdf" | "app";
+
+export interface EstudosBotao {
+  id: string;
+  titulo: string;
+  icone: string;
+  tipo: EstudosBotaoTipo;
+  link: string;
+  ordem: number;
+  ativo: boolean;
   criado_por: string | null;
   created_at: string;
   updated_at: string;

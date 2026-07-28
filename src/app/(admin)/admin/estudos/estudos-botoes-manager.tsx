@@ -1,0 +1,140 @@
+"use client";
+import { useState, useTransition } from "react";
+import { PageHeader, Card } from "@/components/admin/card";
+import { Icon } from "@/components/admin/icon";
+import { Toggle, Toast, useToast, PrimaryButton, TextInput, FieldLabel } from "@/components/admin/interactive";
+import { criarBotaoEstudos, alternarAtivoBotaoEstudos, excluirBotaoEstudos } from "./actions";
+import type { EstudosBotao, EstudosBotaoTipo } from "@/types/database";
+
+const ICONES = ["book", "video", "file", "link2", "cards", "target", "note", "pencil", "flag", "bag", "bell", "trophy", "gift", "layers", "calendar", "gear"];
+
+const TIPOS: { valor: EstudosBotaoTipo; label: string }[] = [
+  { valor: "link", label: "Link (abre no navegador interno)" },
+  { valor: "pdf", label: "PDF" },
+  { valor: "aula", label: "Vídeo (abre no player integrado)" },
+  { valor: "app", label: "Tela do app (interno)" }
+];
+
+const TELAS_APP = ["estudos", "questoes", "simulados", "flashcards", "copiloto", "redacao", "plano", "ranking", "conquistas", "perfil"];
+
+export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao[] }) {
+  const [botoes, setBotoes] = useState(inicial);
+  const [titulo, setTitulo] = useState("");
+  const [icone, setIcone] = useState("book");
+  const [tipo, setTipo] = useState<EstudosBotaoTipo>("link");
+  const [link, setLink] = useState("");
+  const [, startTransition] = useTransition();
+  const { toast, show } = useToast();
+
+  function adicionar() {
+    startTransition(async () => {
+      const res = await criarBotaoEstudos(titulo, icone, tipo, link);
+      if (!res.ok) {
+        show(res.erro ?? "Erro.");
+        return;
+      }
+      setBotoes((a) => [{ id: crypto.randomUUID(), titulo, icone, tipo, link, ordem: 0, ativo: true, criado_por: null, created_at: "", updated_at: "" }, ...a]);
+      setTitulo("");
+      setLink("");
+      show("Botão adicionado.");
+    });
+  }
+
+  function alternar(id: string, ativo: boolean) {
+    setBotoes((a) => a.map((x) => (x.id === id ? { ...x, ativo: !ativo } : x)));
+    startTransition(() => alternarAtivoBotaoEstudos(id, ativo));
+  }
+
+  function excluir(id: string) {
+    startTransition(async () => {
+      const res = await excluirBotaoEstudos(id);
+      if (res.ok) {
+        setBotoes((a) => a.filter((x) => x.id !== id));
+        show("Botão removido.");
+      }
+    });
+  }
+
+  return (
+    <div>
+      <PageHeader title="Botões da aba Estudos" subtitle="Atalhos personalizados que aparecem pro aluno em Estudos, sem precisar alterar código" />
+      <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
+        <Card>
+          <h2 className="text-sm font-extrabold text-navy-dark">Adicionar botão</h2>
+          <FieldLabel>Nome</FieldLabel>
+          <TextInput value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Bagagem Essencial" />
+          <FieldLabel>Ícone</FieldLabel>
+          <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
+            {ICONES.map((ic) => (
+              <button
+                key={ic}
+                type="button"
+                onClick={() => setIcone(ic)}
+                className={`flex h-9 w-9 items-center justify-center rounded-[9px] ${icone === ic ? "bg-orange text-white" : "bg-navy-dark/5 text-navy-dark/60"}`}
+                title={ic}
+              >
+                <Icon name={ic} size={15} />
+              </button>
+            ))}
+          </div>
+          <FieldLabel>Tipo</FieldLabel>
+          <select
+            value={tipo}
+            onChange={(e) => {
+              setTipo(e.target.value as EstudosBotaoTipo);
+              setLink("");
+            }}
+            className="w-full rounded-[10px] border border-navy-dark/15 bg-white px-3 py-2.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+          >
+            {TIPOS.map((t) => (
+              <option key={t.valor} value={t.valor}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <FieldLabel>{tipo === "app" ? "Tela do app" : "Link"}</FieldLabel>
+          {tipo === "app" ? (
+            <select
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              className="w-full rounded-[10px] border border-navy-dark/15 bg-white px-3 py-2.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+            >
+              <option value="">Selecione...</option>
+              {TELAS_APP.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <TextInput value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
+          )}
+          <PrimaryButton onClick={adicionar} className="mt-4">
+            ADICIONAR BOTÃO
+          </PrimaryButton>
+        </Card>
+        <Card className="!p-0 sm:!px-[18px]">
+          {botoes.map((b, i) => (
+            <div key={b.id} className={`flex items-center gap-3 py-3.5 ${i < botoes.length - 1 ? "border-b border-navy-dark/10" : ""}`}>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-blue-soft text-navy-dark">
+                <Icon name={b.icone} size={15} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-bold text-navy-dark">{b.titulo}</p>
+                <p className="truncate text-xs font-semibold text-navy-dark/40">
+                  {TIPOS.find((t) => t.valor === b.tipo)?.label} · {b.link}
+                </p>
+              </div>
+              <Toggle on={b.ativo} onClick={() => alternar(b.id, b.ativo)} />
+              <button type="button" onClick={() => excluir(b.id)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-red/10 text-red" title="Excluir">
+                <Icon name="trash" size={14} />
+              </button>
+            </div>
+          ))}
+          {botoes.length === 0 && <p className="py-6 text-center text-sm text-navy-dark/50">Nenhum botão personalizado cadastrado.</p>}
+        </Card>
+      </div>
+      <Toast message={toast} />
+    </div>
+  );
+}

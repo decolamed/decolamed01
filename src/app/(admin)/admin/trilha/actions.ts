@@ -17,6 +17,19 @@ export async function salvarDiaTrilha(diaNumero: number, titulo: string, itens: 
   );
 
   revalidatePath(PATH);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  return { ok: !error, erro: error?.message };
+}
+
+export async function removerDiaTrilha(diaNumero: number) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { error } = await supabase.from("trilha_dias").delete().eq("dia_numero", diaNumero);
+
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
   return { ok: !error, erro: error?.message };
 }

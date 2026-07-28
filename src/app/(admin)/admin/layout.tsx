@@ -27,14 +27,14 @@ const GRUPO_GESTAO = [
 // navegador.
 const GRUPO_CONTEUDO = [
   { href: "/admin/cursos", label: "Cursos & Aulas", icon: "video" },
-  { href: "/admin/cronograma", label: "Cronograma & Missões", icon: "calendar" },
-  { href: "/admin/trilha", label: "Trilha 40 Dias", icon: "calendar" },
+  { href: "/admin/trilha", label: "Cronograma", icon: "calendar" },
   { href: "/admin/questoes", label: "Banco de Questões", icon: "target" },
   { href: "/admin/simulados", label: "Simulados", icon: "file" },
   { href: "/admin/atividades", label: "Atividades", icon: "target" },
   { href: "/admin/flashcards", label: "Flashcards", icon: "cards" },
   { href: "/admin/pdfs", label: "PDFs", icon: "file" },
   { href: "/admin/links", label: "Links Externos", icon: "link2" },
+  { href: "/admin/estudos", label: "Botões de Estudos", icon: "gear" },
   { href: "/admin/banners", label: "Banners", icon: "image" },
   { href: "/admin/conquistas", label: "Conquistas", icon: "trophy" }
 ] as const;
