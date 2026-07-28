@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
+import { SplashScreen } from "@/components/splash-screen";
 import "./globals.css";
 
 // Nova identidade visual (Fase 1): tudo em Montserrat, com pesos diferentes
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className={`${montserratDisplay.variable} ${montserratBody.variable}`}>
       <body>
+        <SplashScreen />
         {children}
         <script
           // Registra o service worker mínimo (public/sw.js) — necessário
