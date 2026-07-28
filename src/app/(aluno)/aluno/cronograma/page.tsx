@@ -2,12 +2,14 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
-import type { CronogramaDia, TrilhaDia, TrilhaItem } from "@/types/database";
+import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
-const DIAS_SEMANA_LABEL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const ICONE_TRILHA: Record<string, string> = {
   aula: "🎬",
+  pdf: "📄",
+  link: "🔗",
   questoes: "🎯",
   flashcards: "🃏",
   simulado: "⏱️",
@@ -37,11 +39,14 @@ function montarHref(
   }
 }
 
-// Item da trilha já traz a URL da aula direto (sem precisar de join com
-// conteudos_biblioteca), então o link é bem mais simples que o do Copiloto.
+// Item da trilha já traz a URL da aula/pdf/link direto (sem precisar de
+// join com conteudos_biblioteca/links_externos), então o link é bem mais
+// simples que o do Copiloto.
 function montarHrefTrilha(item: TrilhaItem): string | null {
   switch (item.tipo) {
     case "aula":
+    case "pdf":
+    case "link":
       return item.url;
     case "questoes":
       return item.materia ? `/aluno/questoes?materia=${encodeURIComponent(item.materia)}` : "/aluno/questoes";
@@ -52,16 +57,6 @@ function montarHrefTrilha(item: TrilhaItem): string | null {
     default:
       return null;
   }
-}
-
-// Dia 1 da trilha é o dia em que o acesso do aluno foi liberado — não um dia
-// fixo do calendário. Cada aluno começa no seu próprio dia 1, e o programa
-// se estende por 40 dias corridos a partir daí.
-function calcularDiaTrilha(acessoLiberadoEm: string): number {
-  const inicio = new Date(acessoLiberadoEm.slice(0, 10) + "T00:00:00");
-  const hoje = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00");
-  const diffDias = Math.floor((hoje.getTime() - inicio.getTime()) / 86400000);
-  return Math.min(40, Math.max(1, diffDias + 1));
 }
 
 export default async function AlunoCronogramaPage() {
@@ -159,7 +154,7 @@ export default async function AlunoCronogramaPage() {
             style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
           >
             <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
-              Dia {diaAtual} de 40
+              Dia {diaAtual}
             </p>
             <p className="mt-1 font-display font-bold">{(diaTrilha as TrilhaDia).titulo}</p>
             <p className="mt-1 text-white/70">Sua trilha de estudos, dia a dia, a partir do seu início na plataforma.</p>
@@ -187,7 +182,7 @@ export default async function AlunoCronogramaPage() {
                 <a
                   key={i}
                   href={href}
-                  target={item.tipo === "aula" ? "_blank" : undefined}
+                  target={item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" ? "_blank" : undefined}
                   rel="noreferrer"
                   className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow hover:bg-navy-dark/5"
                 >
@@ -205,12 +200,9 @@ export default async function AlunoCronogramaPage() {
     }
   }
 
-  // ==== MODO FALLBACK (cronograma fixo semanal, sem missões geradas) ====
-  const { data } = await supabase.from("cronograma_dias").select("*");
-  const porDia = new Map((data as CronogramaDia[] ?? []).map((d) => [d.dia_semana, d]));
-  const diaSemanaHoje = hoje.getDay();
-  const missaoHoje = porDia.get(diaSemanaHoje);
-
+  // ==== MODO SEM MISSÃO CADASTRADA ====
+  // Sem Copiloto, sem missões avulsas e sem dia cadastrado no cronograma
+  // (trilha_dias) para o dia atual do aluno — nada a mostrar além do aviso.
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -224,45 +216,8 @@ export default async function AlunoCronogramaPage() {
         className="mt-6 rounded-2xl p-6 text-white"
         style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
       >
-        <p className="text-xs font-semibold uppercase tracking-widest text-white/60">Hoje · {DIAS_SEMANA_LABEL[diaSemanaHoje]}</p>
-        <p className="mt-1 font-display text-xl font-bold">{missaoHoje?.titulo ?? "Sem missão cadastrada hoje"}</p>
-        {missaoHoje && missaoHoje.atividades.length > 0 ? (
-          <ul className="mt-3 space-y-1.5">
-            {missaoHoje.atividades.map((a, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm text-white/85">
-                <span>✈️</span> {a}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-white/70">Dia livre — aproveite pra revisar o que quiser.</p>
-        )}
-      </div>
-
-      <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">Semana completa</h2>
-      <div className="mt-3 space-y-2">
-        {DIAS_SEMANA_LABEL.map((nome, i) => {
-          const dia = porDia.get(i);
-          const éHoje = i === diaSemanaHoje;
-          return (
-            <div
-              key={i}
-              className={`rounded-2xl p-4 shadow ${éHoje ? "border-2 border-orange bg-orange/5" : "bg-white"}`}
-            >
-              <p className={`text-xs font-semibold uppercase tracking-wide ${éHoje ? "text-orange-dark" : "text-navy-dark/50"}`}>
-                {nome}{éHoje ? " · Hoje" : ""}
-              </p>
-              <p className="mt-1 font-display font-bold text-navy-dark">{dia?.titulo ?? "Dia livre"}</p>
-              {dia && dia.atividades.length > 0 && (
-                <ul className="mt-1 space-y-0.5 text-sm text-navy-dark/60">
-                  {dia.atividades.map((a, ai) => (
-                    <li key={ai}>• {a}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
+        <p className="mt-1 font-display text-xl font-bold">Sem missão cadastrada hoje</p>
+        <p className="mt-2 text-sm text-white/70">Fale com a coordenação ou aguarde o próximo dia do cronograma.</p>
       </div>
     </div>
   );

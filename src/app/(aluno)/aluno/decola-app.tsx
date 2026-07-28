@@ -19,7 +19,8 @@ import type {
   MateriaPeso,
   RankingLinha,
   AlunoMissao,
-  CronogramaDia,
+  TrilhaDia,
+  TrilhaItem,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -42,7 +43,7 @@ interface DecolaAppDados {
   revisoes: { lembrou: boolean; created_at: string }[];
   pesos: MateriaPeso[];
   missoes: AlunoMissao[];
-  cronograma: CronogramaDia[];
+  trilhaHoje: TrilhaDia | null;
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
   briefing: AlunoBriefing | null;
@@ -877,8 +878,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     this.montarRevisao(materia, materia);
   }
   // Sequência real de hoje: missões de aluno_missoes (plano com Copiloto) ou,
-  // na falta delas, a atividade do dia no cronograma fixo (plano sem
-  // Copiloto) — sempre a mesma fonte usada em scrPlano()/aluno/cronograma.
+  // na falta delas, os itens do dia de hoje no cronograma (trilha_dias,
+  // plano sem Copiloto) — sempre a mesma fonte usada em scrPlano()/aluno/cronograma.
   todaySeq() {
     const hoje = this.missoesHoje();
     const list: any[] = hoje.map((m) => ({
@@ -891,9 +892,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       act: () => this.navMissao(m)
     }));
     if (!list.length) {
-      const dia = this.props.dados.cronograma.find((d) => d.dia_semana === new Date().getDay());
-      (dia?.atividades || []).forEach((a, i) => {
-        list.push({ id: "cron-" + i, ic: "book", t: a, d: dia!.titulo, ia: false, done: false, act: () => this.nav("plano") });
+      const dia = this.props.dados.trilhaHoje;
+      (dia?.itens || []).forEach((item, i) => {
+        list.push({ id: "trilha-" + i, ic: this.iconeMissao(item.tipo), t: item.titulo, d: dia!.titulo, ia: false, done: false, act: () => this.abrirItemTrilha(item) });
       });
     }
     const pr0 = this.priorities();
@@ -957,10 +958,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const m = (url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{6,})/i);
     return m ? `https://www.youtube.com/embed/${m[1]}` : null;
   }
-  // Abre de verdade o conteúdo anexado a um item do cronograma fixo (ver
-  // CronogramaItem em types/database.ts e /admin/cronograma) — cada tipo
+  // Abre de verdade o conteúdo anexado a um item do cronograma (trilha_dias
+  // — ver TrilhaItem em types/database.ts e /admin/trilha) — cada tipo
   // navega pro lugar certo já existente no app, sem duplicar nenhuma tela.
-  abrirItemCronograma(item: CronogramaDia["itens"][number]) {
+  abrirItemTrilha(item: TrilhaItem) {
     if (item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link") {
       this.openBrowser(item.titulo, item.url || "", "plano");
     } else if (item.tipo === "questoes") {
@@ -969,7 +970,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 });
     } else if (item.tipo === "simulado") {
       this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
+    } else if (item.tipo === "revisao") {
+      this.startReview();
     }
+    // "livre": dia de descanso, sem ação de navegação.
   }
   // Navega para dentro do app quando o link do banner é "app/<tela>"
   // (convenção usada no formulário de banners do admin — ver
@@ -3094,57 +3098,36 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           : null
       ]);
     }
-    // Plano sem Copiloto: segue exatamente o cronograma fixo criado no admin.
-    const DIAS_SEMANA_LABEL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-    const porDiaSemana = new Map(this.props.dados.cronograma.map((d) => [d.dia_semana, d]));
-    const hojeSemana = new Date().getDay();
-    const missaoHoje = porDiaSemana.get(hojeSemana);
+    // Plano sem Copiloto: mostra a missão de hoje do cronograma (trilha_dias
+    // — cadastrado pelo admin em /admin/trilha). A "trilha" é só a visão do
+    // dia da missão do próprio cronograma, não um módulo separado.
+    const diaTrilha = this.props.dados.trilhaHoje;
     return this.screenWrap([
       this.head("Cronograma de Estudos", { back: "mapa" }),
       h(
         "div",
         { key: "hero", style: { margin: "6px 18px 0" } },
         card({ background: C.headGrad, border: "none", color: "#fff" }, [
-          h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } }, "Hoje · " + DIAS_SEMANA_LABEL[hojeSemana]),
-          h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, missaoHoje?.titulo ?? "Sem missão cadastrada hoje"),
-          missaoHoje && missaoHoje.itens?.length
+          h(
+            "div",
+            { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } },
+            "Hoje" + (diaTrilha ? " · Dia " + diaTrilha.dia_numero : "")
+          ),
+          h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, diaTrilha?.titulo ?? "Sem missão cadastrada hoje"),
+          diaTrilha && diaTrilha.itens?.length
             ? h(
                 "div",
                 { key: "at", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6 } },
-                missaoHoje.itens.map((item, i) =>
+                diaTrilha.itens.map((item, i) =>
                   h(
                     "div",
-                    { key: i, onClick: () => this.abrirItemCronograma(item), style: { display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
+                    { key: i, onClick: () => this.abrirItemTrilha(item), style: { display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: "rgba(255,255,255,.1)", borderRadius: 10, padding: "8px 10px" } },
                     [h("span", { key: "e" }, "✈️"), h("span", { key: "t", style: { fontSize: 12, color: "#fff", fontWeight: 700, flex: 1 } }, item.titulo), I("chevR", 14, "rgba(255,255,255,.7)")]
                   )
                 )
               )
-            : missaoHoje && missaoHoje.atividades.length
-            ? h(
-                "div",
-                { key: "at2", style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 4 } },
-                missaoHoje.atividades.map((a, i) => h("div", { key: i, style: { fontSize: 12, color: "rgba(255,255,255,.85)", fontWeight: 600 } }, "✈️ " + a))
-              )
             : h("div", { key: "d", style: { fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 6 } }, "Dia livre — aproveite pra revisar o que quiser.")
         ])
-      ),
-      h("div", { key: "lbl", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Semana completa"),
-      h(
-        "div",
-        { key: "semana", style: { margin: "0 18px 4px", display: "flex", flexDirection: "column", gap: 8 } },
-        DIAS_SEMANA_LABEL.map((nome, i) => {
-          const dia = porDiaSemana.get(i);
-          const éHoje = i === hojeSemana;
-          return h(
-            "div",
-            { key: i, style: { borderRadius: 16, padding: 14, background: éHoje ? C.orangeSoft : C.card, border: éHoje ? "1.5px solid " + C.orange : "1px solid " + C.line } },
-            [
-              h("div", { key: "n", style: { fontSize: 10, fontWeight: 800, color: éHoje ? C.orange : C.faint, textTransform: "uppercase", letterSpacing: ".05em" } }, nome + (éHoje ? " · Hoje" : "")),
-              h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, marginTop: 3 } }, dia?.titulo ?? "Dia livre"),
-              dia && dia.atividades.length ? h("div", { key: "a", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 3 } }, dia.atividades.join(" · ")) : null
-            ]
-          );
-        })
       ),
       h(
         "div",

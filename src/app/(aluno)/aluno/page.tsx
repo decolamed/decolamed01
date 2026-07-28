@@ -2,6 +2,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
+import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import DecolaApp from "./decola-app";
 import type {
   Questao,
@@ -11,7 +12,7 @@ import type {
   MateriaPeso,
   RankingLinha,
   AlunoMissao,
-  CronogramaDia,
+  TrilhaDia,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -54,7 +55,7 @@ export default async function AlunoHomePage() {
     { data: revisoesData },
     { data: pesosData },
     { data: missoesData },
-    { data: cronogramaData },
+    { data: trilhaDiasData },
     { data: recomendacoesData },
     { data: notificacoesData },
     { data: briefingData },
@@ -67,7 +68,7 @@ export default async function AlunoHomePage() {
   ] = await Promise.all([
     supabase
       .from("matriculas")
-      .select("planos(nome)")
+      .select("planos(nome), acesso_liberado_em")
       .eq("aluno_id", profile.id)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -93,8 +94,8 @@ export default async function AlunoHomePage() {
     // Sempre busca as duas fontes (não só quando tem Copiloto): um aluno
     // sem o plano PRO também pode ter missões individuais, se o admin
     // cadastrar algumas manualmente em /admin/usuarios/[id] — decola-app.tsx
-    // usa o cronograma fixo (cronograma_dias) só quando esta lista vier
-    // vazia e o aluno não tiver Copiloto.
+    // usa o cronograma (trilha_dias) só quando esta lista vier vazia e o
+    // aluno não tiver Copiloto.
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -103,7 +104,11 @@ export default async function AlunoHomePage() {
       .lte("data", fim7Str)
       .order("data")
       .order("prioridade", { ascending: false }),
-    supabase.from("cronograma_dias").select("*"),
+    // Tabela pequena e mantida pelo admin (dezenas de linhas) — mais simples
+    // trazer todas e escolher o dia de hoje em código do que encadear uma
+    // segunda consulta dependente de matricula.acesso_liberado_em (que só
+    // sai deste mesmo Promise.all).
+    supabase.from("trilha_dias").select("*"),
     supabase
       .from("copiloto_recomendacoes")
       .select("*")
@@ -124,6 +129,14 @@ export default async function AlunoHomePage() {
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
   const plano = planoNome && planoNome.toLowerCase().includes("guiado") ? "voo-guiado" : "decolando";
   const numeroWhatsapp = config?.valor as string | undefined;
+
+  // Dia de hoje no cronograma (trilha_dias) — usado como plano de estudos
+  // de quem não tem Copiloto nem missões avulsas cadastradas pelo admin.
+  const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
+  const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
+  const trilhaHoje = diaTrilhaHoje
+    ? ((trilhaDiasData as TrilhaDia[]) ?? []).find((d) => d.dia_numero === diaTrilhaHoje) ?? null
+    : null;
 
   const creditosDoPlano = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
   const ajustesManuais = (ajustesCreditosData ?? []).reduce((soma: number, a: any) => soma + a.quantidade, 0);
@@ -158,7 +171,7 @@ export default async function AlunoHomePage() {
         revisoes: (revisoesData ?? []) as { lembrou: boolean; created_at: string }[],
         pesos: (pesosData as MateriaPeso[]) ?? [],
         missoes: (missoesData as AlunoMissao[]) ?? [],
-        cronograma: (cronogramaData as CronogramaDia[]) ?? [],
+        trilhaHoje,
         recomendacoes: (recomendacoesData as CopilotoRecomendacao[]) ?? [],
         notificacoes: (notificacoesData as Notificacao[]) ?? [],
         briefing: (briefingData as AlunoBriefing | null) ?? null,
