@@ -309,7 +309,7 @@ export default async function AdminConfiguracoesPage({
           >
             console.cloud.google.com
           </a>{" "}
-          → ative a "YouTube Data API v3" → crie uma chave de API.
+          → ative a &quot;YouTube Data API v3&quot; → crie uma chave de API.
         </p>
 
         <div

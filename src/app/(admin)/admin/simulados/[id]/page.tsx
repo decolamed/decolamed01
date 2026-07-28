@@ -59,6 +59,15 @@ export default async function EscolherQuestoesSimuladoPage({
 
   const salvarComId = salvarQuestoesDoSimulado.bind(null, params.id);
 
+  // Agrupadas por matéria — organiza a montagem do simulado em vez de uma
+  // lista corrida (a query já ordena por matéria, isso só quebra em seções).
+  const porMateria = new Map<string, Questao[]>();
+  questoes.forEach((q) => {
+    const lista = porMateria.get(q.materia) ?? [];
+    lista.push(q);
+    porMateria.set(q.materia, lista);
+  });
+
   return (
     <div>
       <a href="/admin/simulados" className="text-sm text-navy hover:underline">← Voltar para Simulados</a>
@@ -70,20 +79,21 @@ export default async function EscolherQuestoesSimuladoPage({
 
       <form action={salvarComId} className="mt-6">
         <div className="max-h-[60vh] overflow-y-auto rounded-2xl bg-white shadow">
-          {questoes.map((q) => (
-            <label key={q.id} className="flex cursor-pointer items-start gap-3 border-b p-4 last:border-0 hover:bg-navy/5">
-              <input
-                type="checkbox"
-                name="questao_id"
-                value={q.id}
-                defaultChecked={idsJaSelecionados.has(q.id)}
-                className="mt-1"
-              />
-              <div>
-                <p className="text-xs font-semibold text-navy-dark/50">{q.materia}{q.assunto ? ` · ${q.assunto}` : ""}</p>
-                <p className="text-sm text-navy-dark">{q.enunciado}</p>
-              </div>
-            </label>
+          {Array.from(porMateria.entries()).map(([materia, itens]) => (
+            <div key={materia}>
+              <p className="sticky top-0 bg-navy-dark/5 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-navy-dark/60">
+                {materia} · {itens.length} questõe{itens.length !== 1 ? "s" : ""}
+              </p>
+              {itens.map((q) => (
+                <label key={q.id} className="flex cursor-pointer items-start gap-3 border-b p-4 last:border-0 hover:bg-navy/5">
+                  <input type="checkbox" name="questao_id" value={q.id} defaultChecked={idsJaSelecionados.has(q.id)} className="mt-1" />
+                  <div>
+                    <p className="text-xs font-semibold text-navy-dark/50">{q.assunto ?? materia}{q.fonte ? ` · ${q.fonte}` : ""}</p>
+                    <p className="text-sm text-navy-dark">{q.enunciado}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           ))}
           {questoes.length === 0 && (
             <p className="p-6 text-center text-sm text-navy-dark/50">

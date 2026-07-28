@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
-import { PageHeader, Card } from "@/components/admin/card";
+import { PageHeader, Card, Th, Td } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 
@@ -52,6 +52,24 @@ export default async function AdminNotificacoesPage({
   const { data: alunosData } = await supabase.from("profiles").select("id, nome").eq("role", "aluno").order("nome");
   const alunos = alunosData ?? [];
 
+  // Histórico: agrupa por (título, created_at) — cada envio insere N linhas
+  // (uma por destinatário) com o mesmo timestamp, então isso reconstrói a
+  // "campanha" sem precisar de uma tabela própria de envios.
+  const { data: notifData } = await supabase
+    .from("notificacoes")
+    .select("titulo, mensagem, created_at, lida")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  const campanhas = new Map<string, { titulo: string; mensagem: string; created_at: string; total: number; lidas: number }>();
+  (notifData ?? []).forEach((n: any) => {
+    const chave = n.titulo + "||" + n.created_at;
+    const atual = campanhas.get(chave) ?? { titulo: n.titulo, mensagem: n.mensagem, created_at: n.created_at, total: 0, lidas: 0 };
+    atual.total++;
+    if (n.lida) atual.lidas++;
+    campanhas.set(chave, atual);
+  });
+  const historico = Array.from(campanhas.values()).slice(0, 50);
+
   return (
     <div>
       <PageHeader title="Notificações" subtitle="Envie um aviso para um aluno específico ou para todos de uma vez" />
@@ -83,6 +101,39 @@ export default async function AdminNotificacoesPage({
             Enviar notificação
           </SubmitButton>
         </form>
+      </Card>
+
+      <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">Histórico de envios</h2>
+      <Card className="mt-3 !p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr>
+                <Th>Título</Th>
+                <Th>Mensagem</Th>
+                <Th>Enviado em</Th>
+                <Th>Destinatários</Th>
+                <Th>Lidas</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {historico.map((c, i) => (
+                <tr key={i} className="border-t border-navy-dark/10">
+                  <Td className="font-bold text-navy-dark">{c.titulo}</Td>
+                  <Td className="max-w-xs truncate text-navy-dark/70">{c.mensagem}</Td>
+                  <Td>{new Date(c.created_at).toLocaleString("pt-BR")}</Td>
+                  <Td>{c.total}</Td>
+                  <Td>{c.lidas} / {c.total}</Td>
+                </tr>
+              ))}
+              {historico.length === 0 && (
+                <tr>
+                  <Td className="text-navy-dark/50">Nenhuma notificação enviada ainda.</Td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

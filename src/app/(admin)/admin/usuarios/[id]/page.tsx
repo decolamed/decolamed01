@@ -7,7 +7,18 @@ import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
-import type { Matricula, Pagamento, HistoricoAdmin, Profile } from "@/types/database";
+import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
+import { adicionarMissaoIndividual, excluirMissaoIndividual } from "./actions";
+import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
+
+const TIPO_MISSAO_LABEL: Record<string, string> = {
+  aula: "Aula",
+  questoes: "Questões",
+  flashcards: "Flashcards",
+  simulado: "Simulado",
+  revisao: "Revisão",
+  livre: "Livre"
+};
 
 const STATUS_MATRICULA_LABEL: Record<string, string> = {
   pendente: "Pendente",
@@ -39,7 +50,10 @@ const EVENTO_LABEL: Record<string, string> = {
   usuario_promovido_admin: "Promovido a administrador",
   usuario_rebaixado_admin: "Permissão de administrador removida",
   usuario_promovido_parceiro: "Promovido a parceiro",
-  usuario_rebaixado_parceiro: "Permissão de parceiro removida"
+  usuario_rebaixado_parceiro: "Permissão de parceiro removida",
+  professor_criado_manual: "Cadastrado manualmente como professor",
+  usuario_promovido_professor: "Promovido a professor",
+  usuario_rebaixado_professor: "Permissão de professor removida"
 };
 
 function StatusBadge({ ativo }: { ativo: boolean }) {
@@ -91,11 +105,22 @@ export default async function AdminDetalhesUsuarioPage({
     .select("*")
     .eq("aluno_id", params.id)
     .order("created_at", { ascending: false });
+  const { data: ajustes } = await supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", params.id);
   const totalConsumidos = (consumidos ?? []).length;
-  const creditosTotais = profile.planos?.creditos_redacao ?? 0;
+  const ajustesManuais = (ajustes ?? []).reduce((soma, a: any) => soma + a.quantidade, 0);
+  const creditosTotais = (profile.planos?.creditos_redacao ?? 0) + ajustesManuais;
   const creditosDisponiveis = Math.max(0, creditosTotais - totalConsumidos);
 
   const registrarComId = registrarConsumoRedacao.bind(null, params.id);
+
+  const { data: missoesData } = await supabase
+    .from("aluno_missoes")
+    .select("*")
+    .eq("aluno_id", params.id)
+    .order("data", { ascending: false })
+    .limit(30);
+  const missoes = ((missoesData as AlunoMissao[]) ?? []).sort((m1, m2) => m1.data.localeCompare(m2.data));
+  const adicionarMissaoComId = adicionarMissaoIndividual.bind(null, params.id);
 
   const { data: matriculasData } = await supabase
     .from("matriculas")
@@ -298,6 +323,54 @@ export default async function AdminDetalhesUsuarioPage({
             <li className="p-6 text-center text-sm text-navy-dark/50">Nenhum evento administrativo registrado.</li>
           )}
         </ul>
+      </div>
+
+      <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Cronograma individual</h2>
+      <p className="mt-1 text-sm text-navy-dark/60">
+        Missões só deste aluno — não afeta o cronograma geral (/admin/cronograma). Assim que ele tiver pelo menos
+        uma missão aqui, o app passa a mostrar essas missões em vez do cronograma fixo compartilhado.
+      </p>
+      <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow">
+        <ul className="divide-y">
+          {missoes.map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center gap-3 p-4 text-sm">
+              <div className="flex-1">
+                <p className="font-semibold text-navy-dark">{formatarData(m.data)} · {m.titulo}</p>
+                <p className="text-xs text-navy-dark/50">
+                  {TIPO_MISSAO_LABEL[m.tipo] ?? m.tipo}{m.materia ? ` · ${m.materia}` : ""} · {m.duracao_minutos} min
+                  {m.origem !== "admin" && ` · origem: ${m.origem}`}
+                  {m.concluida && " · concluída"}
+                </p>
+              </div>
+              <form action={excluirMissaoIndividual.bind(null, params.id, m.id)}>
+                <ConfirmSubmitButton
+                  pendingText="..."
+                  confirmMessage={`Remover a missão "${m.titulo}" do cronograma de ${profile.nome}?`}
+                  className="text-red-600 hover:underline"
+                >
+                  Remover
+                </ConfirmSubmitButton>
+              </form>
+            </li>
+          ))}
+          {missoes.length === 0 && (
+            <li className="p-6 text-center text-sm text-navy-dark/50">Nenhuma missão individual — este aluno segue o cronograma geral.</li>
+          )}
+        </ul>
+        <form action={adicionarMissaoComId} className="grid gap-2 border-t p-4 sm:grid-cols-5">
+          <input type="date" name="data" required className="rounded-lg border p-2 text-sm sm:col-span-1" />
+          <input name="titulo" required placeholder="Título da missão" className="rounded-lg border p-2 text-sm sm:col-span-2" />
+          <select name="tipo" defaultValue="livre" className="rounded-lg border p-2 text-sm">
+            {Object.entries(TIPO_MISSAO_LABEL).map(([valor, label]) => (
+              <option key={valor} value={valor}>{label}</option>
+            ))}
+          </select>
+          <input name="materia" placeholder="Matéria (opcional)" className="rounded-lg border p-2 text-sm" />
+          <input type="number" name="duracao" defaultValue={30} placeholder="Minutos" className="rounded-lg border p-2 text-sm" />
+          <SubmitButton pendingText="Adicionando..." className="rounded-lg bg-orange px-4 py-2 text-sm font-semibold text-white hover:bg-orange-dark sm:col-span-5">
+            + Adicionar missão individual
+          </SubmitButton>
+        </form>
       </div>
 
       {matriculas.length > 1 && (
