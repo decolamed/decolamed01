@@ -43,7 +43,7 @@ As demais erram o valor semântico ou o julgamento sobre o texto. Em A, "neuroto
   'ampla', 1, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -70,7 +70,7 @@ Não é demonstrativo (não aponta para algo específico no espaço ou tempo), n
   'ampla', 2, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -113,7 +113,7 @@ As demais alternativas atribuem funções erradas: "transtorno", "mental" e "qua
   'ampla', 3, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q03-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -159,7 +159,7 @@ As demais interpretam mal seus respectivos textos. Em A, a fala de Lorimer é ap
   'ampla', 4, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q04-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -193,7 +193,7 @@ A diferença para a descritiva (D) está no foco: descrever seria detalhar carac
   'ampla', 5, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q05-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -219,7 +219,7 @@ A armadilha da questão está em A, B, D e E, que reinterpretam a cena por uma c
   'ampla', 6, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -262,7 +262,7 @@ As demais atribuem finalidades que o texto não tem como foco principal: não vi
   'ampla', 7, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -287,7 +287,7 @@ As demais erram o gênero ou o enfoque da obra: não é um romance psicológico 
   'ampla', 8, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q08-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -312,7 +312,7 @@ Os demais trechos pertencem a outras obras do próprio Jorge Amado ou de outros 
   'ampla', 9, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -338,7 +338,7 @@ As demais associam características que não correspondem: Realismo e Naturalism
   'ampla', 10, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q10-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -404,7 +404,7 @@ As demais contrariam o texto: ele não trata o exercício como atividade secund�
   'ampla', 11, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -430,7 +430,7 @@ As demais invertem ou distorcem essa relação: o texto não diz que o exercíci
   'ampla', 12, 'ingles', false,
   '[{"url": "/questoes-facape/2026.2-ampla-q12-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -456,7 +456,7 @@ As demais alteram a ordem das palavras (B), duplicam ou embaralham os elementos 
   'ampla', 13, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -481,7 +481,7 @@ As demais misturam tempos verbais de condicionais diferentes: A combina presente
   'ampla', 14, 'ingles', false,
   '[{"url": "/questoes-facape/2026.2-ampla-q14-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q14-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -507,7 +507,7 @@ As demais combinam "will" e "can" lado a lado, o que a gramática inglesa não p
   'ampla', 15, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -563,7 +563,7 @@ As demais distorcem o relato: o artista não abandonou seu repertório em favor 
   'ampla', 11, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -595,7 +595,7 @@ As demais extrapolam ou distorcem a mensagem: o cartaz não sugere que apagar me
   'ampla', 12, 'espanhol', false,
   '[{"url": "/questoes-facape/2026.2-ampla-q12-3.png", "legenda": null, "ordem": 3}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -628,7 +628,7 @@ As demais erram o alvo da crítica: a charge não questiona a qualificação té
   'ampla', 13, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -682,7 +682,7 @@ As demais não fecham com o texto: ele não afirma que o sincretismo eliminou as
   'ampla', 14, 'espanhol', false,
   '[{"url": "/questoes-facape/2026.2-ampla-q14-3.png", "legenda": null, "ordem": 3}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -725,7 +725,7 @@ As demais contrariam o sentido do poema: ele não trata o Spanglish como obstác
   'ampla', 15, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -765,7 +765,7 @@ Com I verdadeiro, III falso e IV verdadeiro, a única sequência compatível ent
   'ampla', 16, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q16-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q16-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q16-3.png", "legenda": null, "ordem": 3}, {"url": "/questoes-facape/2026.2-ampla-q16-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q16-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -816,7 +816,7 @@ Um atalho útil: em uma PA com número ímpar de termos, a soma é o termo centr
   'ampla', 17, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q17-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q17-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q17-3.png", "legenda": null, "ordem": 3}, {"url": "/questoes-facape/2026.2-ampla-q17-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q17-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -856,7 +856,7 @@ O erro que a questão espera é marcar 130 (alternativa E), esquecendo de dividi
   'ampla', 18, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q18-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -900,7 +900,7 @@ Quem cerca apenas a parte externa marca 12 (alternativa C). Atenção também à
   'ampla', 19, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q19-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q19-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -943,7 +943,7 @@ O deslize mais comum é parar em x = 2 e marcar a alternativa A, confundindo a p
   'ampla', 20, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q20-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q20-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q20-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -984,7 +984,7 @@ A resposta é a alternativa B. Contar 6 intervalos em vez de 5 levaria a cerca d
   'ampla', 21, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q21-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1028,7 +1028,7 @@ O erro comum é considerar só o contato com a bancada, o que daria 10 N (altern
   'ampla', 22, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q22-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q22-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q22-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1069,7 +1069,7 @@ A resposta é a alternativa D. As demais falham na álgebra da raiz: em A a raiz
   'ampla', 23, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q23-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1111,7 +1111,7 @@ A resposta é a alternativa A. A alternativa B corresponderia a voltas completas
   'ampla', 24, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q24-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q24-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q24-3.png", "legenda": null, "ordem": 3}, {"url": "/questoes-facape/2026.2-ampla-q24-4.png", "legenda": null, "ordem": 4}, {"url": "/questoes-facape/2026.2-ampla-q24-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q24-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1167,7 +1167,7 @@ A resposta é a alternativa C. O erro mais provável é esquecer a conversão de
   'ampla', 25, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q25-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q25-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q25-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1216,7 +1216,7 @@ A está errada porque o CaCℓ₂ é um composto iônico, formado entre metal e 
   'ampla', 26, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q26-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q26-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1255,7 +1255,7 @@ Entre as demais, a mais fácil de descartar é D. Para um gás ideal a volume co
   'ampla', 27, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q27-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q27-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q27-3.png", "legenda": null, "ordem": 3}, {"url": "/questoes-facape/2026.2-ampla-q27-4.png", "legenda": null, "ordem": 4}, {"url": "/questoes-facape/2026.2-ampla-q27-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q27-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1301,7 +1301,7 @@ A contraria o próprio texto: a tujona é um líquido volátil, com temperatura 
   'ampla', 28, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q28-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q28-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1338,7 +1338,7 @@ A está errada porque a espuma é um colóide, com gás disperso em líquido, e 
   'ampla', 29, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q29-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q29-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q29-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2026.2-ampla-q29-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1374,7 +1374,7 @@ A está errada porque a água aparece no estado líquido: substâncias puras nes
   'ampla', 30, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q30-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q30-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1415,7 +1415,7 @@ As demais invertem o papel de cada nutriente: os carboidratos são a principal f
   'ampla', 31, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1459,7 +1459,7 @@ O próprio texto derruba a B, ao citar hábitos e ambiente como fatores que infl
   'ampla', 32, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q32-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1500,7 +1500,7 @@ A alternativa A descreve o lamarckismo, já refutado, pois caracteres adquiridos
   'ampla', 33, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q33-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q33-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1542,7 +1542,7 @@ As outras alternativas estão de acordo com as orientações do Ministério da S
   'ampla', 34, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q34-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1590,7 +1590,7 @@ III está errada: a síntese de proteínas, inclusive dos anticorpos, ocorre nos
   'ampla', 35, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1647,7 +1647,7 @@ O maior sítio de síntese proteica é o retículo endoplasmático rugoso, pelos
   'ampla', 36, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1690,7 +1690,7 @@ A está errada em dois pontos: a fermentação ocorre no citosol, não nas mitoc
   'ampla', 37, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1728,7 +1728,7 @@ As demais estão corretas: as plantas são autotróficas e realizam fotossíntes
   'ampla', 38, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1784,7 +1784,7 @@ III é a afirmativa falsa: a restauração natural da Caatinga é lenta e comple
   'ampla', 39, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q39-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q39-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1827,7 +1827,7 @@ A própria alternativa E descreve corretamente esse ponto ao situar a síntese d
   'ampla', 40, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1860,7 +1860,7 @@ A inverte o papel dos impostos: a Lei do Açúcar e a Lei do Selo foram causas d
   'ampla', 41, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1895,7 +1895,7 @@ B está errada porque Carlos X fez o oposto: restringiu a liberdade de imprensa 
   'ampla', 42, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q42-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1925,7 +1925,7 @@ A está errada porque ele rompeu com a Constituinte em vez de obedecê-la. B err
   'ampla', 43, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1958,7 +1958,7 @@ A reduz o processo a saques, ignorando que muitos povos germânicos se estabelec
   'ampla', 44, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q44-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q44-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1989,7 +1989,7 @@ A distorce a glasnost, que tratava de transparência política interna e não de
   'ampla', 45, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q45-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -2026,7 +2026,7 @@ As demais são contrariadas pelos próprios dados. Não há sinal de efetividade
   'ampla', 46, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q46-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -2061,7 +2061,7 @@ A e B descrevem o caso oposto, o das rochas extrusivas ou vulcânicas, como o ba
   'ampla', 47, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q47-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -2099,7 +2099,7 @@ A remete à erosão marinha, que atua no litoral e não no subsolo. C descreve a
   'ampla', 48, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q48-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -2133,7 +2133,7 @@ B inverte a situação, pois é ao nível do mar que a coluna de ar é maior e a
   'ampla', 49, null, false,
   '[{"url": "/questoes-facape/2026.2-ampla-q49-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2026.2-ampla-q49-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2026.2-ampla-q49-3.png", "legenda": null, "ordem": 3}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -2187,7 +2187,7 @@ A, C, D e E apontam redução de desigualdades, equilíbrio social, garantia do 
   'ampla', 50, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,

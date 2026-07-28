@@ -112,6 +112,11 @@ export function QuestoesManager({ questoes, materiasExistentes }: { questoes: Qu
                       {DIFICULDADE_LABEL[q.dificuldade] ?? q.dificuldade} · Gabarito {q.resposta_correta.toUpperCase()}
                     </span>
                     {!q.ativo && <span className="rounded-full bg-red/10 px-2.5 py-1 text-[10px] font-extrabold text-red">Inativa</span>}
+                    {q.imagens?.length > 0 && (
+                      <span className="rounded-full bg-navy/10 px-2.5 py-1 text-[10px] font-extrabold text-navy">
+                        🖼️ {q.imagens.length}
+                      </span>
+                    )}
                     <div className="flex-1" />
                     <button type="button" onClick={() => editar(q)} className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-navy-dark/5 text-navy-dark/60" title="Editar">
                       <Icon name="pencil" size={12} />

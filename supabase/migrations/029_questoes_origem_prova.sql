@@ -1,5 +1,5 @@
 -- ============================================================================
--- DECOLA MED — MIGRAÇÃO 025: origem da questão (prova, ano, número, imagens)
+-- DECOLA MED — MIGRAÇÃO 029: origem da questão (prova, ano, número, imagens)
 --
 -- Contexto: a importação das provas anteriores da FACAPE exige rastrear de
 -- qual prova cada questão veio. A tabela `questoes` (migração 008) só tinha
@@ -15,6 +15,14 @@
 -- `fonte` é adicionado aqui com `if not exists` porque já existe no banco
 -- remoto, criado fora do fluxo de migrations — mesmo débito de rastreabilidade
 -- documentado na migração 019.
+--
+-- NOTA: renumerada de 025 para 029 porque o projeto evoluiu em produção sem
+-- passar por este repositório local — as migrações 025 a 028 já existiam no
+-- banco (materias_qtd_questoes, ajustar_constraint_qtd_questoes,
+-- copiloto_checkin, producao_sob_demanda_ia) quando esta foi escrita. Já foi
+-- aplicada em produção em 2026-07-27 (version 20260727225727), com o nome
+-- "questoes_origem_prova" — mantida aqui só para o histórico do repositório
+-- ficar rastreável; reaplicar é seguro (idempotente).
 -- ============================================================================
 
 alter table questoes add column if not exists fonte text;

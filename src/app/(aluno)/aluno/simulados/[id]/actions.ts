@@ -14,6 +14,7 @@ export interface ItemGabarito {
   escolhida: string | null;
   correta: boolean;
   explicacao: string | null;
+  imagens: { url: string; legenda: string | null; ordem: number }[];
 }
 
 export interface DesempenhoMateria {
@@ -54,7 +55,7 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
 
   const { data: itens } = await supabase
     .from("simulado_questoes")
-    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto)")
+    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto, imagens)")
     .eq("simulado_id", simuladoId)
     .order("ordem");
 
@@ -84,7 +85,8 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
       respostaCorreta: item.questoes.resposta_correta,
       escolhida,
       correta,
-      explicacao: item.questoes.explicacao
+      explicacao: item.questoes.explicacao,
+      imagens: item.questoes.imagens ?? []
     };
   });
 

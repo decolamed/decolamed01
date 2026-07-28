@@ -47,7 +47,7 @@ Sobre o texto, é CORRETO afirmar que:',
   'peba', 1, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -71,7 +71,7 @@ referente:',
   'peba', 2, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q02-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -109,7 +109,7 @@ relação lógico – semântica de conformidade.',
   'peba', 3, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -151,7 +151,7 @@ linguagem. Assinale-a.',
   'peba', 4, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -176,7 +176,7 @@ morfologicamente, a função de:',
   'peba', 5, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -222,7 +222,7 @@ semântico de alternância.',
   'peba', 6, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -266,7 +266,7 @@ reconnect with nature.',
   'peba', 11, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -299,7 +299,7 @@ CORRETA:',
   'peba', 12, 'ingles', false,
   '[{"url": "/questoes-facape/2025.2-peba-q12-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -350,7 +350,7 @@ Sleep Foundation',
   'peba', 14, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -384,7 +384,7 @@ tradução?',
   'peba', 15, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -417,7 +417,7 @@ característica:',
   'peba', 11, 'espanhol', false,
   '[{"url": "/questoes-facape/2025.2-peba-q11-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -449,7 +449,7 @@ mencionada?',
   'peba', 12, 'espanhol', false,
   '[{"url": "/questoes-facape/2025.2-peba-q12-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2025.2-peba-q12-3.png", "legenda": null, "ordem": 3}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -475,7 +475,7 @@ para la cena."',
   'peba', 13, 'espanhol', false,
   '[{"url": "/questoes-facape/2025.2-peba-q13-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -499,7 +499,7 @@ frase?
   'peba', 14, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -523,7 +523,7 @@ CORRETO da frase:
   'peba', 15, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -555,7 +555,7 @@ pessoas atendidas nesse dia foi igual a:',
   'peba', 16, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q16-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -586,7 +586,7 @@ adquirir será:',
   'peba', 17, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q17-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q17-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -623,7 +623,7 @@ embalagem, em mL, é.',
   'peba', 18, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q18-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -651,7 +651,7 @@ total ficou aumentada em:',
   'peba', 19, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q19-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q19-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q19-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -684,7 +684,7 @@ nesses dias é:',
   'peba', 20, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q20-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q20-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q20-full2.png", "legenda": null, "ordem": 92}, {"url": "/questoes-facape/2025.2-peba-q20-full3.png", "legenda": null, "ordem": 93}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -717,7 +717,7 @@ da água = 4,18 𝐽/𝑔°𝐶',
   'peba', 21, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q21-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -746,7 +746,7 @@ ambulância se aproxima?',
   'peba', 22, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q22-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q22-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -775,7 +775,7 @@ capacitores:',
   'peba', 23, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q23-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -804,7 +804,7 @@ essa ampliação?',
   'peba', 24, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q24-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q24-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2025.2-peba-q24-3.png", "legenda": null, "ordem": 3}, {"url": "/questoes-facape/2025.2-peba-q24-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q24-full2.png", "legenda": null, "ordem": 92}, {"url": "/questoes-facape/2025.2-peba-q24-full3.png", "legenda": null, "ordem": 93}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -834,7 +834,7 @@ expressa por:',
   'peba', 25, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -884,7 +884,7 @@ Massas molares (g.mol–1): C = 12 e O = 16. 1cal ≅
   'peba', 26, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q26-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -932,7 +932,7 @@ que:',
   'peba', 27, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q27-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q27-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q27-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -972,7 +972,7 @@ anos, temos que:',
   'peba', 28, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q28-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q28-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q28-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1009,7 +1009,7 @@ Dados: Ni (10) e Cd (12).',
   'peba', 29, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1046,7 +1046,7 @@ molecular do omeprazol:',
   'peba', 30, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q30-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2025.2-peba-q30-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2025.2-peba-q30-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2025.2-peba-q30-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1087,7 +1087,7 @@ Ecossistema',
   'peba', 31, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1134,7 +1134,7 @@ mesmos recursos urbanos.',
   'peba', 32, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1184,7 +1184,7 @@ Preencha CORRETAMENTE a alternativa:',
   'peba', 33, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1212,7 +1212,7 @@ a válvula afetada é:',
   'peba', 34, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1238,7 +1238,7 @@ assinale a alternativa CORRETA:',
   'peba', 35, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1263,7 +1263,7 @@ a alternativa CORRETA.',
   'peba', 36, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1293,7 +1293,7 @@ alternativa CORRETA:',
   'peba', 37, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1323,7 +1323,7 @@ CORRETA.',
   'peba', 38, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q38-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1375,7 +1375,7 @@ falta infraestrutural.',
   'peba', 39, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1412,7 +1412,7 @@ depressão.',
   'peba', 40, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1436,7 +1436,7 @@ conhecemos, é CORRETO afirmar que:',
   'peba', 41, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1459,7 +1459,7 @@ afirmar que:',
   'peba', 42, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1481,7 +1481,7 @@ insert into questoes (
   'peba', 43, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1506,7 +1506,7 @@ nesse período, é CORRETO afirmar que:',
   'peba', 44, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1531,7 +1531,7 @@ Velha (1889-1930), é CORRETO afirmar que:',
   'peba', 45, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q45-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1580,7 +1580,7 @@ significativamente para as emissões?',
   'peba', 46, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1627,7 +1627,7 @@ consequência:',
   'peba', 47, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1666,7 +1666,7 @@ campo, ela é uma questão política, que resulta na',
   'peba', 48, null, false,
   '[{"url": "/questoes-facape/2025.2-peba-q48-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1703,7 +1703,7 @@ caracterizou-se pela:',
   'peba', 49, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1738,7 +1738,7 @@ Qual o tipo de limites de placa é descrito no texto?',
   'peba', 50, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,

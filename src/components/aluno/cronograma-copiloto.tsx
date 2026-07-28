@@ -15,6 +15,7 @@ interface Missao {
   origem: string;
   motivo_copiloto: string | null;
   concluida: boolean;
+  href?: string | null; // pra onde o item leva ao tocar (aula, atividade, simulado...)
 }
 
 const ICONE_TIPO: Record<string, string> = {
@@ -122,7 +123,13 @@ export function CronogramaCopiloto({ missoes, hojeStr }: { missoes: Missao[]; ho
                           concluidaExibida ? "text-navy-dark/50 line-through" : "text-navy-dark"
                         }`}
                       >
-                        {m.titulo}
+                        {m.href ? (
+                          <a href={m.href} className="hover:underline" target={m.tipo === "aula" ? "_blank" : undefined} rel="noreferrer">
+                            {m.titulo} {m.tipo === "aula" ? "↗" : ""}
+                          </a>
+                        ) : (
+                          m.titulo
+                        )}
                       </p>
                       {m.motivo_copiloto && (
                         <p className="mt-1 text-xs text-navy-dark/60">💡 {m.motivo_copiloto}</p>

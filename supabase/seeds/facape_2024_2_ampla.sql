@@ -24,7 +24,7 @@ estabelece:',
   'ampla', 1, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q01-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -62,7 +62,7 @@ O propósito comunicativo do texto é:',
   'ampla', 2, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -88,7 +88,7 @@ subordinativa integrante.',
   'ampla', 3, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -133,7 +133,7 @@ afirmar que a autora:',
   'ampla', 4, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -174,7 +174,7 @@ assinale a alternativa CORRETA.',
   'ampla', 5, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -198,7 +198,7 @@ forma de literatura de cordel, tem por objetivo:',
   'ampla', 6, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q06-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -242,7 +242,7 @@ emprego adequado desses recursos.',
   'ampla', 7, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -264,7 +264,7 @@ insert into questoes (
   'ampla', 11, 'ingles', false,
   '[{"url": "/questoes-facape/2024.2-ampla-q11-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -287,7 +287,7 @@ regras da norma culta da língua inglesa.',
   'ampla', 12, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -311,7 +311,7 @@ The plane ____________________ at 9:30 a.m.',
   'ampla', 13, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -344,7 +344,7 @@ https://en.wikipedia.org/wiki/Intelligence',
   'ampla', 14, 'ingles', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -368,7 +368,7 @@ verbo regular no pretérito perfeito:',
   'ampla', 15, 'ingles', false,
   '[{"url": "/questoes-facape/2024.2-ampla-q15-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -392,7 +392,7 @@ melhor condiz com o texto acima.',
   'ampla', 11, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -415,7 +415,7 @@ fazendo fortuna atualmente?',
   'ampla', 12, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -438,7 +438,7 @@ verdadeiro, de acordo com o texto?',
   'ampla', 13, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -462,7 +462,7 @@ da palavra "esta" na frase?',
   'ampla', 14, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -485,7 +485,7 @@ insert into questoes (
   'ampla', 15, 'espanhol', false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -516,7 +516,7 @@ município é:',
   'ampla', 16, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q16-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -549,7 +549,7 @@ correr no seu 12º dia de treino será:',
   'ampla', 17, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q17-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -580,7 +580,7 @@ percentual de seus pacientes que estavam com
   'ampla', 18, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q18-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2024.2-ampla-q18-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -609,7 +609,7 @@ a:',
   'ampla', 20, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q20-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2024.2-ampla-q20-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -643,7 +643,7 @@ parar antes de atravessar o semáforo?',
   'ampla', 21, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q21-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -673,7 +673,7 @@ Dados: ℎ = 4,13 ∗ 10−15𝑒𝑉, 𝑐 = 3 ∗ 108𝑚/𝑠 e 𝑒 =
   'ampla', 22, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q22-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -708,7 +708,7 @@ o tempo decorrido até o equilíbrio foi de 12 ∗
   'ampla', 23, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q23-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2024.2-ampla-q23-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -736,7 +736,7 @@ afirmar que o período de oscilação é dado por:',
   'ampla', 24, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q24-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -763,7 +763,7 @@ Dados 𝑐á𝑔𝑢𝑎 = 1 𝑐𝑎𝑙/𝑔 °𝐶 e 𝜌á𝑔𝑢𝑎 = 1�
   'ampla', 25, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q25-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -800,7 +800,7 @@ Dados: 6C (14), 1H (1) e 17Cℓ (17)',
   'ampla', 26, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q26-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2024.2-ampla-q26-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -832,7 +832,7 @@ conhecimentos de Química podemos afirmar que:',
   'ampla', 27, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q27-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2024.2-ampla-q27-2.png", "legenda": null, "ordem": 2}, {"url": "/questoes-facape/2024.2-ampla-q27-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -868,7 +868,7 @@ Dados: dágua = 1,0gcm–3(25ºC/1atm), 16S (16) e
   'ampla', 28, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q28-full1.png", "legenda": null, "ordem": 91}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -903,7 +903,7 @@ Massa molar (g.mol–1): K = 39, Mn = 55, H = 1 e O
   'ampla', 29, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q29-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2024.2-ampla-q29-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2024.2-ampla-q29-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -963,7 +963,7 @@ Dados: Massa molar (g.mol–1): 30Zn = 65, 48Cd =
   'ampla', 30, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q30-full1.png", "legenda": null, "ordem": 91}, {"url": "/questoes-facape/2024.2-ampla-q30-full2.png", "legenda": null, "ordem": 92}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -985,7 +985,7 @@ insert into questoes (
   'ampla', 31, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1015,7 +1015,7 @@ possuindo uma elevada atividade mitótica. Pode-se afirmar que se trata do tecid
   'ampla', 32, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1062,7 +1062,7 @@ cuidados e prevenção da dengue.',
   'ampla', 33, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1098,7 +1098,7 @@ suas respectivas regiões.',
   'ampla', 34, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1153,7 +1153,7 @@ Estão CORRETAS:',
   'ampla', 35, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1188,7 +1188,7 @@ EXCETO:',
   'ampla', 36, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1229,7 +1229,7 @@ EXCETO:',
   'ampla', 37, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1269,7 +1269,7 @@ Preenche CORRETAMENTE a alternativa:',
   'ampla', 38, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1299,7 +1299,7 @@ doenças transmitidas por esses animais.',
   'ampla', 39, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1326,7 +1326,7 @@ existentes em um mesmo ambiente denomina-se:',
   'ampla', 40, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1356,7 +1356,7 @@ contribuiu para sua formação.',
   'ampla', 41, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1381,7 +1381,7 @@ portuguesa, qual afirmação está CORRETA?',
   'ampla', 42, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1405,7 +1405,7 @@ a alternativa CORRETA.',
   'ampla', 43, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1439,7 +1439,7 @@ espanhola na América?',
   'ampla', 44, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q44-1.png", "legenda": null, "ordem": 1}, {"url": "/questoes-facape/2024.2-ampla-q44-2.png", "legenda": null, "ordem": 2}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1463,7 +1463,7 @@ a dicotomia entre:',
   'ampla', 45, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1496,7 +1496,7 @@ e) alta pressão.',
   'ampla', 46, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1550,7 +1550,7 @@ a função de:',
   'ampla', 47, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q47-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1585,7 +1585,7 @@ alterações no (na):',
   'ampla', 48, null, false,
   '[{"url": "/questoes-facape/2024.2-ampla-q48-1.png", "legenda": null, "ordem": 1}]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1621,7 +1621,7 @@ erosão pluvial é intensificado quando há:',
   'ampla', 49, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,
@@ -1655,7 +1655,7 @@ baseia no (a):',
   'ampla', 50, null, false,
   '[]'::jsonb, true
 )
-on conflict (prova_codigo, numero_questao, idioma) do update set
+on conflict (prova_codigo, numero_questao, idioma) where prova_codigo is not null do update set
   materia = excluded.materia,
   assunto = excluded.assunto,
   enunciado = excluded.enunciado,

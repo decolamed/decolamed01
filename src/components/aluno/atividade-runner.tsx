@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { corrigirQuestaoAtividade, submeterAtividade, type ResultadoAtividade } from "@/app/(aluno)/aluno/atividades/[id]/actions";
+import { ImagensQuestao } from "./imagens-questao";
 
 interface QuestaoAtividade {
   id: string;
   enunciado: string;
   alternativas: { id: string; texto: string }[];
+  imagens: { url: string; legenda: string | null; ordem: number }[];
 }
 
 export function AtividadeRunner({
@@ -96,7 +98,8 @@ export function AtividadeRunner({
           {resultado.gabarito.map((item, i) => (
             <div key={item.questaoId} className="rounded-2xl bg-white p-5 shadow">
               <p className="text-xs font-semibold text-navy-dark/50">Questão {i + 1}</p>
-              <p className="mt-1 font-display font-semibold text-navy-dark">{item.enunciado}</p>
+              <p className="mt-1 whitespace-pre-line font-display font-semibold text-navy-dark">{item.enunciado}</p>
+              <ImagensQuestao imagens={item.imagens} />
               <div className="mt-3 space-y-1.5">
                 {item.alternativas.map((alt) => {
                   const éCorreta = alt.id === item.respostaCorreta;
@@ -145,7 +148,8 @@ export function AtividadeRunner({
       </div>
 
       <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-        <p className="font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
+        <p className="whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
+        <ImagensQuestao imagens={questao.imagens} />
 
         <div className="mt-5 space-y-2">
           {questao.alternativas.map((alt) => {

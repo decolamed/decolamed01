@@ -11,6 +11,7 @@ export interface ItemGabaritoAtividade {
   escolhida: string | null;
   correta: boolean;
   explicacao: string | null;
+  imagens: { url: string; legenda: string | null; ordem: number }[];
 }
 
 export interface ResultadoAtividade {
@@ -53,7 +54,7 @@ export async function submeterAtividade(atividadeId: string, respostas: Record<s
     supabase.from("atividades").select("peso_facape").eq("id", atividadeId).maybeSingle(),
     supabase
       .from("atividade_questoes")
-      .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao)")
+      .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, imagens)")
       .eq("atividade_id", atividadeId)
       .order("ordem")
   ]);
@@ -72,7 +73,8 @@ export async function submeterAtividade(atividadeId: string, respostas: Record<s
       respostaCorreta: item.questoes.resposta_correta,
       escolhida,
       correta,
-      explicacao: item.questoes.explicacao
+      explicacao: item.questoes.explicacao,
+      imagens: item.questoes.imagens ?? []
     };
   });
 

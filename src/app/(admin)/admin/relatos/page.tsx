@@ -13,7 +13,7 @@ export default async function AdminRelatosPage() {
     .order("created_at", { ascending: false });
 
   const relatos: RelatoExibicao[] = (data ?? []).map((r: any) => {
-    const match = r.mensagem.match(/^\[(.+?)\]\s*(.*)$/s);
+    const match = r.mensagem.match(/^\[(.+?)\]\s*([\s\S]*)$/);
     return {
       id: r.id,
       nome: r.profiles?.nome ?? "Aluno",

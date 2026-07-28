@@ -157,6 +157,17 @@ export interface Alternativa {
   texto: string;
 }
 
+// Elemento visual de uma questão (gráfico, tabela, mapa, charge, ou até o
+// recorte da questão inteira quando a fórmula se perde na extração de
+// texto). `url` pode ser um caminho estático (/questoes-facape/...) ou uma
+// data URI (data:image/png;base64,...) — o componente que renderiza não
+// precisa se importar com qual dos dois é, um <img> aceita ambos.
+export interface ImagemQuestao {
+  url: string;
+  legenda: string | null;
+  ordem: number;
+}
+
 export interface Questao {
   id: string;
   materia: string;
@@ -167,6 +178,17 @@ export interface Questao {
   explicacao: string | null;
   dificuldade: Dificuldade;
   fonte: string | null;
+  // Origem da prova (migração 029) — todas opcionais porque questões
+  // cadastradas à mão pelo admin não têm prova de origem.
+  prova_codigo: string | null;
+  prova_nome: string | null;
+  ano: number | null;
+  semestre: number | null;
+  modalidade: "ampla" | "peba" | null;
+  numero_questao: number | null;
+  idioma: "ingles" | "espanhol" | null;
+  anulada: boolean;
+  imagens: ImagemQuestao[];
   ativo: boolean;
   criado_por: string | null;
   created_at: string;
@@ -299,13 +321,13 @@ export interface CronogramaDia {
   updated_at: string;
 }
 
-// Trilha do curso: sequência linear de dias (Dia 1, Dia 2, ...) contados a
-// partir da entrada do aluno na plataforma — diferente do cronograma_dias
-// acima, que é um ciclo semanal fixo (dia_semana 0-6) igual pra sempre.
-// Reaproveita o formato de CronogramaItem, com tipos extras pra atividades
-// que ainda não têm conteúdo estruturado no banco (leitura de livro,
-// redação, revisão geral).
-export type TrilhaItemTipo = CronogramaItemTipo | "revisao" | "redacao" | "leitura" | "atividade";
+// Trilha de 40 dias (trilha_dias): já existe em produção, criada fora do
+// fluxo de migrations deste repositório (mesmo padrão de conteudos_biblioteca
+// / links_externos, migração 019). dia_numero é relativo ao início do aluno
+// na trilha, não a um dia do calendário. Cada item de `itens` é hoje
+// {url, tipo, ref_id, titulo, materia} — ref_id ainda não está preenchido
+// (aulas com título genérico "Aula N"), o que é o próximo passo de refino.
+export type TrilhaItemTipo = "aula" | "questoes" | "flashcards" | "simulado" | "revisao" | "livre";
 
 export interface TrilhaItem {
   tipo: TrilhaItemTipo;
@@ -317,11 +339,10 @@ export interface TrilhaItem {
 
 export interface TrilhaDia {
   id: string;
-  dia_numero: number; // 1, 2, 3... contado a partir da entrada do aluno
+  dia_numero: number; // 1..40
   titulo: string;
-  atividades: string[];
   itens: TrilhaItem[];
-  created_at: string;
+  atividades: unknown[]; // coluna legada, não usada pelo admin novo
   updated_at: string;
 }
 
@@ -404,7 +425,7 @@ export interface Banner {
   updated_at: string;
 }
 
-export type ConteudoBibliotecaTipo = "aula" | "artigo" | "pdf" | "video_externo";
+export type ConteudoBibliotecaTipo = "aula" | "artigo" | "pdf" | "video_externo" | "resumo_livro";
 
 export interface ConteudoBiblioteca {
   id: string;

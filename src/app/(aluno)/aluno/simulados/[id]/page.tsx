@@ -18,7 +18,7 @@ export default async function AlunoSimuladoPage({ params }: { params: { id: stri
   // acontece no servidor, em actions.ts, depois que o aluno já respondeu.
   const { data: itens } = await supabase
     .from("simulado_questoes")
-    .select("questao_id, ordem, questoes(id, enunciado, alternativas, materia)")
+    .select("questao_id, ordem, questoes(id, enunciado, alternativas, materia, imagens)")
     .eq("simulado_id", params.id)
     .order("ordem");
 

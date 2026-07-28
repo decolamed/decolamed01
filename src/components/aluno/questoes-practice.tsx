@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { registrarResposta } from "@/app/(aluno)/aluno/questoes/actions";
+import { ImagensQuestao } from "./imagens-questao";
 import type { Questao } from "@/types/database";
 
 export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
@@ -80,7 +81,8 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
         />
       </div>
 
-      <p className="mt-5 font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
+      <p className="mt-5 whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
+      <ImagensQuestao imagens={questao.imagens} />
 
       <div className="mt-5 space-y-2">
         {questao.alternativas.map((alt) => {

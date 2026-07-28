@@ -6,9 +6,17 @@
 // enviados conforme a versão vigente da documentação sempre que necessário.
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL ?? "https://sandbox.asaas.com/api/v3";
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY!;
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
 async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Falha cedo com uma mensagem clara em vez de deixar o fetch tentar
+  // mandar um header inválido (access_token: undefined) — foi exatamente
+  // esse tipo de erro opaco que escondia a causa real de "Não foi possível
+  // gerar a cobrança" (ver pingAsaas() e o botão de teste em
+  // /admin/configuracoes).
+  if (!ASAAS_API_KEY) {
+    throw new Error("ASAAS_API_KEY não está configurada nas variáveis de ambiente.");
+  }
   const res = await fetch(`${ASAAS_API_URL}${path}`, {
     ...init,
     headers: {
@@ -109,6 +117,18 @@ export async function createCharge(input: AsaasChargeInput): Promise<AsaasCharge
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+// Diagnóstico do checkout: confirma se a chave/URL configuradas conseguem
+// de fato autenticar no Asaas, sem precisar simular uma cobrança inteira.
+// Usado pelo botão "Testar conexão" em /admin/configuracoes.
+export async function pingAsaas(): Promise<{ ok: true } | { ok: false; mensagem: string }> {
+  try {
+    await asaasFetch<{ data: unknown[] }>("/customers?limit=1");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, mensagem: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 // Pix: o QR Code é obtido em uma chamada separada, após a cobrança criada.

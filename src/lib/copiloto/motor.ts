@@ -935,7 +935,14 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
 
 async function registrarEvento(alunoId: string, gatilho: string, materia?: string | null, assunto?: string | null, detalhes: Record<string, unknown> = {}) {
   const supabase = createAdminClient();
-  await supabase.from("copiloto_eventos").insert({ aluno_id: alunoId, gatilho, materia, assunto, detalhes }).then(() => {}).catch(() => {});
+  // .then(onFulfilled, onRejected) em vez de .then().catch(): o retorno do
+  // query builder do Supabase é só PromiseLike (não Promise de verdade), que
+  // não tem .catch() — mas aceita o segundo argumento de .then() pra tratar
+  // erro sem precisar encadear.
+  await supabase.from("copiloto_eventos").insert({ aluno_id: alunoId, gatilho, materia, assunto, detalhes }).then(
+    () => {},
+    () => {}
+  );
 }
 
 // ============================================================================

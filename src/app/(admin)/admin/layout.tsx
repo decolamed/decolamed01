@@ -28,7 +28,7 @@ const GRUPO_GESTAO = [
 const GRUPO_CONTEUDO = [
   { href: "/admin/cursos", label: "Cursos & Aulas", icon: "video" },
   { href: "/admin/cronograma", label: "Cronograma & Missões", icon: "calendar" },
-  { href: "/admin/trilha", label: "Trilha do Curso", icon: "calendar" },
+  { href: "/admin/trilha", label: "Trilha 40 Dias", icon: "calendar" },
   { href: "/admin/questoes", label: "Banco de Questões", icon: "target" },
   { href: "/admin/simulados", label: "Simulados", icon: "file" },
   { href: "/admin/atividades", label: "Atividades", icon: "target" },

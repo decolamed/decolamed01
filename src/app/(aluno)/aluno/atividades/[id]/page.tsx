@@ -18,13 +18,18 @@ export default async function AlunoAtividadePage({ params }: { params: { id: str
   // submeterAtividade), mesmo padrão de segurança usado em simulados.
   const { data: itens } = await supabase
     .from("atividade_questoes")
-    .select("questao_id, ordem, questoes(id, enunciado, alternativas)")
+    .select("questao_id, ordem, questoes(id, enunciado, alternativas, imagens)")
     .eq("atividade_id", params.id)
     .order("ordem");
 
   const questoes = (itens ?? [])
     .filter((i: any) => i.questoes)
-    .map((i: any) => ({ id: i.questoes.id, enunciado: i.questoes.enunciado, alternativas: i.questoes.alternativas }));
+    .map((i: any) => ({
+      id: i.questoes.id,
+      enunciado: i.questoes.enunciado,
+      alternativas: i.questoes.alternativas,
+      imagens: i.questoes.imagens ?? []
+    }));
 
   if (questoes.length === 0) {
     return (

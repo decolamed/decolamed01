@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { responderCheckin } from "./checkin-actions";
+import { responderCheckin } from "@/app/(aluno)/aluno/copiloto/checkin-actions";
 
 interface Opcao {
   label: string;
