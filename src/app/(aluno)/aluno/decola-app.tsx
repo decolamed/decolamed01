@@ -521,10 +521,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pdfs = this.props.dados.conteudos.filter((c) => c.tipo === "pdf" || c.tipo === "artigo");
     const links = this.props.dados.linksExternos;
     return {
-      hangar: [
-        { ic: "calendar", t: "Plano de Voo", d: "Cronograma inteligente", tone: "peach" },
-        { ic: "radar", t: "Raio-X " + this.props.dados.nomeVestibular.toUpperCase(), d: "Assuntos mais cobrados", tone: "peach" }
-      ],
       estudos: [
         { ic: "video", t: "Videoaulas", d: aulas.length + (aulas.length === 1 ? " aula" : " aulas") },
         { ic: "file", t: "PDFs", d: pdfs.length + (pdfs.length === 1 ? " material" : " materiais") },
@@ -956,6 +952,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   nav(screen: string, extra?: any) {
     this.setState({ screen, practice: false, reviewMode: false, revFinished: false, moreOpen: false, notifOpen: false, simView: null, ...extra });
   }
+  // Itens de menu podem apontar para uma tela interna da SPA (`k`) ou para
+  // uma rota real do Next (`href`). Centralizar isso aqui evita o que já
+  // acontecia antes: telas reais e completas (Raio-X, Desempenho) ficarem
+  // sem nenhum caminho de navegação porque só "Atividades" tinha um
+  // `window.location.href` escrito à mão no meio do JSX.
+  irParaItemMenu(item: { k: string; href?: string }) {
+    if (item.href) {
+      if (typeof window !== "undefined") window.location.href = item.href;
+      return;
+    }
+    this.nav(item.k);
+  }
   // Domínios que recusam ser exibidos em iframe de outra origem (enviam
   // X-Frame-Options/CSP frame-ancestors bloqueando) — não é algo que dê pra
   // contornar do nosso lado, nenhum truque de iframe passa por cima disso,
@@ -1363,7 +1371,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   sidebarDesktop() {
     const { C, h, I } = this.ui();
     const s = this.state.screen;
-    const items = [
+    const items: { k: string; ic: string; t: string; href?: string }[] = [
       { k: "mapa", ic: "plane", t: "Mapa de Voo" },
       { k: "painel", ic: "gauge", t: "Painel de Bordo" },
       { k: "missoes", ic: "target", t: "Missões" },
@@ -1372,7 +1380,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       { k: "questoes", ic: "target", t: "Questões" },
       { k: "simulados", ic: "file", t: "Simulados" },
       { k: "flashcards-select", ic: "cards", t: "Flashcards" },
+      { k: "atividades", ic: "target", t: "Atividades", href: "/aluno/atividades" },
       { k: "copiloto", ic: "bot", t: "Copiloto IA" },
+      { k: "raio-x", ic: "radar", t: "Raio-X", href: "/aluno/raio-x" },
+      { k: "desempenho", ic: "gauge", t: "Desempenho", href: "/aluno/desempenho" },
       { k: "ranking", ic: "trophy", t: "Ranking" },
       { k: "conquistas", ic: "award", t: "Conquistas" },
       { k: "perfil", ic: "user", t: "Perfil" },
@@ -1402,7 +1413,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             "div",
             {
               key: it.k,
-              onClick: () => this.nav(it.k),
+              onClick: () => this.irParaItemMenu(it),
               style: {
                 display: "flex",
                 alignItems: "center",
@@ -1519,15 +1530,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
   moreSheet() {
     const { C, h, I, iconBox } = this.ui();
-    const items = [
+    // `href` = rota real do Next; sem `href`, é uma tela interna da SPA.
+    const items: { k: string; ic: string; t: string; href?: string }[] = [
       { k: "questoes", ic: "target", t: "Questões" },
       { k: "simulados", ic: "file", t: "Simulados" },
-      // Atividades ainda não tem tela própria dentro da SPA — é uma rota
-      // real dedicada (/aluno/atividades), então navega de verdade em vez
-      // de trocar o `screen` interno (ver onClick abaixo).
-      { k: "atividades", ic: "target", t: "Atividades" },
+      { k: "atividades", ic: "target", t: "Atividades", href: "/aluno/atividades" },
       { k: "copiloto", ic: "bot", t: "Copiloto IA" },
       { k: "plano", ic: "calendar", t: "Cronograma" },
+      { k: "raio-x", ic: "radar", t: "Raio-X", href: "/aluno/raio-x" },
+      { k: "desempenho", ic: "gauge", t: "Desempenho", href: "/aluno/desempenho" },
       { k: "redacao", ic: "note", t: "Redação" },
       { k: "ranking", ic: "trophy", t: "Ranking" },
       { k: "conquistas", ic: "award", t: "Conquistas" },
@@ -1548,7 +1559,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           items.map((it) =>
             h(
               "div",
-              { key: it.k, onClick: () => (it.k === "atividades" ? (window.location.href = "/aluno/atividades") : this.nav(it.k)), style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "12px 4px", borderRadius: 16, background: C.chip, cursor: "pointer" } },
+              { key: it.k, onClick: () => this.irParaItemMenu(it), style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "12px 4px", borderRadius: 16, background: C.chip, cursor: "pointer" } },
               [iconBox(it.ic, C.orangeSoft, C.orange, 40, 19), h("span", { key: "t", style: { fontSize: 10.5, fontWeight: 700, color: C.txt, textAlign: "center" } }, it.t)]
             )
           )
@@ -2101,32 +2112,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
-  scrHangar() {
-    const { C, h, I, card, iconBox } = this.ui();
-    const d = this.data();
-    return this.screenWrap([
-      this.head("Hangar", { back: "mapa" }),
-      h("div", { key: "search", style: { margin: "6px 18px 0", display: "flex", gap: 10, alignItems: "center", background: C.card, border: "1px solid " + C.line, borderRadius: 14, padding: "12px 14px" } }, [
-        I("search", 17, C.faint),
-        h("input", { key: "i", placeholder: "Buscar no hangar", style: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: C.txt, fontWeight: 600, fontFamily: "inherit" } })
-      ]),
-      h(
-        "div",
-        { key: "grid", style: { margin: "14px 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
-        d.hangar.map((e, i) =>
-          card(
-            { padding: 16 },
-            [
-              iconBox(e.ic, e.tone === "peach" ? C.peach : C.blueSoft, e.tone === "peach" ? (C.dark ? C.peachTxt : "#9a5218") : C.dark ? "#8fc3e8" : "#01395E", 46, 21),
-              h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800, marginTop: 12 } }, e.t),
-              h("div", { key: "d", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, e.d)
-            ],
-            () => (e.t === "Plano de Voo" ? this.nav("plano") : this.nav("painel"))
-          )
-        )
-      )
-    ]);
-  }
 
   scrQuestoes(): any {
     const { C, h, I, card, bar, btn, ghost, iconBox } = this.ui();
@@ -4331,7 +4316,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       painel: () => this.scrPainel(),
       missoes: () => this.scrMissoes(),
       estudos: () => this.scrEstudos(),
-      hangar: () => this.scrHangar(),
       questoes: () => this.scrQuestoes(),
       simulados: () => this.scrSimulados(),
       copiloto: () => this.scrCopiloto(),

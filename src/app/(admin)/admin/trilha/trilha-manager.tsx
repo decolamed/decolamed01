@@ -23,6 +23,19 @@ const TIPOS: { valor: TrilhaItemTipo; label: string; icone: string }[] = [
 // referenciam nenhum conteúdo, só um título.
 const TIPOS_COM_REFERENCIA = new Set<TrilhaItemTipo>(["aula", "pdf", "link", "questoes", "flashcards", "simulado"]);
 
+// Onde o admin cadastra cada tipo de conteúdo. Sem isso, escolher um tipo
+// que ainda não tem nada cadastrado deixava um "Selecione..." vazio e sem
+// saída — o admin não tinha como saber que faltava cadastrar o conteúdo
+// antes de anexá-lo ao dia.
+const ONDE_CADASTRAR: Record<string, { texto: string; href: string }> = {
+  aula: { texto: "Nenhuma aula cadastrada ainda.", href: "/admin/cursos" },
+  pdf: { texto: "Nenhum PDF cadastrado ainda.", href: "/admin/pdfs" },
+  link: { texto: "Nenhum link externo cadastrado ainda.", href: "/admin/links" },
+  simulado: { texto: "Nenhum simulado cadastrado ainda.", href: "/admin/simulados" },
+  questoes: { texto: "Nenhuma matéria com questões cadastradas.", href: "/admin/questoes" },
+  flashcards: { texto: "Nenhuma matéria com flashcards cadastrados.", href: "/admin/flashcards" }
+};
+
 interface Props {
   dias: TrilhaDia[];
   aulas: ConteudoBiblioteca[];
@@ -293,7 +306,14 @@ function DiaEditor({
                 </option>
               ))}
             </select>
-            {precisaReferencia ? (
+            {precisaReferencia && opcoes.length === 0 ? (
+              <a
+                href={ONDE_CADASTRAR[tipoNovo]?.href ?? "/admin"}
+                className="min-w-0 flex-1 rounded-[9px] border border-dashed border-orange/50 bg-orange/5 px-2.5 py-1.5 text-[11px] font-semibold text-orange-dark hover:bg-orange/10"
+              >
+                {ONDE_CADASTRAR[tipoNovo]?.texto ?? "Nada cadastrado."} Cadastrar agora →
+              </a>
+            ) : precisaReferencia ? (
               <select
                 value={refNovo}
                 onChange={(e) => setRefNovo(e.target.value)}
