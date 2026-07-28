@@ -43,11 +43,23 @@ export default async function ParceiroDashboardPage() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Meu painel de afiliado</h1>
-      <p className="mt-1 text-navy-dark/60">
-        Aqui você acompanha apenas as vendas feitas com o seu cupom. Nenhum outro dado da plataforma fica visível
-        para você.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-navy-dark">Meu painel de afiliado</h1>
+          <p className="mt-1 text-navy-dark/60">
+            Aqui você acompanha apenas as vendas feitas com o seu cupom. Nenhum outro dado da plataforma fica visível
+            para você.
+          </p>
+        </div>
+        <a
+          href="/preview-aluno"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="whitespace-nowrap rounded-full bg-orange px-5 py-3 text-xs font-bold uppercase tracking-wide text-white hover:bg-orange-dark"
+        >
+          Demonstração grátis →
+        </a>
+      </div>
 
       {listaCupons.length === 0 ? (
         <div className="mt-6 rounded-2xl bg-white p-6 shadow">

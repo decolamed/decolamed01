@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
-import { Chip, Toast, useToast, PrimaryButton, TextInput } from "@/components/admin/interactive";
-import { salvarFlashcard, excluirFlashcard } from "./actions";
+import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput } from "@/components/admin/interactive";
+import { ImportadorTexto } from "@/components/admin/importador-texto";
+import { parseFlashcardsTexto, type FlashcardParseado } from "@/lib/importacao/parse-flashcards";
+import { salvarFlashcard, salvarFlashcardsEmLote, excluirFlashcard } from "./actions";
 import type { Flashcard } from "@/types/database";
 
 export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashcard[]; materiasExistentes: string[] }) {
@@ -16,6 +18,28 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
   const [assunto, setAssunto] = useState("");
   const [pending, startTransition] = useTransition();
   const { toast, show } = useToast();
+
+  const [importando, setImportando] = useState(false);
+  const [previa, setPrevia] = useState<FlashcardParseado[] | null>(null);
+  const [materiaLote, setMateriaLote] = useState("Biologia");
+  const [assuntoLote, setAssuntoLote] = useState("");
+
+  function analisarTexto(texto: string) {
+    setPrevia(parseFlashcardsTexto(texto));
+  }
+
+  function importarLote() {
+    if (!previa) return;
+    const validos = previa.filter((p) => !p.erro);
+    startTransition(async () => {
+      const res = await salvarFlashcardsEmLote(
+        validos.map((p) => ({ frente: p.frente, verso: p.verso, materia: materiaLote, assunto: assuntoLote }))
+      );
+      show(`${res.sucesso} flashcard(s) importado(s)${res.falha ? `, ${res.falha} falharam` : ""}.`);
+      setPrevia(null);
+      setImportando(false);
+    });
+  }
 
   const materias = ["Todas", ...materiasExistentes];
   const lista = cards.filter((x) => filtro === "Todas" || x.materia === filtro);
@@ -65,7 +89,49 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
 
   return (
     <div>
-      <PageHeader title="Flashcards" subtitle="Flashcards nativos da plataforma — grava direto no banco" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Flashcards" subtitle="Flashcards nativos da plataforma — grava direto no banco" />
+        <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar em massa"}</GhostButton>
+      </div>
+
+      {importando && (
+        <Card className="mb-3">
+          <h2 className="text-sm font-extrabold text-navy-dark">Importar flashcards em massa</h2>
+          <p className="mt-1 text-xs text-navy-dark/50">
+            Cole o texto (ou envie um PDF) com blocos &quot;Frente:&quot;/&quot;Verso:&quot;, ou uma linha por card no
+            formato &quot;pergunta | resposta&quot;. Você revisa tudo antes de importar de verdade.
+          </p>
+          <div className="mt-3">
+            <ImportadorTexto
+              onAnalisar={analisarTexto}
+              placeholder={"Frente: O que é mitose?\nVerso: Divisão celular que gera duas células idênticas.\n\nFrente: O que é meiose?\nVerso: Divisão celular que gera células com metade dos cromossomos."}
+            />
+          </div>
+
+          {previa && (
+            <div className="mt-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-navy-dark">Aplicar a todos:</span>
+                <TextInput value={materiaLote} onChange={(e) => setMateriaLote(e.target.value)} placeholder="Matéria" className="!w-40" />
+                <TextInput value={assuntoLote} onChange={(e) => setAssuntoLote(e.target.value)} placeholder="Assunto (opcional)" className="!w-48" />
+              </div>
+              <div className="flex flex-col gap-2">
+                {previa.map((p, i) => (
+                  <div key={i} className={`rounded-xl border p-3 text-xs ${p.erro ? "border-red/30 bg-red/5" : "border-green/30 bg-green/5"}`}>
+                    <p className="font-semibold text-navy-dark">{p.frente || "(sem frente)"}</p>
+                    {p.verso && <p className="mt-1 text-navy-dark/60">{p.verso}</p>}
+                    {p.erro && <p className="mt-1 font-bold text-red">{p.erro}</p>}
+                  </div>
+                ))}
+                {previa.length === 0 && <p className="text-xs text-navy-dark/50">Nenhum bloco reconhecido nesse texto.</p>}
+              </div>
+              <PrimaryButton onClick={importarLote} className={`mt-3 ${pending ? "opacity-60" : ""}`}>
+                {pending ? "Importando..." : `Importar ${previa.filter((p) => !p.erro).length} flashcard(s) válido(s)`}
+              </PrimaryButton>
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {materias.map((m) => (
@@ -97,11 +163,6 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
             <Card key={card.id}>
               <div className="mb-2.5 flex items-center gap-2">
                 <span className="rounded-full bg-green/10 px-2.5 py-1 text-[10px] font-extrabold text-green">{card.materia}</span>
-                {(card as any).gerado_por_ia && (
-                  <span className="rounded-full bg-orange/10 px-2.5 py-1 text-[10px] font-extrabold text-orange-dark" title="Gerado pelo Copiloto via Gemini">
-                    🤖 IA
-                  </span>
-                )}
                 {card.assunto && <span className="rounded-full bg-navy-dark/5 px-2.5 py-1 text-[10px] font-bold text-navy-dark/60">{card.assunto}</span>}
                 <div className="flex-1" />
                 {editing ? (

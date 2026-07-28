@@ -38,6 +38,35 @@ export async function salvarFlashcard(form: FlashcardForm) {
   return { ok: true as const };
 }
 
+// Importação em massa (via texto colado ou PDF — ver parse-flashcards.ts e
+// pdf-actions.ts), mesmo padrão de salvarQuestoesEmLote().
+export async function salvarFlashcardsEmLote(forms: FlashcardForm[]) {
+  const admin = await requireAdmin();
+  const supabase = createAdminClient();
+
+  let sucesso = 0;
+  let falha = 0;
+  for (const form of forms) {
+    if (!form.frente.trim() || !form.verso.trim()) {
+      falha++;
+      continue;
+    }
+    const { error } = await supabase.from("flashcards").insert({
+      materia: form.materia.trim() || "Geral",
+      assunto: form.assunto.trim() || null,
+      frente: form.frente.trim(),
+      verso: form.verso.trim(),
+      ativo: true,
+      criado_por: admin.id
+    });
+    if (error) falha++;
+    else sucesso++;
+  }
+
+  revalidatePath(PATH);
+  return { sucesso, falha };
+}
+
 export async function excluirFlashcard(id: string) {
   await requireAdmin();
   const supabase = createAdminClient();

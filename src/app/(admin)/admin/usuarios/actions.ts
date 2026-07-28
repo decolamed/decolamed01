@@ -339,6 +339,104 @@ export async function removerParceiro(formData: FormData) {
   sucesso("Permissão de parceiro removida.");
 }
 
+// ----------------------------------------------------------------------------
+// 3. Adicionar professor manualmente
+// ----------------------------------------------------------------------------
+const criarProfessorSchema = z.object({
+  nome: z.string().trim().min(3, "Informe o nome completo."),
+  email: z.string().trim().toLowerCase().email("E-mail inválido."),
+  telefone: z.string().trim().optional()
+});
+
+export async function criarProfessorManual(formData: FormData) {
+  const admin = await requireAdmin();
+  const parsed = criarProfessorSchema.safeParse({
+    nome: formData.get("nome"),
+    email: formData.get("email"),
+    telefone: formData.get("telefone") || undefined
+  });
+
+  if (!parsed.success) {
+    erro(parsed.error.errors[0]?.message ?? "Dados inválidos.");
+  }
+
+  const { nome, email, telefone } = parsed.data;
+  const supabase = createAdminClient();
+
+  const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`,
+    data: { nome }
+  });
+
+  if (inviteError || !invited?.user) {
+    const jaExiste = inviteError?.message?.toLowerCase().includes("already");
+    erro(jaExiste ? "Já existe um usuário cadastrado com esse e-mail." : "Não foi possível criar o usuário.");
+  }
+
+  const professorId = invited.user.id;
+
+  const { error: profileError } = await supabase.from("profiles").insert({
+    id: professorId,
+    nome,
+    email,
+    telefone: telefone ?? null,
+    role: "professor",
+    ativo: true,
+    criado_manualmente: true,
+    criado_por: admin.id
+  });
+
+  if (profileError) {
+    console.error("Erro ao criar profile de professor:", profileError);
+    erro("Usuário criado no login, mas falhou ao salvar o perfil. Contate o suporte técnico.");
+  }
+
+  await registrarHistoricoAdmin(supabase, {
+    tipo: "professor_criado_manual",
+    usuarioAlvoId: professorId,
+    adminId: admin.id
+  });
+
+  revalidatePath(PATH);
+  sucesso(`Professor ${nome} cadastrado com sucesso. Um e-mail de acesso foi enviado.`);
+}
+
+export async function tornarProfessor(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get("id"));
+  const supabase = createAdminClient();
+
+  const { error } = await supabase.from("profiles").update({ role: "professor" }).eq("id", id);
+  if (error) erro("Não foi possível tornar o usuário professor.");
+
+  await registrarHistoricoAdmin(supabase, {
+    tipo: "usuario_promovido_professor",
+    usuarioAlvoId: id,
+    adminId: admin.id
+  });
+
+  revalidatePath(PATH);
+  sucesso("Usuário agora é professor.");
+}
+
+export async function removerProfessor(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get("id"));
+  const supabase = createAdminClient();
+
+  const { error } = await supabase.from("profiles").update({ role: "aluno" }).eq("id", id);
+  if (error) erro("Não foi possível remover a permissão de professor.");
+
+  await registrarHistoricoAdmin(supabase, {
+    tipo: "usuario_rebaixado_professor",
+    usuarioAlvoId: id,
+    adminId: admin.id
+  });
+
+  revalidatePath(PATH);
+  sucesso("Permissão de professor removida.");
+}
+
 export async function alterarPlano(formData: FormData) {
   await requireAdmin();
   const supabase = createAdminClient();

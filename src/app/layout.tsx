@@ -22,13 +22,33 @@ const montserratBody = Montserrat({
 export const metadata: Metadata = {
   title: "Decola Med — Preparação estratégica para Medicina",
   description:
-    "Plataforma de preparação para aprovação em Medicina. Cronograma inteligente, questões comentadas, simulados e acompanhamento de desempenho."
+    "Plataforma de preparação para aprovação em Medicina. Cronograma inteligente, questões comentadas, simulados e acompanhamento de desempenho.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Decola Med"
+  }
+};
+
+export const viewport = {
+  themeColor: "#01395E"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={`${montserratDisplay.variable} ${montserratBody.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <script
+          // Registra o service worker mínimo (public/sw.js) — necessário
+          // pros navegadores considerarem o app "instalável" (PWA) e
+          // dispararem o evento beforeinstallprompt usado em decola-app.tsx.
+          dangerouslySetInnerHTML={{
+            __html: `if ("serviceWorker" in navigator) { window.addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); }); }`
+          }}
+        />
+      </body>
     </html>
   );
 }

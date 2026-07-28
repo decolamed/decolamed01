@@ -267,4 +267,3 @@ export default async function AlunoCronogramaPage() {
     </div>
   );
 }
-
