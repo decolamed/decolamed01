@@ -170,6 +170,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     playerUrl: "",
     playerBack: "estudos",
     playerPosicaoInicial: 0,
+    // Aulas irmãs (do mesmo dia do cronograma ou da mesma lista) — é o que
+    // dá ao player cara de plataforma de curso: o aluno troca de aula sem
+    // voltar pra tela anterior.
+    playerLista: [] as { id: string | null; titulo: string; url: string; materia?: string | null }[],
     mostrarOnboarding: false,
     brief: (function (self: any) {
       const b = self.props.dados.briefing;
@@ -1017,7 +1021,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   abrirItemTrilha(item: TrilhaItem) {
     if (item.tipo === "aula") {
       if (!item.url) return this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "plano" });
-      this.abrirAula(item.ref_id, item.titulo, item.url, "plano");
+      // Todas as aulas do mesmo dia viram a playlist do player.
+      const aulasDoDia = (this.props.dados.trilhaHoje?.itens || [])
+        .filter((it) => it.tipo === "aula" && it.url)
+        .map((it) => ({ id: it.ref_id, titulo: it.titulo, url: it.url as string, materia: it.materia }));
+      this.abrirAula(item.ref_id, item.titulo, item.url, "plano", aulasDoDia);
     } else if (item.tipo === "pdf" || item.tipo === "link") {
       if (!item.url) return this.nav("conteudo", { contTitle: item.tipo === "pdf" ? "PDFs" : "Links úteis", contTipo: item.tipo, contBack: "plano" });
       this.openBrowser(item.titulo, item.url, "plano");
@@ -1098,10 +1106,37 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // endereço) com progresso salvo automaticamente. conteudoId pode ser null
   // pra itens antigos sem referência real; nesse caso o vídeo ainda abre,
   // só sem progresso/"continuar assistindo" (não há chave estável pra isso).
-  abrirAula(conteudoId: string | null, titulo: string, url: string, back: string) {
+  abrirAula(
+    conteudoId: string | null,
+    titulo: string,
+    url: string,
+    back: string,
+    lista: { id: string | null; titulo: string; url: string; materia?: string | null }[] = []
+  ) {
     const chave = conteudoId ? this.chaveAula(conteudoId) : null;
     const posicaoInicial = this.progressoDe(chave)?.posicao_segundos || 0;
-    this.nav("player", { playerChave: chave, playerTitulo: titulo, playerUrl: url, playerBack: back, playerPosicaoInicial: posicaoInicial });
+    this.nav("player", {
+      playerChave: chave,
+      playerTitulo: titulo,
+      playerUrl: url,
+      playerBack: back,
+      playerPosicaoInicial: posicaoInicial,
+      playerLista: lista
+    });
+  }
+  // Troca de aula sem sair do player (lista lateral/inferior). Salva o
+  // progresso da aula atual antes, senão o "continuar assistindo" ficaria
+  // preso no ponto em que a aula anterior foi aberta.
+  trocarAula(item: { id: string | null; titulo: string; url: string }) {
+    this.salvarProgressoDoPlayer(false);
+    this.destruirPlayerYoutube();
+    const chave = item.id ? this.chaveAula(item.id) : null;
+    this.setState({
+      playerChave: chave,
+      playerTitulo: item.titulo,
+      playerUrl: item.url,
+      playerPosicaoInicial: this.progressoDe(chave)?.posicao_segundos || 0
+    });
   }
   // Extrai só o ID do vídeo (não a URL /embed/ inteira) — é o que a
   // YouTube IFrame Player API espera em { videoId }.
@@ -3554,6 +3589,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const videoId = this.youtubeVideoId(url);
     const progresso = this.progressoDe(S.playerChave);
     const concluida = this.estaConcluido(S.playerChave);
+    const pctAssistido =
+      progresso && progresso.duracao_segundos
+        ? Math.min(100, Math.round((progresso.posicao_segundos / progresso.duracao_segundos) * 100))
+        : concluida
+        ? 100
+        : null;
+    const atual = S.playerLista.findIndex((a: any) => a.url === url);
+    const proxima = atual >= 0 && atual < S.playerLista.length - 1 ? S.playerLista[atual + 1] : null;
     return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000", overflow: "hidden" } }, [
       h("div", { key: "video", style: { position: "relative", width: "100%", paddingTop: "56.25%", background: "#000", flexShrink: 0 } }, [
         h(
@@ -3578,31 +3621,123 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             })
           : h("div", { key: "empty", style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.6)", fontSize: 12.5, fontWeight: 700 } }, "Nenhum vídeo para exibir.")
       ]),
-      h("div", { key: "info", style: { flex: 1, overflow: "auto", background: C.bg, borderRadius: "18px 18px 0 0", marginTop: -14, position: "relative", zIndex: 1, padding: "20px 18px 90px" } }, [
-        h("div", { key: "t", style: { fontSize: 16, fontWeight: 900, color: C.txt, lineHeight: 1.3 } }, S.playerTitulo),
+      // Barra de progresso colada no vídeo, como em plataforma de curso —
+      // o aluno vê de imediato quanto já assistiu daquela aula.
+      pctAssistido != null
+        ? h(
+            "div",
+            { key: "bar", style: { height: 3, background: "rgba(255,255,255,.15)", flexShrink: 0 } },
+            h("div", { style: { height: "100%", width: pctAssistido + "%", background: concluida ? C.green : C.orange, transition: "width .3s" } })
+          )
+        : null,
+      h("div", { key: "info", style: { flex: 1, overflow: "auto", background: C.bg, padding: "18px 18px 96px" } }, [
+        h("div", { key: "t", style: { fontSize: 17, fontWeight: 900, color: C.txt, lineHeight: 1.3 } }, S.playerTitulo),
+        h(
+          "div",
+          { key: "meta", style: { marginTop: 6, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+          [
+            concluida
+              ? h("span", { key: "ok", style: { fontSize: 10, fontWeight: 900, color: C.green, background: C.greenSoft, padding: "3px 9px", borderRadius: 99, letterSpacing: ".04em" } }, "CONCLUÍDA")
+              : pctAssistido != null && pctAssistido > 0
+              ? h("span", { key: "p", style: { fontSize: 10, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "3px 9px", borderRadius: 99, letterSpacing: ".04em" } }, pctAssistido + "% ASSISTIDO")
+              : null,
+            atual >= 0 && S.playerLista.length > 1
+              ? h("span", { key: "n", style: { fontSize: 10.5, fontWeight: 700, color: C.faint } }, "Aula " + (atual + 1) + " de " + S.playerLista.length)
+              : null
+          ]
+        ),
+        // Ação primária clara — o aluno pode concluir a aula na hora que
+        // quiser, sem depender de assistir até o fim.
         S.playerChave
           ? h(
               "div",
               {
                 key: "toggle",
                 onClick: () => this.toggleItemGenerico(S.playerChave),
-                style: { marginTop: 16, display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "13px 15px", borderRadius: 14, background: concluida ? C.greenSoft : C.chip }
+                style: {
+                  marginTop: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 9,
+                  cursor: "pointer",
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  background: concluida ? C.greenSoft : C.orange,
+                  border: concluida ? "1.5px solid " + C.green : "none",
+                  boxShadow: concluida ? "none" : "0 6px 18px rgba(243,108,33,.32)"
+                }
               },
               [
                 h(
                   "div",
-                  { key: "c", style: { width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: concluida ? C.green : C.card, border: concluida ? "none" : "1.5px solid " + C.line } },
-                  concluida ? I("check", 13, "#fff", 3) : null
+                  { key: "c", style: { width: 22, height: 22, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: concluida ? C.green : "rgba(255,255,255,.25)" } },
+                  I("check", 12, "#fff", 3)
                 ),
-                h("span", { key: "s", style: { fontSize: 12.5, fontWeight: 800, color: concluida ? C.green : C.txt } }, concluida ? "Aula concluída" : "Marcar como concluída")
+                h("span", { key: "s", style: { fontSize: 13, fontWeight: 900, color: concluida ? C.green : "#fff", letterSpacing: ".02em" } }, concluida ? "AULA CONCLUÍDA" : "MARCAR COMO CONCLUÍDA")
               ]
             )
           : null,
-        progresso && progresso.duracao_segundos
+        proxima
           ? h(
               "div",
-              { key: "prog", style: { marginTop: 14, fontSize: 10.5, fontWeight: 700, color: C.faint } },
-              "Assistido até " + Math.min(100, Math.floor((progresso.posicao_segundos / progresso.duracao_segundos) * 100)) + "% na última vez"
+              {
+                key: "prox",
+                onClick: () => this.trocarAula(proxima),
+                style: { marginTop: 10, display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "12px 14px", borderRadius: 14, background: C.chip }
+              },
+              [
+                h("div", { key: "i", style: { display: "flex" } }, I("chevR", 16, C.orange)),
+                h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                  h("div", { key: "a", style: { fontSize: 9.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Próxima aula"),
+                  h("div", { key: "b", style: { fontSize: 12.5, fontWeight: 800, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, proxima.titulo)
+                ])
+              ]
+            )
+          : null,
+        // Lista de aulas irmãs — o que dá continuidade de curso: dá pra
+        // pular entre as aulas do dia sem voltar pro cronograma.
+        S.playerLista.length > 1
+          ? h("div", { key: "lbl", style: { margin: "22px 0 10px", fontSize: 11, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Aulas desta missão")
+          : null,
+        S.playerLista.length > 1
+          ? h(
+              "div",
+              { key: "lista", style: { display: "flex", flexDirection: "column", gap: 8 } },
+              S.playerLista.map((item: any, i: number) => {
+                const ativo = i === atual;
+                const feita = this.estaConcluido(item.id ? this.chaveAula(item.id) : null);
+                return h(
+                  "div",
+                  {
+                    key: i,
+                    onClick: () => (ativo ? null : this.trocarAula(item)),
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 11,
+                      padding: "11px 13px",
+                      borderRadius: 13,
+                      cursor: ativo ? "default" : "pointer",
+                      background: ativo ? C.orangeSoft : C.card,
+                      border: "1px solid " + (ativo ? C.orange : C.line)
+                    }
+                  },
+                  [
+                    h(
+                      "div",
+                      { key: "n", style: { width: 26, height: 26, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, background: feita ? C.green : ativo ? C.orange : C.chip, color: feita || ativo ? "#fff" : C.sub } },
+                      feita ? I("check", 12, "#fff", 3) : i + 1
+                    ),
+                    h(
+                      "div",
+                      { key: "t", style: { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: ativo ? 900 : 700, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                      item.titulo
+                    ),
+                    ativo ? h("span", { key: "p", style: { fontSize: 9, fontWeight: 900, color: C.orange, letterSpacing: ".05em" } }, "AGORA") : null
+                  ]
+                );
+              })
             )
           : null
       ])
@@ -3724,7 +3859,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   ]),
                   I("chevR", 17, C.faint)
                 ],
-                () => (tipo === "aula" ? this.abrirAula(m.id, m.t, m.url || "", S.contBack || "estudos") : this.openBrowser(m.t, m.url || "", S.contBack || "estudos"))
+                () =>
+                  tipo === "aula"
+                    ? this.abrirAula(
+                        m.id,
+                        m.t,
+                        m.url || "",
+                        S.contBack || "estudos",
+                        items.filter((x) => x.url).map((x) => ({ id: x.id, titulo: x.t, url: x.url as string }))
+                      )
+                    : this.openBrowser(m.t, m.url || "", S.contBack || "estudos")
               )
             )
           )
