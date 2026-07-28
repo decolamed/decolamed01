@@ -8,20 +8,68 @@
 const ASAAS_API_URL = process.env.ASAAS_API_URL ?? "https://sandbox.asaas.com/api/v3";
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
-async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  // Falha cedo com uma mensagem clara em vez de deixar o fetch tentar
-  // mandar um header inválido (access_token: undefined) — foi exatamente
-  // esse tipo de erro opaco que escondia a causa real de "Não foi possível
-  // gerar a cobrança" (ver pingAsaas() e o botão de teste em
-  // /admin/configuracoes).
+// Chaves do Asaas sempre começam com "$aact_" (produção: "$aact_prod_",
+// sandbox: "$aact_hmlg_" ou similar) — se ASAAS_API_URL bate com esse
+// prefixo, as duas variáveis foram trocadas na configuração do ambiente
+// (alguém colou a chave no campo da URL, ou vice-versa). Detectar isso aqui
+// evita que o erro apareça como "Failed to parse URL from $aact_..." — o
+// erro nativo do fetch() quando recebe uma string que não é uma URL válida,
+// que não diz nada sobre a causa real pra quem está lendo o log.
+function validarConfiguracao(): string {
   if (!ASAAS_API_KEY) {
     throw new Error("ASAAS_API_KEY não está configurada nas variáveis de ambiente.");
   }
+  if (ASAAS_API_URL.startsWith("$aact_")) {
+    throw new Error(
+      "ASAAS_API_URL está configurada com o valor de uma chave de API (começa com \"$aact_\"), não com uma URL. " +
+        "As variáveis ASAAS_API_URL e ASAAS_API_KEY foram trocadas na configuração do ambiente — corrija os valores " +
+        "no painel da Vercel (ASAAS_API_URL deve ser https://api.asaas.com/v3 em produção ou " +
+        "https://sandbox.asaas.com/api/v3 em sandbox)."
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(ASAAS_API_URL);
+  } catch {
+    throw new Error(`ASAAS_API_URL não é uma URL válida: "${ASAAS_API_URL}". Confira o valor configurado no ambiente.`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`ASAAS_API_URL precisa usar https — valor atual: "${ASAAS_API_URL}".`);
+  }
+  // Chave de produção ("$aact_prod_...") com URL de sandbox (ou o oposto)
+  // sempre falha na autenticação (401) — o Asaas mantém ambientes
+  // completamente isolados. Avisamos antes de bater na API pra economizar
+  // uma chamada e dar um diagnóstico direto em vez de um 401 genérico.
+  const chaveDeProducao = ASAAS_API_KEY.startsWith("$aact_prod_");
+  const urlDeProducao = url.hostname === "api.asaas.com";
+  const urlDeSandbox = url.hostname === "sandbox.asaas.com";
+  if (chaveDeProducao && urlDeSandbox) {
+    throw new Error(
+      "ASAAS_API_KEY é uma chave de produção (\"$aact_prod_...\"), mas ASAAS_API_URL aponta para o sandbox " +
+        `("${ASAAS_API_URL}"). Use https://api.asaas.com/v3 para uma chave de produção.`
+    );
+  }
+  if (!chaveDeProducao && urlDeProducao) {
+    throw new Error(
+      "ASAAS_API_URL aponta para produção (\"https://api.asaas.com/v3\"), mas ASAAS_API_KEY não parece ser uma " +
+        "chave de produção (não começa com \"$aact_prod_\"). Confira se a chave de sandbox não foi colada por engano."
+    );
+  }
+  return ASAAS_API_KEY;
+}
+
+async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Falha cedo com uma mensagem clara em vez de deixar o fetch tentar
+  // mandar um header inválido (access_token: undefined) ou uma URL
+  // inválida — foi exatamente esse tipo de erro opaco que escondia a causa
+  // real de "Não foi possível gerar a cobrança" (ver pingAsaas() e o botão
+  // de teste em /admin/configuracoes).
+  const apiKey = validarConfiguracao();
   const res = await fetch(`${ASAAS_API_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      access_token: ASAAS_API_KEY,
+      access_token: apiKey,
       ...init?.headers
     },
     cache: "no-store"

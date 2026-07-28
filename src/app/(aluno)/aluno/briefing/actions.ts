@@ -6,15 +6,6 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 
 const SENTIMENTOS_VALIDOS = new Set(["Domínio", "Atenção", "Turbulência"]);
-const MATERIAS_PADRAO = [
-  "Biologia",
-  "Química",
-  "Física",
-  "Matemática",
-  "Português",
-  "História",
-  "Geografia"
-];
 
 /**
  * Faz de fato o upsert do briefing — sem redirect, pra poder ser chamada
@@ -99,5 +90,3 @@ export async function salvarBriefing(formData: FormData) {
 export async function salvarBriefingApp(formData: FormData) {
   return salvarBriefingCore(formData);
 }
-
-export { MATERIAS_PADRAO };

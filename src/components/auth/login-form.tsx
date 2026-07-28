@@ -76,9 +76,8 @@ export function LoginForm() {
         .single();
 
       if (profileError || !profile) {
-        setErro(
-          `Login funcionou, mas não foi possível carregar seu perfil: ${profileError?.message ?? "perfil não encontrado"}. Contate o suporte.`
-        );
+        console.error("Login ok, mas falha ao carregar profile:", profileError);
+        setErro("Login realizado, mas não foi possível carregar seus dados. Tente novamente ou contate o suporte.");
         setLoading(false);
         return;
       }
@@ -90,7 +89,8 @@ export function LoginForm() {
       // servidor recarregue do zero já com o cookie de sessão gravado.
       window.location.href = destino;
     } catch (e) {
-      setErro(`Não foi possível entrar: ${e instanceof Error ? e.message : String(e)}`);
+      console.error("Falha inesperada ao entrar:", e);
+      setErro("Não foi possível entrar. Verifique sua internet e tente novamente.");
       setLoading(false);
     }
   }

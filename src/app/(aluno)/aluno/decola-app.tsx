@@ -147,6 +147,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     browserUrl: null,
     browserBack: "mapa",
     browserReloadKey: 0,
+    browserCarregou: false,
+    browserFalhou: false,
     contTitle: null,
     contTipo: null as "aula" | "pdf" | "link" | null,
     contBack: "estudos",
@@ -901,8 +903,46 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   nav(screen: string, extra?: any) {
     this.setState({ screen, practice: false, reviewMode: false, revFinished: false, moreOpen: false, notifOpen: false, simView: null, ...extra });
   }
+  // Domínios que recusam ser exibidos em iframe de outra origem (enviam
+  // X-Frame-Options/CSP frame-ancestors bloqueando) — não é algo que dê pra
+  // contornar do nosso lado, nenhum truque de iframe passa por cima disso,
+  // então a única solução real é não tentar: abrir direto numa nova aba.
+  // Canva Sites (ex.: decolamed.my.canva.site) e o próprio canva.com sempre
+  // bloqueiam — é a causa exata de "conexão recusada"/tela branca relatada.
+  DOMINIOS_SEM_IFRAME = ["canva.site", "canva.com"];
+  bloqueiaIframe(url: string): boolean {
+    try {
+      const host = new URL(this.normalizarUrl(url)).hostname.toLowerCase();
+      return this.DOMINIOS_SEM_IFRAME.some((d) => host === d || host.endsWith("." + d));
+    } catch {
+      return false;
+    }
+  }
   openBrowser(title: string, url: string, back?: string) {
-    this.nav("browser", { browserTitle: title, browserUrl: url, browserBack: back || this.state.screen });
+    // Sites que a gente já sabe que bloqueiam iframe abrem direto numa nova
+    // aba — tentar exibi-los no navegador interno só resultaria em conexão
+    // recusada ou tela branca, sem nenhuma forma de contornar isso no
+    // front-end (a restrição vem do próprio servidor de destino).
+    if (this.bloqueiaIframe(url)) {
+      if (typeof window !== "undefined") window.open(this.normalizarUrl(url), "_blank", "noopener,noreferrer");
+      return;
+    }
+    this.nav("browser", { browserTitle: title, browserUrl: url, browserBack: back || this.state.screen, browserCarregou: false, browserFalhou: false });
+    this.agendarChecagemDeCarregamento(url);
+  }
+  // Nem todo site que bloqueia iframe está na lista conhecida acima — alguns
+  // bloqueiam de um jeito que nem sequer dispara onError no iframe (a
+  // página some, sem evento nenhum pro JS detectar). Um iframe carregado de
+  // verdade dispara onLoad rapidamente; se isso não acontecer em alguns
+  // segundos, é sinal de bloqueio silencioso — mostramos a mesma saída
+  // amigável (abrir em nova aba) em vez de deixar a tela em branco pra
+  // sempre.
+  agendarChecagemDeCarregamento(url: string) {
+    setTimeout(() => {
+      if (this.state.screen === "browser" && this.state.browserUrl === url && !this.state.browserCarregou) {
+        this.setState({ browserFalhou: true });
+      }
+    }, 6000);
   }
   // Garante um protocolo válido — vários lugares do admin salvam URL sem
   // "https://" na frente (ex.: "decolamed.my.canva.site").
@@ -2880,6 +2920,39 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       )
     ]);
   }
+  // Server Actions chamadas direto (sem <form>) não navegam sozinhas quando
+  // uma dependência interna (ex.: requireAcessoAluno) chama redirect() — o
+  // redirect vira uma exceção comum aqui no cliente, identificável pelo
+  // `digest` que o Next.js embute nela (formato "NEXT_REDIRECT;<tipo>;<url>;
+  // <status>"). Sem tratar isso, qualquer redirect de autenticação/acesso
+  // vira uma mensagem de erro genérica e confusa. Retorna true se era um
+  // redirect e já navegou; false se é um erro de verdade e deve seguir pro
+  // tratamento normal.
+  // O Supabase Auth já devolve mensagens em inglês pensadas pra exibição,
+  // mas ainda são mensagens técnicas em inglês — traduzimos os casos mais
+  // comuns pro aluno e caímos numa mensagem genérica em português pra
+  // qualquer coisa que não reconhecemos (nunca mostramos o texto original
+  // em inglês na tela).
+  traduzirErroSenha(mensagemOriginal: string): string {
+    const m = mensagemOriginal.toLowerCase();
+    if (m.includes("should be at least") || m.includes("should be different") || m.includes("weak")) {
+      return "A senha não atende aos requisitos mínimos de segurança. Tente uma senha mais forte.";
+    }
+    if (m.includes("same password") || m.includes("different from the old")) {
+      return "A nova senha precisa ser diferente da senha atual.";
+    }
+    if (m.includes("network") || m.includes("fetch")) {
+      return "Não foi possível conectar ao servidor. Verifique sua internet e tente novamente.";
+    }
+    return "Não foi possível alterar a senha. Tente novamente em instantes.";
+  }
+  seguirRedirectDoServidor(e: any): boolean {
+    const digest = e?.digest;
+    if (typeof digest !== "string" || !digest.startsWith("NEXT_REDIRECT")) return false;
+    const url = digest.split(";")[2];
+    if (typeof window !== "undefined" && url) window.location.href = url;
+    return true;
+  }
   async salvarBriefingReal() {
     if (this.state.briefSalvando) return;
     // No modo demonstração não existe aluno de verdade pra gravar o
@@ -2899,10 +2972,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       fd.set("sentimento_" + materia, sentimento);
     });
     try {
-      // salvarBriefingApp() (diferente de salvarBriefing(), usada pelo
-      // formulário dedicado) não chama redirect() — redirect() só navega de
-      // verdade quando disparado por uma submissão de <form>, não por uma
-      // chamada direta como esta, então o resultado é tratado aqui mesmo.
       const resultado = await salvarBriefingApp(fd);
       if (!resultado.ok) {
         this.setState({ briefErro: resultado.erro });
@@ -2910,6 +2979,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       }
       this.nav("tutorial");
     } catch (e) {
+      // salvarBriefingApp() não redireciona sozinha em caso de sucesso/erro
+      // de validação — devolve { ok, erro }. Mas a checagem de acesso que
+      // ela faz por baixo (requireAcessoAluno) PODE lançar um redirect() de
+      // verdade (sessão expirada, matrícula bloqueada) se algo mudou desde
+      // que esta tela carregou. Como esta função é chamada direto (sem
+      // <form>), esse redirect chega aqui como uma exceção comum — sem
+      // tratar isso, o usuário vê "não foi possível salvar" quando na real
+      // precisa é fazer login de novo ou renovar o plano.
+      if (this.seguirRedirectDoServidor(e)) return;
       console.error("Falha ao salvar briefing:", e);
       this.setState({ briefErro: "Não foi possível salvar o briefing. Tente novamente." });
     } finally {
@@ -3086,11 +3164,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   scrBrowser() {
-    const { C, h, I } = this.ui();
+    const { C, h, I, btn } = this.ui();
     const S = this.state;
     const raw = S.browserUrl || "";
     const embedYoutube = this.youtubeEmbedUrl(raw);
     const src = raw ? embedYoutube || this.normalizarUrl(raw) : "";
+    const recarregar = () => {
+      this.setState((s: any) => ({ browserReloadKey: (s.browserReloadKey || 0) + 1, browserCarregou: false, browserFalhou: false }));
+      this.agendarChecagemDeCarregamento(raw);
+    };
     return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.bg, color: C.txt } }, [
       h("div", { key: "bar", style: { display: "flex", alignItems: "center", gap: 10, padding: "18px 16px 10px" } }, [
         h("div", { key: "x", onClick: () => this.nav(S.browserBack || "mapa"), style: { width: 36, height: 36, borderRadius: 12, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" } }, I("x", 17, C.txt)),
@@ -3100,7 +3182,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         ]),
         h(
           "div",
-          { key: "rf", onClick: () => this.setState((s: any) => ({ browserReloadKey: (s.browserReloadKey || 0) + 1 })), style: { width: 36, height: 36, borderRadius: 12, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }, title: "Recarregar" },
+          { key: "rf", onClick: recarregar, style: { width: 36, height: 36, borderRadius: 12, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }, title: "Recarregar" },
           I("refresh", 16, C.txt)
         ),
         src
@@ -3113,15 +3195,31 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ]),
       h(
         "div",
-        { key: "page", style: { flex: 1, margin: "4px 16px 16px", borderRadius: 18, background: "#fff", border: "1px solid " + C.line, overflow: "hidden" } },
-        src
+        { key: "page", style: { flex: 1, margin: "4px 16px 16px", borderRadius: 18, background: "#fff", border: "1px solid " + C.line, overflow: "hidden", position: "relative" } },
+        S.browserFalhou
+          ? h(
+              "div",
+              { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 28, textAlign: "center" } },
+              [
+                I("external", 32, C.faint),
+                h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800, color: C.dark ? "#0c1520" : C.txt } }, "Este conteúdo não pode ser exibido aqui dentro"),
+                h(
+                  "div",
+                  { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.5, maxWidth: 280 } },
+                  "Alguns sites bloqueiam a exibição dentro de outros aplicativos por segurança. Abra em uma nova aba para continuar."
+                ),
+                btn("ABRIR EM NOVA ABA →", () => src && typeof window !== "undefined" && window.open(src, "_blank", "noopener,noreferrer"), { marginTop: 4, padding: "12px 20px" })
+              ]
+            )
+          : src
           ? h("iframe", {
               key: "if-" + S.browserReloadKey,
               src,
               title: S.browserTitle || "Conteúdo externo",
               style: { width: "100%", height: "100%", border: "none", display: "block" },
               allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
-              allowFullScreen: true
+              allowFullScreen: true,
+              onLoad: () => this.setState({ browserCarregou: true, browserFalhou: false })
             })
           : h("div", { style: { padding: 26, textAlign: "center", fontSize: 12.5, color: C.sub, fontWeight: 600 } }, "Nenhum conteúdo para exibir.")
       ),
@@ -3606,7 +3704,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       const supabase = createClient();
       const { error } = await supabase.auth.updateUser({ password: S.senhaNova });
       if (error) {
-        this.setState({ senhaSalvando: false, senhaErro: error.message });
+        console.error("Falha ao alterar senha:", error);
+        this.setState({ senhaSalvando: false, senhaErro: this.traduzirErroSenha(error.message) });
         return;
       }
       this.setState({ senhaSalvando: false, senhaSalva: true, senhaNova: "", senhaConfirma: "" });

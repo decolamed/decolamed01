@@ -46,9 +46,8 @@ export default function RedefinirSenhaPage() {
     setLoading(false);
 
     if (error) {
-      // Mesmo ajuste que já ajudou a diagnosticar o problema do link antes:
-      // mostrar a mensagem real do Supabase em vez de um texto genérico.
-      setErro(`Não foi possível salvar a nova senha: ${error.message}`);
+      console.error("Falha ao salvar nova senha:", error);
+      setErro("Não foi possível salvar a nova senha. Tente novamente ou peça um novo link de redefinição.");
       return;
     }
 
