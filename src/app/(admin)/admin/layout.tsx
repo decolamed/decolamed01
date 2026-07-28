@@ -34,6 +34,7 @@ const GRUPO_CONTEUDO = [
   { href: "/admin/flashcards", label: "Flashcards", icon: "cards" },
   { href: "/admin/pdfs", label: "PDFs", icon: "file" },
   { href: "/admin/links", label: "Links Externos", icon: "link2" },
+  { href: "/admin/estudos", label: "Botões de Estudos", icon: "gear" },
   { href: "/admin/banners", label: "Banners", icon: "image" },
   { href: "/admin/conquistas", label: "Conquistas", icon: "trophy" }
 ] as const;

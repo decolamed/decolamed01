@@ -14,6 +14,7 @@ import type {
   AlunoMissao,
   TrilhaDia,
   AlunoProgressoItem,
+  EstudosBotao,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -66,7 +67,8 @@ export default async function AlunoHomePage() {
     { data: conteudosData },
     { data: linksData },
     { data: baseTemasData },
-    { data: ajustesCreditosData }
+    { data: ajustesCreditosData },
+    { data: estudosBotoesData }
   ] = await Promise.all([
     supabase
       .from("matriculas")
@@ -126,7 +128,8 @@ export default async function AlunoHomePage() {
     supabase.from("conteudos_biblioteca").select("*").eq("ativo", true).order("created_at", { ascending: false }),
     supabase.from("links_externos").select("*").eq("ativo", true).order("ordem"),
     supabase.from("configuracoes").select("valor").eq("chave", "redacao.base_temas_url").maybeSingle(),
-    supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", profile.id)
+    supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", profile.id),
+    supabase.from("estudos_botoes").select("*").eq("ativo", true).order("ordem")
   ]);
 
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
@@ -191,6 +194,7 @@ export default async function AlunoHomePage() {
         banners: (bannersData as Banner[]) ?? [],
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
+        estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
         baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
         hojeStr
       }}

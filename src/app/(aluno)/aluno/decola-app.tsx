@@ -23,6 +23,7 @@ import type {
   TrilhaDia,
   TrilhaItem,
   AlunoProgressoItem,
+  EstudosBotao,
   CopilotoRecomendacao,
   Notificacao,
   AlunoBriefing,
@@ -56,6 +57,7 @@ interface DecolaAppDados {
   banners: Banner[];
   conteudos: ConteudoBiblioteca[];
   linksExternos: LinkExterno[];
+  estudosBotoes: EstudosBotao[];
   baseTemasUrl: string | null;
   hojeStr: string;
 }
@@ -1190,6 +1192,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     if (link.startsWith("app/")) this.nav(link.slice(4));
     else this.openBrowser("Decola Med", link, this.state.screen);
   }
+  // Botão personalizado da aba Estudos (estudos_botoes, cadastrado em
+  // /admin/estudos) — abre de acordo com o tipo escolhido pelo admin: tela
+  // interna do app, player de vídeo, ou navegador interno (pdf/link).
+  abrirBotaoEstudos(botao: EstudosBotao) {
+    if (botao.tipo === "app") this.nav(botao.link);
+    else if (botao.tipo === "aula") this.abrirAula(null, botao.titulo, botao.link, "estudos");
+    else this.openBrowser(botao.titulo, botao.link, "estudos");
+  }
   bannerRow() {
     const { h, I } = this.ui();
     const reais = this.props.dados.banners;
@@ -2010,7 +2020,26 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   })
           )
         )
-      )
+      ),
+      this.props.dados.estudosBotoes.length
+        ? h("div", { key: "extra-lbl", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Mais recursos")
+        : null,
+      this.props.dados.estudosBotoes.length
+        ? h(
+            "div",
+            { key: "extra-grid", style: { margin: "0 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+            this.props.dados.estudosBotoes.map((b, i) =>
+              card(
+                { padding: 16 },
+                [
+                  iconBox(b.icone, i % 2 ? C.peach : C.blueSoft, i % 2 ? (C.dark ? C.peachTxt : "#9a5218") : C.dark ? "#8fc3e8" : "#01395E", 44, 20),
+                  h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800, marginTop: 12 } }, b.titulo)
+                ],
+                () => this.abrirBotaoEstudos(b)
+              )
+            )
+          )
+        : null
     ]);
   }
 

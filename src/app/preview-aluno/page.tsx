@@ -76,6 +76,7 @@ export default async function PreviewAlunoPage() {
         banners: (bannersData as Banner[]) ?? [],
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
+        estudosBotoes: [],
         baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
         hojeStr: new Date().toISOString().slice(0, 10)
       }}

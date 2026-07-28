@@ -450,6 +450,23 @@ export interface LinkExterno {
   updated_at: string;
 }
 
+// Botões personalizados da aba Estudos (estudos_botoes) — ver comentário da
+// migração 036 pra como cada `tipo` abre pro aluno.
+export type EstudosBotaoTipo = "link" | "aula" | "pdf" | "app";
+
+export interface EstudosBotao {
+  id: string;
+  titulo: string;
+  icone: string;
+  tipo: EstudosBotaoTipo;
+  link: string;
+  ordem: number;
+  ativo: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Tipo genérico simplificado — supabase-js aceita este formato sem exigir
 // o schema completo do Database gerado pela CLI.
 export type Database = any;
