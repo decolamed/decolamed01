@@ -149,6 +149,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     fcIdx: 0,
     fcFlip: false,
     fcOk: 0,
+    fcPool: [] as Flashcard[],
+    fcModoAberto: null as "materia" | "assunto" | null,
     browserTitle: null,
     browserUrl: null,
     browserBack: "mapa",
@@ -872,8 +874,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
   navMissao(m: AlunoMissao) {
     if (m.tipo === "questoes") this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
-    else if (m.tipo === "flashcards") this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 });
-    else if (m.tipo === "simulado") this.nav("simulados");
+    else if (m.tipo === "flashcards") {
+      const pool = this.props.dados.flashcards;
+      if (m.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === m.materia)), false);
+      else this.nav("flashcards-select");
+    } else if (m.tipo === "simulado") this.nav("simulados");
     else if (m.tipo === "revisao" && m.materia) this.montarRevisao(m.materia, m.assunto || m.materia);
     else if (m.tipo === "aula") {
       const conteudo = m.ref_id ? this.props.dados.conteudos.find((c) => c.id === m.ref_id) : null;
@@ -1005,7 +1010,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     } else if (item.tipo === "questoes") {
       this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     } else if (item.tipo === "flashcards") {
-      this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 });
+      const pool = this.props.dados.flashcards;
+      if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === item.materia)), false);
+      else this.nav("flashcards-select");
     } else if (item.tipo === "simulado") {
       this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
     } else if (item.tipo === "revisao") {
@@ -1313,7 +1320,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       { k: "estudos", ic: "book", t: "Estudos" },
       { k: "questoes", ic: "target", t: "Questões" },
       { k: "simulados", ic: "file", t: "Simulados" },
-      { k: "flashcards", ic: "cards", t: "Flashcards" },
+      { k: "flashcards-select", ic: "cards", t: "Flashcards" },
       { k: "copiloto", ic: "bot", t: "Copiloto IA" },
       { k: "ranking", ic: "trophy", t: "Ranking" },
       { k: "conquistas", ic: "award", t: "Conquistas" },
@@ -2010,7 +2017,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             ],
             () =>
               e.t === "Flashcards"
-                ? this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 })
+                ? this.nav("flashcards-select")
                 : e.t === "Anotações"
                 ? this.nav("anotacoes")
                 : this.nav("conteudo", {
@@ -2700,7 +2707,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         : "Sou seu Copiloto. Assim que você responder questões, revisar flashcards ou fazer simulados, eu começo a identificar o que vale mais a pena revisar.";
     const LINK_TIPO: Record<string, () => void> = {
       questoes: () => this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }),
-      flashcards: () => this.nav("flashcards", { fcIdx: 0, fcFlip: false, fcOk: 0 }),
+      flashcards: () => this.nav("flashcards-select"),
       simulado: () => this.nav("simulados"),
       aula: () => this.nav("estudos")
     };
@@ -3751,11 +3758,84 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   flashcardsPool(): Flashcard[] {
-    return this.props.dados.flashcards;
+    return this.state.fcPool;
+  }
+  embaralhar<T>(lista: T[]): T[] {
+    const a = [...lista];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  // Começa de fato a sessão de flashcards com o grupo já escolhido (todos,
+  // aleatório, uma matéria ou um assunto) — ver scrFlashcardsSelecao().
+  iniciarFlashcards(cards: Flashcard[], embaralharAntes: boolean) {
+    this.setState({ screen: "flashcards", fcPool: embaralharAntes ? this.embaralhar(cards) : cards, fcIdx: 0, fcFlip: false, fcOk: 0, fcModoAberto: null });
   }
   responderFlashcard(id: string, lembrou: boolean) {
     this.setState({ fcIdx: this.state.fcIdx + 1, fcFlip: false, fcOk: lembrou ? this.state.fcOk + 1 : this.state.fcOk });
     if (!this.props.demoMode) registrarRevisao(id, lembrou).catch((e) => console.error("Falha ao registrar revisão de flashcard:", e));
+  }
+  // Tela de escolha antes de começar: todos, aleatório, por matéria ou por
+  // assunto — evita que o aluno caia direto numa lista enorme e sem
+  // organização, e permite focar num recorte específico do conteúdo.
+  scrFlashcardsSelecao() {
+    const { C, h, card, chip, iconBox } = this.ui();
+    const S = this.state;
+    const todos = this.props.dados.flashcards;
+    const materias = Array.from(new Set(todos.map((c) => c.materia))).sort();
+    const assuntos = Array.from(new Set(todos.filter((c) => c.assunto).map((c) => c.assunto as string))).sort();
+    if (!todos.length) {
+      return this.screenWrap([
+        this.head("Flashcards", { back: "estudos" }),
+        h("div", { key: "vazio", style: { margin: "18px 18px 0" } }, card({ textAlign: "center", padding: 26 }, "Ainda não há flashcards cadastrados para o seu curso."))
+      ]);
+    }
+    const opcoes = [
+      { k: "todos" as const, ic: "cards", t: "Todos", d: todos.length + (todos.length === 1 ? " card" : " cards") },
+      { k: "aleatorio" as const, ic: "refresh", t: "Aleatório", d: "Ordem embaralhada" },
+      { k: "materia" as const, ic: "layers", t: "Por matéria", d: materias.length + (materias.length === 1 ? " matéria" : " matérias") },
+      { k: "assunto" as const, ic: "target", t: "Por assunto", d: assuntos.length + (assuntos.length === 1 ? " assunto" : " assuntos") }
+    ];
+    return this.screenWrap([
+      this.head("Flashcards", { back: "estudos" }),
+      h("div", { key: "lbl", style: { margin: "10px 18px 6px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Como você quer estudar?"),
+      h(
+        "div",
+        { key: "opts", style: { margin: "0 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+        opcoes.map((o) => {
+          const ativo = S.fcModoAberto === o.k;
+          return card(
+            { padding: 16, border: ativo ? "1.5px solid " + C.orange : "1px solid " + C.line },
+            [
+              iconBox(o.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 40, 18),
+              h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, marginTop: 10 } }, o.t),
+              h("div", { key: "d", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, o.d)
+            ],
+            () => {
+              if (o.k === "todos") this.iniciarFlashcards(todos, false);
+              else if (o.k === "aleatorio") this.iniciarFlashcards(todos, true);
+              else this.setState({ fcModoAberto: S.fcModoAberto === o.k ? null : o.k });
+            }
+          );
+        })
+      ),
+      S.fcModoAberto === "materia"
+        ? h(
+            "div",
+            { key: "materias", style: { margin: "14px 18px 0", display: "flex", flexWrap: "wrap", gap: 8 } },
+            materias.map((m) => chip(m, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => c.materia === m)), false)))
+          )
+        : null,
+      S.fcModoAberto === "assunto"
+        ? h(
+            "div",
+            { key: "assuntos", style: { margin: "14px 18px 0", display: "flex", flexWrap: "wrap", gap: 8 } },
+            assuntos.map((a) => chip(a, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => c.assunto === a)), false)))
+          )
+        : null
+    ]);
   }
   scrFlashcards() {
     const { C, h, card, bar, btn, ghost } = this.ui();
@@ -4091,6 +4171,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       conteudo: () => this.scrConteudo(),
       senha: () => this.scrSenha(),
       flashcards: () => this.scrFlashcards(),
+      "flashcards-select": () => this.scrFlashcardsSelecao(),
       redacao: () => this.scrRedacao(),
       tutorial: () => this.scrTutorial(),
       anotacoes: () => this.scrAnotacoes()
