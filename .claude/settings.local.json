@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I{} sh -c 'echo {}; file {}')",
+      "mcp__Claude_Code_Remote__list_environments",
+      "Read(//home/claude/.ssh/**)",
+      "Bash(mkdir -p ~/.config/git)",
+      "Bash(echo \"noreply@anthropic.com $\\(cat /home/claude/.ssh/commit_signing_key.pub\\)\")",
+      "Bash(git config *)",
+      "Bash(git log *)"
+    ]
+  }
+}
