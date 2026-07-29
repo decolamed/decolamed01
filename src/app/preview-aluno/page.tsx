@@ -2,6 +2,7 @@ import { requirePreviewAluno } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
+import { hojeISO } from "@/lib/site/data";
 import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
@@ -86,7 +87,7 @@ export default async function PreviewAlunoPage() {
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         nomeVestibular,
         materias,
-        hojeStr: new Date().toISOString().slice(0, 10)
+        hojeStr: hojeISO()
       }}
     />
   );

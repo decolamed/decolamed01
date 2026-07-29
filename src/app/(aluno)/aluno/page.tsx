@@ -5,6 +5,7 @@ import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
+import { hojeISO, somarDias } from "@/lib/site/data";
 import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "./decola-app";
 import type {
@@ -41,14 +42,12 @@ export default async function AlunoHomePage() {
     getMateriasDoConteudo()
   ]);
 
-  const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
-  const fim7 = new Date(hoje);
-  fim7.setDate(fim7.getDate() + 7);
-  const fim7Str = fim7.toISOString().slice(0, 10);
-  const inicio7 = new Date(hoje);
-  inicio7.setDate(inicio7.getDate() - 7);
-  const inicio7Str = inicio7.toISOString().slice(0, 10);
+  // Datas no fuso da plataforma (lib/site/data.ts). Em UTC, das 21h à
+  // meia-noite `hojeStr` já era o dia seguinte e as missões de hoje
+  // desapareciam da tela do aluno.
+  const hojeStr = hojeISO();
+  const fim7Str = somarDias(hojeStr, 7);
+  const inicio7Str = somarDias(hojeStr, -7);
 
   const [
     { data: matricula },

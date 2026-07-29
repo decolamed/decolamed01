@@ -12,6 +12,7 @@ import { marcarNotificacaoLida } from "./notificacoes-actions";
 import { salvarBriefingApp } from "./briefing/actions";
 import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
+import { dataISO, hojeISO, somarDias } from "@/lib/site/data";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -3149,15 +3150,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // ou simulado), contando para trás a partir de hoje.
   sequenciaDias() {
     const P = this.props.dados;
+    // `created_at` é um instante em UTC: cortar os 10 primeiros caracteres
+    // atribuiria a resposta dada às 22h ao dia seguinte. dataISO() converte
+    // pro fuso da plataforma antes de comparar (ver lib/site/data.ts).
     const dias = new Set<string>();
-    P.respostas.forEach((r) => dias.add(r.created_at.slice(0, 10)));
-    P.revisoes.forEach((r) => dias.add(r.created_at.slice(0, 10)));
-    P.tentativas.forEach((t) => dias.add(t.created_at.slice(0, 10)));
+    P.respostas.forEach((r) => dias.add(dataISO(new Date(r.created_at))));
+    P.revisoes.forEach((r) => dias.add(dataISO(new Date(r.created_at))));
+    P.tentativas.forEach((t) => dias.add(dataISO(new Date(t.created_at))));
     let n = 0;
-    const cur = new Date();
-    while (dias.has(cur.toISOString().slice(0, 10))) {
+    let cur = hojeISO();
+    while (dias.has(cur)) {
       n++;
-      cur.setDate(cur.getDate() - 1);
+      cur = somarDias(cur, -1);
     }
     return n;
   }
@@ -3171,12 +3175,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const dias: { label: string; pct: number | null }[] = [];
     for (let i = 6; i >= 0; i--) {
-      const dt = new Date();
-      dt.setDate(dt.getDate() - i);
-      const dataStr = dt.toISOString().slice(0, 10);
-      const doDia = P.respostas.filter((r) => r.created_at.slice(0, 10) === dataStr);
+      const dataStr = somarDias(hojeISO(), -i);
+      const doDia = P.respostas.filter((r) => dataISO(new Date(r.created_at)) === dataStr);
       const pct = doDia.length ? Math.round((doDia.filter((r) => r.correta).length / doDia.length) * 100) : null;
-      dias.push({ label: LABELS[dt.getDay()], pct });
+      dias.push({ label: LABELS[new Date(dataStr + "T12:00:00Z").getUTCDay()], pct });
     }
     return dias;
   }

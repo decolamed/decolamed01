@@ -1,3 +1,4 @@
+import { hojeISO, somarDias } from "@/lib/site/data";
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
@@ -72,11 +73,9 @@ export default async function AlunoCronogramaPage() {
   const supabase = createClient();
   const temCopiloto = await alunoTemCopiloto(profile.id);
 
-  const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
-  const fim = new Date(hoje);
-  fim.setDate(fim.getDate() + 7);
-  const fimStr = fim.toISOString().slice(0, 10);
+  // Fuso da plataforma, não UTC — ver lib/site/data.ts.
+  const hojeStr = hojeISO();
+  const fimStr = somarDias(hojeStr, 7);
 
   const [{ data: missoesBrutas }, { data: matricula }] = await Promise.all([
     supabase

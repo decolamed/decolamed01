@@ -1,3 +1,4 @@
+import { hojeISO, somarDias } from "@/lib/site/data";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -85,14 +86,15 @@ export async function POST(request: Request) {
     });
 
     // 3. Cobrança. dueDate = hoje + 2 dias úteis (ajuste conforme sua regra comercial).
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 2);
+    // Vencimento contado no fuso do aluno: em UTC, uma compra feita às 22h
+    // ganhava um dia a menos de prazo do que o combinado.
+    const dueDate = somarDias(hojeISO(), 2);
 
     const charge = await createCharge({
       customer: customer.id,
       billingType,
       value: precoFinalCentavos / 100,
-      dueDate: dueDate.toISOString().slice(0, 10),
+      dueDate,
       description: `Matrícula Decola Med — ${plano.nome}`,
       externalReference: preCadastro.id
     });
