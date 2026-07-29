@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { salvarBriefing } from "@/app/(aluno)/aluno/briefing/actions";
 
-const MATERIAS = ["Biologia", "Química", "Física", "Matemática", "Português", "História", "Geografia"];
 type Sentimento = "Domínio" | "Atenção" | "Turbulência";
 const PROXIMO: Record<Sentimento, Sentimento> = {
   Domínio: "Atenção",
@@ -29,9 +28,15 @@ interface Props {
   // não fica escrito no código pra plataforma poder atender outros processos
   // seletivos sem alteração de código.
   nomeVestibular: string;
+  // Matérias vindas do conteúdo real (ver lib/site/materias.ts). Antes esta
+  // tela tinha a própria lista fixa, com 7 nomes que não batiam com os do
+  // app nem com os do banco de questões — e o Copiloto lê o sentimento pelo
+  // nome que vem do banco, então a autoavaliação das matérias divergentes
+  // era descartada em silêncio.
+  materias: string[];
 }
 
-export function BriefingWizard({ briefingInicial, erro, nomeVestibular }: Props) {
+export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias }: Props) {
   const [step, setStep] = useState(0);
   const [dataProva, setDataProva] = useState(briefingInicial?.data_prova ?? "");
   const [inicioEstudos, setInicioEstudos] = useState(briefingInicial?.inicio_estudos ?? "");
@@ -40,7 +45,7 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular }: Props)
   const [sentimentos, setSentimentos] = useState<Record<string, Sentimento>>(
     () => {
       const inicial: Record<string, Sentimento> = {};
-      MATERIAS.forEach((m) => {
+      materias.forEach((m) => {
         const v = briefingInicial?.sentimentos?.[m];
         inicial[m] = v === "Domínio" || v === "Atenção" || v === "Turbulência" ? v : "Atenção";
       });
@@ -128,7 +133,7 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular }: Props)
             </p>
 
             <div className="mt-3 space-y-2">
-              {MATERIAS.map((m) => {
+              {materias.map((m) => {
                 const s = sentimentos[m] ?? "Atenção";
                 return (
                   <button

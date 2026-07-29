@@ -74,6 +74,13 @@ interface DecolaAppDados {
   // lib/site/marca.ts) — nada de instituição escrita no código, pra
   // plataforma poder atender outros processos seletivos.
   nomeVestibular: string;
+  // Matérias derivadas do conteúdo real (ver lib/site/materias.ts). Antes o
+  // app tinha a própria lista fixa — com "Português/Literatura" e "Língua
+  // Estrangeira", nomes que não existem em `questoes.materia`. O Copiloto
+  // lê o sentimento por `sentimentos[materia]` usando o nome do banco (ver
+  // lib/copiloto/motor.ts), então essas duas autoavaliações eram jogadas
+  // fora sem ninguém perceber.
+  materias: string[];
   hojeStr: string;
 }
 
@@ -152,16 +159,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     push: true,
     feels: (function (self: any) {
       const sentimentos = self.props.dados.briefing?.sentimentos || {};
-      return {
-        Biologia: sentimentos.Biologia || "Atenção",
-        Química: sentimentos.Química || "Atenção",
-        Física: sentimentos.Física || "Atenção",
-        Matemática: sentimentos.Matemática || "Atenção",
-        "Português/Literatura": sentimentos["Português/Literatura"] || sentimentos.Português || "Atenção",
-        História: sentimentos.História || "Atenção",
-        Geografia: sentimentos.Geografia || "Atenção",
-        "Língua Estrangeira": sentimentos["Língua Estrangeira"] || "Atenção"
-      };
+      const inicial: Record<string, string> = {};
+      (self.props.dados.materias as string[]).forEach((m) => {
+        inicial[m] = sentimentos[m] || "Atenção";
+      });
+      return inicial;
     })(this),
     gabFrom: null,
     fcIdx: 0,
@@ -3401,7 +3403,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         h(
           "div",
           { key: "ch", style: { display: "flex", flexDirection: "column", gap: 8 } },
-          ["Biologia", "Química", "Física", "Matemática", "Português/Literatura", "História", "Geografia", "Língua Estrangeira"].map((m) => {
+          this.props.dados.materias.map((m) => {
             const lvl = this.state.feels[m] || "Atenção";
             const cfg = ({ Domínio: ["#3dd68c", C.greenSoft], Atenção: ["#ffc94d", "rgba(255,201,77,.14)"], Turbulência: ["#ff6b5e", C.redSoft] } as Record<string, string[]>)[lvl];
             return h(

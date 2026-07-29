@@ -1,6 +1,7 @@
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { getNomeVestibular } from "@/lib/site/marca";
+import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { BriefingWizard } from "@/components/aluno/briefing-wizard";
 
 // Reprodução fiel do scrOnb do protótipo (arquivo Decola_Med_App_dc.html).
@@ -14,10 +15,18 @@ export default async function AlunoBriefingPage({
 }) {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
-  const [{ data: briefing }, nomeVestibular] = await Promise.all([
+  const [{ data: briefing }, nomeVestibular, materias] = await Promise.all([
     supabase.from("aluno_briefing").select("*").eq("aluno_id", profile.id).maybeSingle(),
-    getNomeVestibular()
+    getNomeVestibular(),
+    getMateriasDoConteudo()
   ]);
 
-  return <BriefingWizard briefingInicial={briefing as any} erro={searchParams.erro} nomeVestibular={nomeVestibular} />;
+  return (
+    <BriefingWizard
+      briefingInicial={briefing as any}
+      erro={searchParams.erro}
+      nomeVestibular={nomeVestibular}
+      materias={materias}
+    />
+  );
 }

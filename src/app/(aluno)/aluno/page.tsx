@@ -4,6 +4,7 @@ import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { getNomeVestibular } from "@/lib/site/marca";
+import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "./decola-app";
 import type {
@@ -34,7 +35,11 @@ export default async function AlunoHomePage() {
   // para quem tem matrícula ativa e dentro do prazo.
   const profile = await requireAcessoAluno();
   const supabase = createClient();
-  const [temCopiloto, nomeVestibular] = await Promise.all([alunoTemCopiloto(profile.id), getNomeVestibular()]);
+  const [temCopiloto, nomeVestibular, materias] = await Promise.all([
+    alunoTemCopiloto(profile.id),
+    getNomeVestibular(),
+    getMateriasDoConteudo()
+  ]);
 
   const hoje = new Date();
   const hojeStr = hoje.toISOString().slice(0, 10);
@@ -219,6 +224,7 @@ export default async function AlunoHomePage() {
         estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         nomeVestibular,
+        materias,
         hojeStr
       }}
     />
