@@ -3555,7 +3555,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, "O Copiloto adapta seu cronograma ao seu desempenho real. Seu plano atual não muda até você contratar.")
             ])
           ]),
-          btn("SAIBA MAIS →", () => this.openBrowser("Voo Guiado (PRO) · Planos", "/planos", "plano"), { marginTop: 12, padding: "12px" })
+          // /planos foi descontinuada (hoje só existe link de inscrição por
+          // plano, gerado no admin) e apenas redireciona pro login — mandar
+          // o aluno pra lá era um botão que não cumpria o que promete. O
+          // caminho real de upgrade é falar com a equipe.
+          btn("QUERO SABER MAIS →", () => window.open(this.props.whatsappSuporte, "_blank", "noopener,noreferrer"), { marginTop: 12, padding: "12px" })
         ])
       )
     ]);
