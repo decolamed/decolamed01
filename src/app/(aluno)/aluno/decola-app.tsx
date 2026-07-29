@@ -738,22 +738,29 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const C = this.colors(),
       h = React.createElement,
       I = (n: string, s?: number, c?: string, w?: number) => this.icon(n, s, c, w);
-    const card = (st: any, ch: any, onClick?: any) =>
-      h(
+    // `key` pode vir junto do objeto de estilo e é extraído aqui: cartões
+    // gerados dentro de .map() precisam de key própria, e sem esse suporte
+    // o React avisava "each child in a list should have a unique key" em
+    // várias telas (Painel, Estudos, Simulados, Conquistas...).
+    const card = (st: any, ch: any, onClick?: any) => {
+      const { key, ...estilo } = st || {};
+      return h(
         "div",
-        { onClick, style: { background: C.card, border: "1px solid " + C.line, borderRadius: 18, padding: 16, cursor: onClick ? "pointer" : "default", ...st } },
+        { key, onClick, style: { background: C.card, border: "1px solid " + C.line, borderRadius: 18, padding: 16, cursor: onClick ? "pointer" : "default", ...estilo } },
         ch
       );
+    };
     const bar = (pct: number, color = C.orange, hgt = 7, track = C.chip) =>
       h(
         "div",
-        { style: { height: hgt, borderRadius: 99, background: track, overflow: "hidden", flex: 1 } },
+        { key: "bar", style: { height: hgt, borderRadius: 99, background: track, overflow: "hidden", flex: 1 } },
         h("div", { style: { width: Math.min(100, pct) + "%", height: "100%", borderRadius: 99, background: color, transition: "width .4s ease" } })
       );
     const chip = (txt: string, active: boolean, onClick?: any) =>
       h(
         "div",
         {
+          key: "chip:" + txt,
           onClick,
           style: {
             padding: "7px 14px",
@@ -772,6 +779,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       h(
         "div",
         {
+          key: "btn:" + txt,
           onClick,
           style: {
             background: C.orange,
@@ -792,19 +800,19 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const ghost = (txt: string, onClick?: any, st?: any) =>
       h(
         "div",
-        { onClick, style: { border: "1.5px solid " + C.line, color: C.txt, borderRadius: 14, padding: "13px 18px", fontSize: 14, fontWeight: 700, textAlign: "center", cursor: "pointer", ...st } },
+        { key: "ghost:" + txt, onClick, style: { border: "1.5px solid " + C.line, color: C.txt, borderRadius: 14, padding: "13px 18px", fontSize: 14, fontWeight: 700, textAlign: "center", cursor: "pointer", ...st } },
         txt
       );
     const iconBox = (name: string, bg: string, color: string, size = 42, isz = 20) =>
       h(
         "div",
-        { style: { width: size, height: size, borderRadius: size * 0.32, background: bg, display: "flex", alignItems: "center", justifyContent: "center", color, flexShrink: 0 } },
+        { key: "ib:" + name, style: { width: size, height: size, borderRadius: size * 0.32, background: bg, display: "flex", alignItems: "center", justifyContent: "center", color, flexShrink: 0 } },
         I(name, isz, color)
       );
     const stars = (n: number, size = 13) =>
       h(
         "div",
-        { style: { display: "flex", gap: 2 } },
+        { key: "stars", style: { display: "flex", gap: 2 } },
         [0, 1, 2].map((i) => h("span", { key: i, style: { color: i < n ? C.yellow : C.faint, display: "flex" } }, I("star", size, i < n ? C.yellow : C.faint)))
       );
     return { C, h, I, card, bar, chip, btn, ghost, iconBox, stars };
@@ -1350,7 +1358,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
 
   head(title: string, opts: any = {}) {
     const { C, h, I } = this.ui();
-    return h("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "16px 18px 10px" } }, [
+    return h("div", { key: "head", style: { display: "flex", alignItems: "center", gap: 12, padding: "16px 18px 10px" } }, [
       opts.back !== false
         ? h(
             "div",
@@ -1363,7 +1371,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           )
         : null,
       h("div", { key: "t", style: { fontSize: 17, fontWeight: 800, color: C.txt, flex: 1 } }, title),
-      opts.right ||
+      this.comKey("r", opts.right) ||
         h(
           "div",
           {
@@ -1487,26 +1495,33 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       "Modo demonstração · nenhuma resposta é salva de verdade"
     );
   }
+  // Envolve um pedaço fixo do chrome (barra de abas, banner de demo,
+  // overlays) com uma key própria. Esses helpers retornam elementos sem
+  // key e entram em arrays de filhos aqui — sem isso o React avisa
+  // "each child in a list should have a unique key" a cada render.
+  comKey(chave: string, elemento: any) {
+    return elemento ? React.createElement(React.Fragment, { key: chave }, elemento) : null;
+  }
   screenWrap(children: any, opts: any = {}) {
     const { C, h } = this.ui();
     if (this.wide()) {
       return h("div", { style: { display: "flex", alignItems: "flex-start" } }, [
-        this.sidebarDesktop(),
+        this.comKey("sidebar", this.sidebarDesktop()),
         h("div", { key: "m", style: { flex: 1, minWidth: 0, minHeight: "100vh", position: "relative", background: C.bg, color: C.txt } }, [
-          this.demoBanner(),
+          this.comKey("demo", this.demoBanner()),
           h("div", { key: "c", style: { display: "flex", flexDirection: "column", maxWidth: 640, margin: "0 auto", padding: "26px 32px 60px" } }, children),
-          this.state.notifOpen ? this.notifSheet() : null,
-          this.state.errOpen ? this.errSheet() : null
+          this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
+          this.state.errOpen ? this.comKey("err", this.errSheet()) : null
         ])
       ]);
     }
     return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.bg, color: C.txt } }, [
-      this.demoBanner(),
+      this.comKey("demo", this.demoBanner()),
       h("div", { key: "c", style: { flex: 1, overflowY: "auto", paddingBottom: opts.noTab ? 24 : 110, display: "flex", flexDirection: "column" } }, children),
-      opts.noTab ? null : this.tabbar(),
-      this.state.notifOpen ? this.notifSheet() : null,
-      this.state.moreOpen && !opts.noTab ? this.moreSheet() : null,
-      this.state.errOpen ? this.errSheet() : null
+      opts.noTab ? null : this.comKey("tabbar", this.tabbar()),
+      this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
+      this.state.moreOpen && !opts.noTab ? this.comKey("more", this.moreSheet()) : null,
+      this.state.errOpen ? this.comKey("err", this.errSheet()) : null
     ]);
   }
 
@@ -1846,7 +1861,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "mets", style: { margin: "14px 18px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         metrics.map((m, i) =>
-          card({ padding: 14 }, [
+          card({ key: "met" + i, padding: 14 }, [
             h("div", { key: "t", style: { fontSize: 10.5, fontWeight: 700, color: C.faint, letterSpacing: ".04em", textTransform: "uppercase" } }, m.t),
             h("div", { key: "v", style: { fontSize: 20, fontWeight: 900, margin: "4px 0 2px" } }, m.v),
             h("div", { key: "s", style: { fontSize: 10.5, fontWeight: 700, color: C.green, marginBottom: 8 } }, m.s),
@@ -2105,7 +2120,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "grid", style: { margin: "14px 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         d.estudos.map((e, i) =>
           card(
-            { padding: 16 },
+            { key: "est" + i, padding: 16 },
             [
               iconBox(e.ic, i % 2 ? C.peach : C.blueSoft, i % 2 ? (C.dark ? C.peachTxt : "#9a5218") : C.dark ? "#8fc3e8" : "#01395E", 44, 20),
               h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800, marginTop: 12 } }, e.t),
@@ -2133,7 +2148,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             { key: "extra-grid", style: { margin: "0 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
             this.props.dados.estudosBotoes.map((b, i) =>
               card(
-                { padding: 16 },
+                { key: b.id, padding: 16 },
                 [
                   iconBox(b.icone, i % 2 ? C.peach : C.blueSoft, i % 2 ? (C.dark ? C.peachTxt : "#9a5218") : C.dark ? "#8fc3e8" : "#01395E", 44, 20),
                   h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800, marginTop: 12 } }, b.titulo)
@@ -2330,7 +2345,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "cats", style: { margin: "14px 18px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         cats.map((c2, i) =>
           card(
-            { padding: 15 },
+            { key: "cat" + i, padding: 15 },
             [
               iconBox(c2.ic, i % 2 ? C.peach : C.blueSoft, i % 2 ? (C.dark ? C.peachTxt : "#9a5218") : C.dark ? "#8fc3e8" : "#01395E", 42, 19),
               h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, marginTop: 10 } }, c2.t),
@@ -2540,7 +2555,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           [media != null ? media + "%" : "—", "média (ponderada)"],
           [String(tentativas.length), "realizados"],
           [melhor != null ? melhor + "%" : "—", "melhor nota"]
-        ].map((s, i) => card({ padding: "14px 10px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: i === 0 ? C.green : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
+        ].map((s, i) => card({ key: "st" + i, padding: "14px 10px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: i === 0 ? C.green : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
       ),
       h("div", { key: "lbl", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Disponíveis"),
       h(
@@ -2548,7 +2563,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "sims", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 10 } },
         d.sims.length
           ? d.sims.map((s, i) =>
-              card({ padding: 14, display: "flex", gap: 12, alignItems: "center" }, [
+              card({ key: s.id, padding: 14, display: "flex", gap: 12, alignItems: "center" }, [
                 iconBox("file", C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 44, 19),
                 h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 800 } }, s.t), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } }, s.q + " questões · " + s.time + " · " + s.lvl)]),
                 s.q > 0 ? h("div", { key: "go", onClick: () => this.iniciarSimulado(s.id), style: { fontSize: 11, fontWeight: 900, color: "#fff", background: C.orange, padding: "8px 13px", borderRadius: 10, cursor: "pointer" } }, "INICIAR") : null
@@ -2563,7 +2578,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         d.simHist.length
           ? d.simHist.map((s2, i) =>
               card(
-                { padding: 14, display: "flex", gap: 12, alignItems: "center" },
+                { key: "hist" + i, padding: 14, display: "flex", gap: 12, alignItems: "center" },
                 [
                   h(
                     "div",
@@ -2739,7 +2754,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               [String(r.acertos), "corretas", C.green],
               [String(r.total - r.acertos), "erradas", C.red],
               ["00:" + mm + ":" + ss, "tempo total", C.txt]
-            ].map((s, i) => card({ padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: s[2] as string } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
+            ].map((s, i) => card({ key: "st" + i, padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 17, fontWeight: 900, color: s[2] as string } }, s[0]), h("div", { key: "t", style: { fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
           )
         ]),
         h("div", { key: "f", style: { padding: "20px 24px 10px", display: "flex", flexDirection: "column", gap: 10 } }, [
@@ -2900,7 +2915,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "list", style: { margin: "14px 18px 4px", display: "flex", flexDirection: "column", gap: 8 } },
         d.ranking.slice(3).map((r, i) =>
-          card({ padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", border: r.me ? "1.5px solid " + C.orange : "1px solid " + C.line, background: r.me ? C.orangeSoft : C.card }, [
+          card({ key: r.id ?? "r" + i, padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", border: r.me ? "1.5px solid " + C.orange : "1px solid " + C.line, background: r.me ? C.orangeSoft : C.card }, [
             h("div", { key: "p", style: { width: 26, fontSize: 13, fontWeight: 900, color: r.me ? C.orange : C.faint } }, "#" + r.p),
             h("div", { key: "av", style: { width: 36, height: 36, borderRadius: 99, background: C.blueSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: C.dark ? "#8fc3e8" : "#01395E" } }, r.n[0]),
             h("div", { key: "n", style: { flex: 1, fontSize: 13, fontWeight: r.me ? 900 : 700 } }, r.n + (r.me ? " (você)" : "")),
@@ -2936,7 +2951,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "grid", style: { margin: "12px 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 } },
         d.badges.map((b, i) =>
-          card({ padding: "16px 8px", textAlign: "center", opacity: b.lock ? 0.55 : 1 }, [
+          card({ key: "bad" + i, padding: "16px 8px", textAlign: "center", opacity: b.lock ? 0.55 : 1 }, [
             h(
               "div",
               {
@@ -3054,7 +3069,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           [String(xp), "XP total"],
           [this.sequenciaDias() + " dias", "sequência"],
           [posicao > 0 ? "#" + posicao : "—", "ranking"]
-        ].map((s, i) => card({ padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 15, fontWeight: 900, color: i === 1 ? C.orange : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 9.5, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
+        ].map((s, i) => card({ key: "st" + i, padding: "14px 8px", textAlign: "center" }, [h("div", { key: "v", style: { fontSize: 15, fontWeight: 900, color: i === 1 ? C.orange : C.txt } }, s[0]), h("div", { key: "t", style: { fontSize: 9.5, color: C.sub, fontWeight: 700, marginTop: 3 } }, s[1])]))
       ),
       h(
         "div",
@@ -3115,7 +3130,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const toggle = (on: boolean, cb: any) =>
       h(
         "div",
-        { onClick: cb, style: { width: 46, height: 26, borderRadius: 99, background: on ? C.orange : C.chip, padding: 3, cursor: "pointer", transition: "background .2s" } },
+        { key: "toggle", onClick: cb, style: { width: 46, height: 26, borderRadius: 99, background: on ? C.orange : C.chip, padding: 3, cursor: "pointer", transition: "background .2s" } },
         h("div", { style: { width: 20, height: 20, borderRadius: 99, background: "#fff", transform: on ? "translateX(20px)" : "none", transition: "transform .2s", boxShadow: "0 2px 6px rgba(0,0,0,.25)" } })
       );
     return this.screenWrap([
@@ -3850,7 +3865,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             "div",
             { key: "list", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 9 } },
             saved.map((n, i) =>
-              card({ padding: 13 }, [
+              card({ key: n.code, padding: 13 }, [
                 h("div", { key: "h", style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 7 } }, [
                   h("span", { key: "c", style: { fontFamily: "monospace", fontSize: 10, fontWeight: 900, color: C.txt, background: C.chip, padding: "3px 9px", borderRadius: 99 } }, n.code),
                   h("div", { key: "sp", style: { flex: 1 } }),
@@ -3912,7 +3927,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             { key: "list", style: { margin: "6px 18px 0", display: "flex", flexDirection: "column", gap: 10 } },
             items.map((m, i) =>
               card(
-                { padding: 14, display: "flex", gap: 12, alignItems: "center" },
+                { key: m.id ?? "it" + i, padding: 14, display: "flex", gap: 12, alignItems: "center" },
                 [
                   iconBox(m.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 44, 19),
                   h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
@@ -3968,7 +3983,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               gabarito.map((q, i) => {
                 const idxCorreta = q.alternativas.findIndex((a) => a.id === q.respostaCorreta);
                 const idxEscolhida = q.escolhida ? q.alternativas.findIndex((a) => a.id === q.escolhida) : -1;
-                return card({ padding: 14 }, [
+                return card({ key: q.questaoId ?? "g" + i, padding: 14 }, [
                   h("div", { key: "h", style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8 } }, [
                     h("div", { key: "n", style: { width: 26, height: 26, borderRadius: 9, background: q.correta ? C.greenSoft : C.redSoft, color: q.correta ? C.green : C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900 } }, i + 1),
                     h("span", { key: "m", style: { fontSize: 10.5, fontWeight: 800, color: C.sub } }, q.materia + (q.assunto ? " · " + q.assunto : "")),
@@ -4265,7 +4280,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "steps", style: { margin: "0 18px", display: "flex", flexDirection: "column", gap: 9 } },
         steps.map((s, i) =>
-          card({ padding: 13, display: "flex", gap: 12, alignItems: "center" }, [
+          card({ key: "step" + i, padding: 13, display: "flex", gap: 12, alignItems: "center" }, [
             iconBox(s[0], C.orangeSoft, C.orange, 40, 17),
             h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12.5, fontWeight: 800 } }, s[1]), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2, lineHeight: 1.5 } }, s[2])])
           ])
@@ -4417,9 +4432,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   render() {
+    // React.Fragment com key explícita na tela: sem isso, o array de filhos
+    // (tela + overlay de onboarding) dispara o aviso de "key" ausente.
     return React.createElement("div", { className: styles.shell }, [
-      this.app(),
-      this.state.mostrarOnboarding ? React.createElement(OnboardingCarousel, { key: "onboarding", onFinish: () => this.setState({ mostrarOnboarding: false }) }) : null
+      React.createElement(React.Fragment, { key: "tela" }, this.app()),
+      this.state.mostrarOnboarding
+        ? React.createElement(OnboardingCarousel, { key: "onboarding", onFinish: () => this.setState({ mostrarOnboarding: false }) })
+        : null
     ]);
   }
 }
