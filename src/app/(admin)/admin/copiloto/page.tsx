@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getNomeVestibular } from "@/lib/site/marca";
 
 export default async function AdminCopilotoPage() {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const [{ data: eventos }, { data: recs }] = await Promise.all([
+  const [{ data: eventos }, { data: recs }, nomeVestibular] = await Promise.all([
     supabase
       .from("copiloto_eventos")
       .select("*, profiles(nome)")
@@ -16,7 +17,8 @@ export default async function AdminCopilotoPage() {
       .from("copiloto_recomendacoes")
       .select("*, profiles(nome)")
       .order("gerado_em", { ascending: false })
-      .limit(30)
+      .limit(30),
+    getNomeVestibular()
   ]);
 
   return (
@@ -29,7 +31,7 @@ export default async function AdminCopilotoPage() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href="/admin/copiloto/pesos" className="rounded-lg bg-orange px-4 py-2 text-sm font-bold text-white">
-          Configurar pesos da FACAPE →
+          {`Configurar pesos do ${nomeVestibular} →`}
         </Link>
       </div>
 

@@ -6,7 +6,10 @@ import { Chip, TextInput, TextArea, FieldLabel, PrimaryButton, Toast, useToast }
 import { salvarMetadadosAtividade } from "../actions";
 import type { Atividade, AtividadeGabaritoModo } from "@/types/database";
 
-export function MetadadosForm({ atividade }: { atividade: Atividade }) {
+// `rotuloNota` vem de rotuloNotaPonderada() (lib/site/marca.ts) e reflete o
+// nome de vestibular configurado em /admin/configuracoes — o nome da
+// instituição não fica escrito no código.
+export function MetadadosForm({ atividade, rotuloNota }: { atividade: Atividade; rotuloNota: string }) {
   const [titulo, setTitulo] = useState(atividade.titulo);
   const [materia, setMateria] = useState(atividade.materia ?? "");
   const [descricao, setDescricao] = useState(atividade.descricao ?? "");
@@ -52,7 +55,7 @@ export function MetadadosForm({ atividade }: { atividade: Atividade }) {
           <TextInput type="number" value={tempoLimite} onChange={(e) => setTempoLimite(e.target.value)} placeholder="Ex.: 40" />
         </div>
         <div>
-          <FieldLabel>Peso na nota FACAPE</FieldLabel>
+          <FieldLabel>{`Peso na ${rotuloNota.toLowerCase()}`}</FieldLabel>
           <TextInput type="number" step="0.1" value={pesoFacape} onChange={(e) => setPesoFacape(e.target.value)} />
         </div>
       </div>

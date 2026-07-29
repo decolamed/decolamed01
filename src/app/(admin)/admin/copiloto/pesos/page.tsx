@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { getNomeVestibular } from "@/lib/site/marca";
 
 const PATH = "/admin/copiloto/pesos";
 
@@ -47,11 +48,10 @@ export default async function AdminPesosPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("materias_peso")
-    .select("*")
-    .order("pontos_potenciais", { ascending: false })
-    .order("materia");
+  const [{ data }, nomeVestibular] = await Promise.all([
+    supabase.from("materias_peso").select("*").order("pontos_potenciais", { ascending: false }).order("materia"),
+    getNomeVestibular()
+  ]);
 
   // Calcula relevância pra exibir na tabela
   const lista = data ?? [];
@@ -60,7 +60,7 @@ export default async function AdminPesosPage({
   return (
     <div>
       <PageHeader
-        title="Pesos e Questões — FACAPE"
+        title={`Pesos e Questões — ${nomeVestibular}`}
         subtitle="Edite o peso e a quantidade de questões de cada matéria. O algoritmo do Copiloto recalcula a relevância automaticamente."
       />
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />

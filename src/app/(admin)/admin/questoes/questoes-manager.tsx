@@ -28,11 +28,16 @@ function codigo(id: string) {
 export function QuestoesManager({
   questoes,
   materiasExistentes,
-  usoPorQuestao
+  usoPorQuestao,
+  nomeVestibular
 }: {
   questoes: Questao[];
   materiasExistentes: string[];
   usoPorQuestao: Record<string, { tipo: "Simulado" | "Atividade"; titulo: string }[]>;
+  // Vem de `configuracoes` (site.marca.vestibular) — ver lib/site/marca.ts.
+  // O nome da instituição não pode estar escrito no código porque a mesma
+  // plataforma atende outros processos seletivos.
+  nomeVestibular: string;
 }) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
@@ -129,7 +134,7 @@ export function QuestoesManager({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Banco de Questões" subtitle="Crie e edite questões ligadas à matriz FACAPE — grava direto no banco" />
+        <PageHeader title="Banco de Questões" subtitle={`Crie e edite questões ligadas à matriz do ${nomeVestibular} — grava direto no banco`} />
         <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar em massa"}</GhostButton>
       </div>
 
@@ -244,10 +249,10 @@ export function QuestoesManager({
           <TextArea rows={3} value={draft.enunciado} onChange={(e) => setDraft({ ...draft, enunciado: e.target.value })} placeholder="Digite o enunciado..." />
           <FieldLabel>Matéria</FieldLabel>
           <TextInput value={draft.materia} onChange={(e) => setDraft({ ...draft, materia: e.target.value })} placeholder="Biologia" />
-          <FieldLabel>Assunto (matriz FACAPE)</FieldLabel>
+          <FieldLabel>{`Assunto (matriz do ${nomeVestibular})`}</FieldLabel>
           <TextInput value={draft.assunto} onChange={(e) => setDraft({ ...draft, assunto: e.target.value })} placeholder="Ex.: Sistema Digestório" />
           <FieldLabel>Origem (ano e prova, opcional)</FieldLabel>
-          <TextInput value={draft.fonte ?? ""} onChange={(e) => setDraft({ ...draft, fonte: e.target.value })} placeholder="Ex.: FACAPE 2024 · 1ª fase" />
+          <TextInput value={draft.fonte ?? ""} onChange={(e) => setDraft({ ...draft, fonte: e.target.value })} placeholder={`Ex.: ${nomeVestibular} 2024 · 1ª fase`} />
 
           <FieldLabel>Alternativas (deixe em branco as que não for usar)</FieldLabel>
           <div className="space-y-1.5">

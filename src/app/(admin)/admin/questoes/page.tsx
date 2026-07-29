@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getNomeVestibular } from "@/lib/site/marca";
 import { QuestoesManager } from "./questoes-manager";
 import type { Questao } from "@/types/database";
 
@@ -7,10 +8,11 @@ export default async function AdminQuestoesPage() {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const [{ data }, { data: emSimulados }, { data: emAtividades }] = await Promise.all([
+  const [{ data }, { data: emSimulados }, { data: emAtividades }, nomeVestibular] = await Promise.all([
     supabase.from("questoes").select("*").order("created_at", { ascending: false }),
     supabase.from("simulado_questoes").select("questao_id, simulados(titulo)"),
-    supabase.from("atividade_questoes").select("questao_id, atividades(titulo)")
+    supabase.from("atividade_questoes").select("questao_id, atividades(titulo)"),
+    getNomeVestibular()
   ]);
   const questoes = (data as Questao[]) ?? [];
   const materiasExistentes = Array.from(new Set(questoes.map((q) => q.materia))).sort();
@@ -37,6 +39,7 @@ export default async function AdminQuestoesPage() {
       questoes={questoes}
       materiasExistentes={materiasExistentes}
       usoPorQuestao={Object.fromEntries(usoPorQuestao)}
+      nomeVestibular={nomeVestibular}
     />
   );
 }

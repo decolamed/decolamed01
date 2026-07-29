@@ -6,27 +6,30 @@ import Image from "next/image";
 // Tela de abertura exibida a cada carregamento novo do app (não usa
 // localStorage de propósito — o pedido foi "sempre que o app for
 // iniciado", não só na primeira visita). Fica montada por um tempo mínimo
-// pra não piscar em conexões rápidas, depois faz fade-out e some do DOM.
+// pra não piscar em conexões rápidas, depois some do DOM.
+//
+// O fade em si é feito pela animação `.dm-splash` (globals.css), não por
+// estado do React: como essa camada cobre a tela inteira com z-index alto,
+// um fade dependente de JS prenderia o usuário numa tela azul inerte caso
+// a hidratação falhasse. Aqui o React só remove o nó depois que a animação
+// já terminou.
 const DURACAO_VISIVEL_MS = 900;
 const DURACAO_FADE_MS = 400;
 
 export function SplashScreen() {
-  const [fase, setFase] = useState<"visivel" | "saindo" | "escondida">("visivel");
+  const [visivel, setVisivel] = useState(true);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setFase("saindo"), DURACAO_VISIVEL_MS);
-    const t2 = setTimeout(() => setFase("escondida"), DURACAO_VISIVEL_MS + DURACAO_FADE_MS);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    const t = setTimeout(() => setVisivel(false), DURACAO_VISIVEL_MS + DURACAO_FADE_MS);
+    return () => clearTimeout(t);
   }, []);
 
-  if (fase === "escondida") return null;
+  if (!visivel) return null;
 
   return (
     <div
       aria-hidden="true"
+      className="dm-splash"
       style={{
         position: "fixed",
         inset: 0,
@@ -36,9 +39,7 @@ export function SplashScreen() {
         alignItems: "center",
         justifyContent: "center",
         background: "linear-gradient(160deg,#0d4a79,#01395E)",
-        opacity: fase === "visivel" ? 1 : 0,
-        transition: `opacity ${DURACAO_FADE_MS}ms ease`,
-        pointerEvents: fase === "visivel" ? "auto" : "none"
+        pointerEvents: "none"
       }}
     >
       <div style={{ width: 220, maxWidth: "60vw" }}>
