@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -14,11 +15,17 @@ export async function marcarComissaoPaga(formData: FormData) {
   if (!id) return;
 
   const supabase = createAdminClient();
-  await supabase
+  const { error } = await supabase
     .from("comissoes_parceiro")
     .update({ status: "paga", data_pagamento: new Date().toISOString() })
     .eq("id", id)
     .eq("status", "pendente");
 
   revalidatePath("/admin/vendas");
+  // Dar baixa é registro financeiro: se falhar, o admin precisa saber em
+  // vez de supor que deu certo porque a página recarregou.
+  if (error) {
+    redirect(`/admin/vendas?erro=${encodeURIComponent("Não foi possível dar baixa nesta comissão.")}`);
+  }
+  redirect(`/admin/vendas?sucesso=${encodeURIComponent("Comissão marcada como paga.")}`);
 }

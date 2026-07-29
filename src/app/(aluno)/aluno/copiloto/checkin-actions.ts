@@ -18,7 +18,7 @@ export async function responderCheckin(
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  await supabase
+  const { error } = await supabase
     .from("copiloto_checkin")
     .update({
       resposta_valor: opcaoValor,
@@ -31,4 +31,8 @@ export async function responderCheckin(
 
   revalidatePath("/aluno");
   revalidatePath("/aluno/copiloto");
+  // Sem isso, uma falha deixava o cartão exatamente como estava e sem
+  // nenhuma mensagem: da perspectiva do aluno, o botão simplesmente não
+  // fazia nada.
+  return { ok: !error };
 }

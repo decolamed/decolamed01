@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { responderCheckin } from "@/app/(aluno)/aluno/copiloto/checkin-actions";
 
 interface Opcao {
@@ -20,11 +20,16 @@ interface Checkin {
 
 export function CheckinCard({ checkin }: { checkin: Checkin }) {
   const [pending, start] = useTransition();
+  const [erro, setErro] = useState(false);
 
   function responder(opcao: Opcao) {
-    start(() =>
-      responderCheckin(checkin.id, opcao.valor, opcao.acao_tipo, opcao.acao_payload)
-    );
+    setErro(false);
+    start(async () => {
+      const res = await responderCheckin(checkin.id, opcao.valor, opcao.acao_tipo, opcao.acao_payload).catch(
+        () => ({ ok: false })
+      );
+      if (!res.ok) setErro(true);
+    });
   }
 
   return (
@@ -67,6 +72,11 @@ export function CheckinCard({ checkin }: { checkin: Checkin }) {
           </button>
         ))}
       </div>
+      {erro && (
+        <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+          Não foi possível registrar sua resposta. Verifique sua conexão e tente de novo.
+        </p>
+      )}
     </div>
   );
 }

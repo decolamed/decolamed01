@@ -1663,7 +1663,19 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     this.setState({
       notifsLocal: this.state.notifsLocal.map((n: Notificacao) => (n.id === id ? { ...n, lida: true } : n))
     });
-    if (!this.props.demoMode) marcarNotificacaoLida(id).catch((e) => console.error("Falha ao marcar notificação como lida:", e));
+    if (this.props.demoMode) return;
+    // Sem aviso na tela de propósito: o próprio contador de não lidas é o
+    // sinal, e um toast a cada notificação aberta viraria ruído. O que
+    // importa é não deixar o contador mentir.
+    const desfazer = () =>
+      this.setState((st: any) => ({
+        notifsLocal: st.notifsLocal.map((n: Notificacao) => (n.id === id ? { ...n, lida: false } : n))
+      }));
+    marcarNotificacaoLida(id)
+      .then((res) => {
+        if (!res?.ok) desfazer();
+      })
+      .catch(desfazer);
   }
   // ---------- overlays ----------
   notifSheet() {
@@ -2903,8 +2915,21 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // Marca a recomendação como concluída/descartada de verdade
   // (copiloto_recomendacoes) e atualiza a lista local otimisticamente.
   responderRecomendacao(id: string, status: "concluida" | "descartada") {
-    this.setState({ recsLocal: this.state.recsLocal.filter((r: CopilotoRecomendacao) => r.id !== id) });
-    if (!this.props.demoMode) marcarRecomendacao(id, status).catch((e) => console.error("Falha ao marcar recomendação:", e));
+    const antes = this.state.recsLocal as CopilotoRecomendacao[];
+    this.setState({ recsLocal: antes.filter((r: CopilotoRecomendacao) => r.id !== id) });
+    if (this.props.demoMode) return;
+    // O cartão sai da lista na hora. Se a gravação falhar, ele volta — senão
+    // a recomendação reapareceria sozinha no próximo carregamento, como se o
+    // toque nunca tivesse acontecido.
+    const desfazer = () => {
+      this.setState({ recsLocal: antes });
+      this.avisar("Não foi possível registrar sua resposta. Verifique sua conexão e tente de novo.");
+    };
+    marcarRecomendacao(id, status)
+      .then((res) => {
+        if (!res?.ok) desfazer();
+      })
+      .catch(desfazer);
   }
   scrCopiloto() {
     const { C, h, I, btn, ghost } = this.ui();
@@ -4154,7 +4179,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
   responderFlashcard(id: string, lembrou: boolean) {
     this.setState({ fcIdx: this.state.fcIdx + 1, fcFlip: false, fcOk: lembrou ? this.state.fcOk + 1 : this.state.fcOk });
-    if (!this.props.demoMode) registrarRevisao(id, lembrou).catch((e) => console.error("Falha ao registrar revisão de flashcard:", e));
+    if (this.props.demoMode) return;
+    // O card já avançou e rebobinar no meio da revisão confundiria mais do
+    // que ajuda; o aviso serve pra o aluno saber que essa revisão não
+    // entrou no XP nem nas estatísticas.
+    const avisar = () => this.avisar("Uma revisão não foi salva. Verifique sua conexão para não perder seu progresso.");
+    registrarRevisao(id, lembrou)
+      .then((res) => {
+        if (!res?.ok) avisar();
+      })
+      .catch(avisar);
   }
   // Tela de escolha antes de começar: todos, aleatório, por matéria ou por
   // assunto — evita que o aluno caia direto numa lista enorme e sem

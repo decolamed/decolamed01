@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { AdminAlert } from "@/components/admin/admin-alert";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { marcarComissaoPaga } from "./actions";
 import type { Pagamento, ComissaoParceiro } from "@/types/database";
@@ -26,6 +27,8 @@ const ORIGEM_LABEL: Record<string, string> = {
 };
 
 interface VendasSearchParams {
+  erro?: string;
+  sucesso?: string;
   de?: string;
   ate?: string;
   planoId?: string;
@@ -98,6 +101,7 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-navy-dark">Vendas</h1>
+      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
