@@ -48,6 +48,10 @@ interface DecolaAppDados {
   pesos: MateriaPeso[];
   missoes: AlunoMissao[];
   trilhaHoje: TrilhaDia | null;
+  // Próximos dias do cronograma — é o que a tela de cronograma mostra
+  // abaixo da missão de hoje (antes, só as missões do Copiloto apareciam
+  // ali, então quem não tinha missões via um cronograma "vazio").
+  trilhaProximos: TrilhaDia[];
   progressoItens: Record<string, AlunoProgressoItem>;
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
@@ -1052,19 +1056,30 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     }
     // "livre": dia de descanso, sem ação de navegação.
   }
-  // Chave estável de progresso por item — "aula:<id>" é compartilhada por
-  // qualquer tela que abra a mesma aula (cronograma, Estudos, missão do
-  // Copiloto), então o progresso/conclusão é o mesmo em todo lugar. Os
-  // demais tipos não têm registro individual em outra tabela, então usam a
-  // posição do item dentro do dia da trilha.
+  // Chave estável de progresso por item — a mesma aula aberta de qualquer
+  // tela (cronograma, Estudos, missão do Copiloto) precisa cair na mesma
+  // chave, senão o progresso e a conclusão não se comunicam entre as telas.
+  //
+  // Nem toda aula tem ref_id: os itens do cronograma podem guardar só a URL
+  // do vídeo (é o caso de todos os dias importados até aqui). Antes, essas
+  // aulas recebiam chave nula e ficavam SEM progresso, SEM "continuar
+  // assistindo" e SEM poder ser marcadas como concluídas. Por isso a chave
+  // cai para o ID do vídeo no YouTube, que é tão estável quanto o ref_id e
+  // continua igual mesmo se o admin reordenar os itens do dia.
   chaveAula(conteudoId: string): string {
     return "aula:" + conteudoId;
+  }
+  chaveDeAula(refId: string | null, url: string | null): string | null {
+    if (refId) return this.chaveAula(refId);
+    const videoId = url ? this.youtubeVideoId(url) : null;
+    if (videoId) return "aula-yt:" + videoId;
+    return url ? "aula-url:" + url : null;
   }
   chaveItemTrilha(diaNumero: number, indice: number): string {
     return "trilha:" + diaNumero + ":" + indice;
   }
   chaveDeItemTrilha(diaNumero: number, indice: number, item: TrilhaItem): string | null {
-    if (item.tipo === "aula") return item.ref_id ? this.chaveAula(item.ref_id) : null;
+    if (item.tipo === "aula") return this.chaveDeAula(item.ref_id, item.url);
     return this.chaveItemTrilha(diaNumero, indice);
   }
   progressoDe(chave: string | null): AlunoProgressoItem | undefined {
@@ -1099,15 +1114,34 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
   // Vídeo mais recente que o aluno começou e ainda não terminou — alimenta
   // o card "Continuar assistindo" em Estudos.
-  continuarAssistindo(): { conteudo: ConteudoBiblioteca; progresso: AlunoProgressoItem } | null {
+  // Aulas conhecidas por chave de progresso — junta a biblioteca
+  // (conteudos_biblioteca) com as aulas embutidas nos dias do cronograma,
+  // que não existem como registro separado. Sem isso, "continuar
+  // assistindo" nunca encontrava as aulas do cronograma.
+  aulasPorChave(): Map<string, { id: string | null; titulo: string; url: string; materia: string | null }> {
+    const mapa = new Map<string, { id: string | null; titulo: string; url: string; materia: string | null }>();
+    this.props.dados.conteudos
+      .filter((c) => c.tipo === "aula" && c.url)
+      .forEach((c) => {
+        const chave = this.chaveDeAula(c.id, c.url);
+        if (chave) mapa.set(chave, { id: c.id, titulo: c.titulo, url: c.url as string, materia: c.materia });
+      });
+    [this.props.dados.trilhaHoje, ...this.props.dados.trilhaProximos].forEach((dia) => {
+      (dia?.itens || []).forEach((item) => {
+        if (item.tipo !== "aula" || !item.url) return;
+        const chave = this.chaveDeAula(item.ref_id, item.url);
+        if (chave && !mapa.has(chave)) mapa.set(chave, { id: item.ref_id, titulo: item.titulo, url: item.url, materia: item.materia });
+      });
+    });
+    return mapa;
+  }
+  continuarAssistindo(): { aula: { id: string | null; titulo: string; url: string; materia: string | null }; progresso: AlunoProgressoItem } | null {
+    const mapa = this.aulasPorChave();
     const candidatos = Object.values(this.state.progressoLocal as Record<string, AlunoProgressoItem>)
-      .filter((p) => p.chave.startsWith("aula:") && !p.concluida && p.posicao_segundos > 5)
+      .filter((p) => !p.concluida && p.posicao_segundos > 5 && mapa.has(p.chave))
       .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
-    for (const p of candidatos) {
-      const conteudo = this.props.dados.conteudos.find((c) => c.id === p.chave.slice("aula:".length));
-      if (conteudo) return { conteudo, progresso: p };
-    }
-    return null;
+    const p = candidatos[0];
+    return p ? { aula: mapa.get(p.chave)!, progresso: p } : null;
   }
   // Abre a videoaula no player integrado (scrPlayer()), em vez do navegador
   // interno genérico — vídeos merecem uma experiência dedicada (sem barra de
@@ -1121,7 +1155,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     back: string,
     lista: { id: string | null; titulo: string; url: string; materia?: string | null }[] = []
   ) {
-    const chave = conteudoId ? this.chaveAula(conteudoId) : null;
+    const chave = this.chaveDeAula(conteudoId, url);
     const posicaoInicial = this.progressoDe(chave)?.posicao_segundos || 0;
     this.nav("player", {
       playerChave: chave,
@@ -1138,7 +1172,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   trocarAula(item: { id: string | null; titulo: string; url: string }) {
     this.salvarProgressoDoPlayer(false);
     this.destruirPlayerYoutube();
-    const chave = item.id ? this.chaveAula(item.id) : null;
+    const chave = this.chaveDeAula(item.id, item.url);
     this.setState({
       playerChave: chave,
       playerTitulo: item.titulo,
@@ -1980,8 +2014,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h("div", { key: "r", style: { display: "flex", gap: 12, alignItems: "center" } }, [
                 iconBox("video", C.greenSoft, C.green, 46, 20),
                 h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
-                  h("div", { key: "a", style: { fontSize: 14, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, continuar.conteudo.titulo),
-                  h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 4 } }, continuar.conteudo.assunto || continuar.conteudo.materia),
+                  h("div", { key: "a", style: { fontSize: 14, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, continuar.aula.titulo),
+                  h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 4 } }, continuar.aula.materia || "Videoaula"),
                   continuar.progresso.duracao_segundos
                     ? h("div", { key: "bar", style: { marginTop: 8, height: 4, borderRadius: 99, background: C.chip, overflow: "hidden" } }, h("div", { style: { height: "100%", width: Math.min(100, Math.round((continuar.progresso.posicao_segundos / continuar.progresso.duracao_segundos) * 100)) + "%", background: C.green } }))
                     : null
@@ -1990,7 +2024,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   "div",
                   {
                     key: "p",
-                    onClick: () => this.abrirAula(continuar.conteudo.id, continuar.conteudo.titulo, continuar.conteudo.url || "", "estudos"),
+                    onClick: () => this.abrirAula(continuar.aula.id, continuar.aula.titulo, continuar.aula.url, "estudos"),
                     style: { width: 40, height: 40, borderRadius: 99, background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }
                   },
                   h("div", { style: { width: 0, height: 0, borderTop: "7px solid transparent", borderBottom: "7px solid transparent", borderLeft: "11px solid #fff", marginLeft: 3 } })
@@ -3376,7 +3410,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     );
   }
   scrPlano() {
-    const { C, h, card, btn, iconBox } = this.ui();
+    const { C, h, I, card, btn, iconBox } = this.ui();
     // O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive
     // de quem tem Copiloto. As missões individuais (aluno_missoes, geradas
     // pelo Copiloto ou cadastradas à mão pelo admin) são um ACRÉSCIMO
@@ -3397,7 +3431,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
     const porDia = new Map<string, AlunoMissao[]>();
     proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
-    const semNada = !diaTrilha && hoje.length === 0 && proximas.length === 0;
+    const semNada = !diaTrilha && hoje.length === 0 && proximas.length === 0 && this.props.dados.trilhaProximos.length === 0;
     return this.screenWrap([
       this.head("Cronograma de Estudos", { back: "mapa" }),
       temCopiloto
@@ -3463,6 +3497,34 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             ])
           )
         : null,
+      // Próximos dias do cronograma — "ver cronograma completo" precisa
+      // mostrar o que vem depois de hoje, e não só as missões do Copiloto.
+      this.props.dados.trilhaProximos.length
+        ? h("div", { key: "lblProx", style: { margin: "20px 20px 8px", fontSize: 11.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Próximos dias")
+        : null,
+      ...this.props.dados.trilhaProximos.map((dia) =>
+        h(
+          "div",
+          { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px" } },
+          card({ padding: 15 }, [
+            h("div", { key: "t", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
+            h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: dia.itens?.length ? 8 : 0 } }, dia.titulo),
+            ...(dia.itens || []).map((item, i) => {
+              const chave = this.chaveDeItemTrilha(dia.dia_numero, i, item);
+              const feito = this.estaConcluido(chave);
+              return h(
+                "div",
+                { key: i, onClick: () => this.abrirItemTrilha(item), style: { display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderTop: i ? "1px solid " + C.line : "none", cursor: "pointer" } },
+                [
+                  h("span", { key: "i", style: { display: "flex", flexShrink: 0 } }, I(this.iconeMissao(item.tipo), 15, feito ? C.green : C.faint)),
+                  h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 700, color: C.txt, textDecoration: feito ? "line-through" : "none" } }, item.titulo),
+                  I("chevR", 14, C.faint)
+                ]
+              );
+            })
+          ])
+        )
+      ),
       ...Array.from(porDia.entries()).map(([data, ms]) =>
         h(
           "div",
@@ -3582,26 +3644,37 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         : null;
     const atual = S.playerLista.findIndex((a: any) => a.url === url);
     const proxima = atual >= 0 && atual < S.playerLista.length - 1 ? S.playerLista[atual + 1] : null;
-    return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000", overflow: "hidden" } }, [
-      h("div", { key: "video", style: { position: "relative", width: "100%", paddingTop: "56.25%", background: "#000", flexShrink: 0 } }, [
-        h(
-          "div",
-          {
-            key: "back",
-            onClick: () => this.fecharPlayer(),
-            style: { position: "absolute", top: 12, left: 12, zIndex: 2, width: 38, height: 38, borderRadius: 99, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }
-          },
-          I("arrowL", 18, "#fff")
-        ),
+    return h("div", { className: styles.playerShell }, [
+      // Barra de navegação ACIMA do vídeo — nada fica sobreposto à imagem.
+      h(
+        "div",
+        { key: "bar", className: styles.playerBar, style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#000", flexShrink: 0 } },
+        [
+          h(
+            "div",
+            {
+              key: "back",
+              onClick: () => this.fecharPlayer(),
+              style: { width: 36, height: 36, borderRadius: 99, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }
+            },
+            I("arrowL", 18, "#fff")
+          ),
+          h(
+            "div",
+            { key: "t", style: { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+            S.playerTitulo
+          )
+        ]
+      ),
+      h("div", { key: "video", className: styles.playerVideo }, [
         videoId
-          ? h("div", { key: "yt", id: "dm-yt-player-" + videoId, ref: (el: any) => this.refPlayerYoutube(el, videoId, S.playerPosicaoInicial), style: { position: "absolute", inset: 0 } })
+          ? h("div", { key: "yt", id: "dm-yt-player-" + videoId, ref: (el: any) => this.refPlayerYoutube(el, videoId, S.playerPosicaoInicial) })
           : url
           ? h("iframe", {
               key: "if",
               src: this.normalizarUrl(url),
               title: S.playerTitulo,
-              style: { position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" },
-              allow: "autoplay; encrypted-media; picture-in-picture",
+              allow: "autoplay; encrypted-media; picture-in-picture; fullscreen",
               allowFullScreen: true
             })
           : h("div", { key: "empty", style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.6)", fontSize: 12.5, fontWeight: 700 } }, "Nenhum vídeo para exibir.")
@@ -3611,11 +3684,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       pctAssistido != null
         ? h(
             "div",
-            { key: "bar", style: { height: 3, background: "rgba(255,255,255,.15)", flexShrink: 0 } },
+            { key: "prog", className: styles.playerProgresso, style: { height: 3, background: "rgba(255,255,255,.15)", flexShrink: 0 } },
             h("div", { style: { height: "100%", width: pctAssistido + "%", background: concluida ? C.green : C.orange, transition: "width .3s" } })
           )
         : null,
-      h("div", { key: "info", style: { flex: 1, overflow: "auto", background: C.bg, padding: "18px 18px 96px" } }, [
+      h("div", { key: "info", className: styles.playerInfo, style: { flex: 1, overflow: "auto", background: C.bg, padding: "18px 18px 96px" } }, [
         h("div", { key: "t", style: { fontSize: 17, fontWeight: 900, color: C.txt, lineHeight: 1.3 } }, S.playerTitulo),
         h(
           "div",
@@ -3691,7 +3764,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               { key: "lista", style: { display: "flex", flexDirection: "column", gap: 8 } },
               S.playerLista.map((item: any, i: number) => {
                 const ativo = i === atual;
-                const feita = this.estaConcluido(item.id ? this.chaveAula(item.id) : null);
+                const feita = this.estaConcluido(this.chaveDeAula(item.id, item.url));
                 return h(
                   "div",
                   {

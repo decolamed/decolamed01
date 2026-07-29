@@ -68,6 +68,7 @@ export default async function PreviewAlunoPage() {
         pesos: [],
         missoes: [],
         trilhaHoje: null,
+        trilhaProximos: [],
         progressoItens: {},
         recomendacoes: [],
         notificacoes: [],

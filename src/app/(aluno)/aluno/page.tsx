@@ -139,9 +139,12 @@ export default async function AlunoHomePage() {
   // com ou sem Copiloto.
   const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
   const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
-  const trilhaHoje = diaTrilhaHoje
-    ? ((trilhaDiasData as TrilhaDia[]) ?? []).find((d) => d.dia_numero === diaTrilhaHoje) ?? null
-    : null;
+  const todosDias = ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero);
+  const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
+  // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
+  // Client Component) — alimenta a seção "Próximos dias" da tela de
+  // cronograma, que antes só listava missões do Copiloto.
+  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje).slice(0, 7) : [];
 
   const creditosDoPlano = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
   const ajustesManuais = (ajustesCreditosData ?? []).reduce((soma: number, a: any) => soma + a.quantidade, 0);
@@ -177,6 +180,7 @@ export default async function AlunoHomePage() {
         pesos: (pesosData as MateriaPeso[]) ?? [],
         missoes: (missoesData as AlunoMissao[]) ?? [],
         trilhaHoje,
+        trilhaProximos,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;
