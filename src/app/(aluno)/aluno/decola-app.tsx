@@ -62,6 +62,12 @@ interface DecolaAppDados {
   banners: Banner[];
   conteudos: ConteudoBiblioteca[];
   linksExternos: LinkExterno[];
+  // Aulas/PDFs/links que existem SÓ dentro dos dias do cronograma
+  // (trilha_dias.itens), sem linha correspondente em conteudos_biblioteca.
+  // Sem isso, a aba Estudos anunciava "0 aulas" mesmo com centenas de
+  // videoaulas na plataforma: os cards contavam apenas a biblioteca, e
+  // todo o material importado mora nos dias do cronograma.
+  conteudosTrilha: { tipo: "aula" | "pdf" | "link"; ref_id: string | null; url: string; titulo: string; materia: string | null }[];
   estudosBotoes: EstudosBotao[];
   baseTemasUrl: string | null;
   // Nome do vestibular/instituição vindo de /admin/configuracoes (ver
@@ -520,10 +526,42 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // com CRUD em /admin/cursos, /admin/pdfs e /admin/links). Só existe um
   // card aqui se existir uma forma equivalente do admin cadastrar aquele
   // conteúdo — nada de números ou categorias inventadas.
+  // Biblioteca que o aluno enxerga por tipo: o que o admin cadastrou em
+  // /admin/cursos, /admin/pdfs e /admin/links MAIS o que está pendurado
+  // nos dias do cronograma. A deduplicação é por URL porque é o que
+  // identifica o mesmo material nas duas origens (o item do cronograma
+  // muitas vezes não tem ref_id, só o link do vídeo).
+  biblioteca(tipo: "aula" | "pdf" | "link") {
+    const itens: { id: string | null; titulo: string; descricao: string; url: string | null }[] = [];
+    const vistos = new Set<string>();
+    const push = (id: string | null, titulo: string, descricao: string, url: string | null) => {
+      const chave = url || "id:" + id;
+      if (vistos.has(chave)) return;
+      vistos.add(chave);
+      itens.push({ id, titulo, descricao, url });
+    };
+
+    if (tipo === "link") {
+      this.props.dados.linksExternos.forEach((l) => push(l.id, l.titulo, l.url, l.url));
+    } else {
+      this.props.dados.conteudos
+        .filter((c) => (tipo === "aula" ? c.tipo === "aula" : c.tipo === "pdf" || c.tipo === "artigo"))
+        .forEach((c) => push(c.id, c.titulo, c.assunto ? `${c.assunto} · ${c.materia}` : c.materia, c.url));
+    }
+
+    this.props.dados.conteudosTrilha
+      .filter((i) => i.tipo === tipo)
+      // Links são identificados pelo endereço (é o que a lista da
+      // biblioteca mostra); aula/PDF pela matéria, caindo pro cronograma
+      // quando o item não tem matéria definida.
+      .forEach((i) => push(i.ref_id, i.titulo, tipo === "link" ? i.url : i.materia || "Cronograma", i.url));
+
+    return itens;
+  }
   hangarEstudosEstaticos() {
-    const aulas = this.props.dados.conteudos.filter((c) => c.tipo === "aula");
-    const pdfs = this.props.dados.conteudos.filter((c) => c.tipo === "pdf" || c.tipo === "artigo");
-    const links = this.props.dados.linksExternos;
+    const aulas = this.biblioteca("aula");
+    const pdfs = this.biblioteca("pdf");
+    const links = this.biblioteca("link");
     return {
       estudos: [
         { ic: "video", t: "Videoaulas", d: aulas.length + (aulas.length === 1 ? " aula" : " aulas") },
@@ -887,7 +925,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return (this.state.missoesLocal as AlunoMissao[]).filter((m) => m.data === hojeStr).sort((a, b) => b.prioridade - a.prioridade);
   }
   iconeMissao(tipo: string) {
-    const m: Record<string, string> = { aula: "video", questoes: "target", flashcards: "cards", simulado: "file", revisao: "refresh", livre: "compass" };
+    const m: Record<string, string> = { aula: "video", pdf: "file", link: "link2", questoes: "target", flashcards: "cards", simulado: "file", revisao: "refresh", leitura: "book", redacao: "note", livre: "compass" };
     return m[tipo] || "bot";
   }
   navMissao(m: AlunoMissao) {
@@ -1061,8 +1099,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
     } else if (item.tipo === "revisao") {
       this.startReview();
+    } else if (item.tipo === "redacao") {
+      this.nav("redacao");
     }
-    // "livre": dia de descanso, sem ação de navegação.
+    // "leitura" e "livre" não abrem nada: são itens de marcar/desmarcar
+    // (ler o resumo de um livro, dia de descanso). O toque no círculo de
+    // conclusão continua funcionando normalmente pela chave de progresso.
   }
   // Chave estável de progresso por item — a mesma aula aberta de qualquer
   // tela (cronograma, Estudos, missão do Copiloto) precisa cair na mesma
@@ -1140,6 +1182,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         const chave = this.chaveDeAula(item.ref_id, item.url);
         if (chave && !mapa.has(chave)) mapa.set(chave, { id: item.ref_id, titulo: item.titulo, url: item.url, materia: item.materia });
       });
+    });
+    // Aulas de qualquer dia do cronograma, não só dos próximos 7: quem
+    // assistiu uma aula adiantada pela aba Estudos também precisa achá-la
+    // em "continuar assistindo".
+    this.props.dados.conteudosTrilha.forEach((i) => {
+      if (i.tipo !== "aula") return;
+      const chave = this.chaveDeAula(i.ref_id, i.url);
+      if (chave && !mapa.has(chave)) mapa.set(chave, { id: i.ref_id, titulo: i.titulo, url: i.url, materia: i.materia });
     });
     return mapa;
   }
@@ -3913,12 +3963,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const S = this.state;
     const t = S.contTitle || "Conteúdos";
     const tipo = S.contTipo as "aula" | "pdf" | "link" | null;
-    const items =
-      tipo === "link"
-        ? this.props.dados.linksExternos.map((l) => ({ id: l.id, ic: "link2", t: l.titulo, d: l.url, url: l.url }))
-        : this.props.dados.conteudos
-            .filter((c) => (tipo === "aula" ? c.tipo === "aula" : c.tipo === "pdf" || c.tipo === "artigo"))
-            .map((c) => ({ id: c.id, ic: tipo === "aula" ? "video" : "file", t: c.titulo, d: c.assunto ? `${c.assunto} · ${c.materia}` : c.materia, url: c.url }));
+    const ic = tipo === "link" ? "link2" : tipo === "aula" ? "video" : "file";
+    const items = this.biblioteca(tipo ?? "aula").map((m) => ({ id: m.id, ic, t: m.titulo, d: m.descricao, url: m.url }));
     return this.screenWrap([
       this.head(t, { back: S.contBack || "estudos" }),
       items.length

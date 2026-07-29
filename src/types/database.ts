@@ -308,7 +308,21 @@ export interface RedacaoCreditoConsumido {
 // adicionar/remover/editar dia e anexar aulas, PDFs, links externos,
 // questões, flashcards e simulados a cada um. Substitui o antigo
 // cronograma_dias (semanal, fixo em 7 dias) — ver migração que o remove.
-export type TrilhaItemTipo = "aula" | "pdf" | "link" | "questoes" | "flashcards" | "simulado" | "revisao" | "livre";
+// "leitura" e "redacao" já existiam nos dias importados do material
+// original, mas ficaram de fora desta união por um tempo: como `itens` é
+// jsonb e chega ao código com um cast, o TypeScript não acusava nada — o
+// item simplesmente não tinha ícone nem ação e o clique não fazia nada.
+export type TrilhaItemTipo =
+  | "aula"
+  | "pdf"
+  | "link"
+  | "questoes"
+  | "flashcards"
+  | "simulado"
+  | "revisao"
+  | "leitura"
+  | "redacao"
+  | "livre";
 
 export interface TrilhaItem {
   tipo: TrilhaItemTipo;

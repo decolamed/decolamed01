@@ -16,6 +16,8 @@ const TIPOS: { valor: TrilhaItemTipo; label: string; icone: string }[] = [
   { valor: "flashcards", label: "Flashcards (por matéria)", icone: "🃏" },
   { valor: "simulado", label: "Simulado", icone: "⏱️" },
   { valor: "revisao", label: "Revisão", icone: "🔁" },
+  { valor: "leitura", label: "Leitura (só marcar como feita)", icone: "📖" },
+  { valor: "redacao", label: "Redação", icone: "✍️" },
   { valor: "livre", label: "Livre", icone: "☕" }
 ];
 

@@ -146,6 +146,23 @@ export default async function AlunoHomePage() {
   // cronograma, que antes só listava missões do Copiloto.
   const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje).slice(0, 7) : [];
 
+  // Aulas/PDFs/links pendurados nos dias do cronograma. Todo o material
+  // importado vive aqui (trilha_dias.itens), não em conteudos_biblioteca —
+  // por isso a aba Estudos anunciava "0 aulas" mesmo com o cronograma
+  // cheio. Só a URL e o título viajam pro cliente; o resto do dia não.
+  const TIPOS_BIBLIOTECA = new Set(["aula", "pdf", "link"]);
+  const conteudosTrilha = todosDias.flatMap((d) =>
+    (d.itens ?? [])
+      .filter((i) => TIPOS_BIBLIOTECA.has(i.tipo) && !!i.url)
+      .map((i) => ({
+        tipo: i.tipo as "aula" | "pdf" | "link",
+        ref_id: i.ref_id,
+        url: i.url as string,
+        titulo: i.titulo,
+        materia: i.materia
+      }))
+  );
+
   const creditosDoPlano = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
   const ajustesManuais = (ajustesCreditosData ?? []).reduce((soma: number, a: any) => soma + a.quantidade, 0);
   const creditosTotais = creditosDoPlano + ajustesManuais;
@@ -197,6 +214,7 @@ export default async function AlunoHomePage() {
         banners: (bannersData as Banner[]) ?? [],
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
+        conteudosTrilha,
         estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
         baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
         nomeVestibular,
