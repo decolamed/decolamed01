@@ -1,6 +1,7 @@
 import { requirePreviewAluno } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getNomeVestibular } from "@/lib/site/marca";
+import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
 
@@ -81,7 +82,7 @@ export default async function PreviewAlunoPage() {
         linksExternos: (linksData as LinkExterno[]) ?? [],
         conteudosTrilha: [],
         estudosBotoes: [],
-        baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
+        baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         nomeVestibular,
         hojeStr: new Date().toISOString().slice(0, 10)
       }}

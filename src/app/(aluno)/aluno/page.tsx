@@ -4,6 +4,7 @@ import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { getNomeVestibular } from "@/lib/site/marca";
+import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "./decola-app";
 import type {
   Questao,
@@ -133,7 +134,7 @@ export default async function AlunoHomePage() {
 
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
   const plano = planoNome && planoNome.toLowerCase().includes("guiado") ? "voo-guiado" : "decolando";
-  const numeroWhatsapp = config?.valor as string | undefined;
+  const numeroWhatsapp = textoConfig(config?.valor);
 
   // Dia de hoje no cronograma (trilha_dias) — base de estudo de TODO aluno,
   // com ou sem Copiloto.
@@ -216,7 +217,7 @@ export default async function AlunoHomePage() {
         linksExternos: (linksData as LinkExterno[]) ?? [],
         conteudosTrilha,
         estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
-        baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
+        baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         nomeVestibular,
         hojeStr
       }}

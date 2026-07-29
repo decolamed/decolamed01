@@ -3,6 +3,7 @@ import { requireAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { verificarAcessoMatricula, type MotivoAcessoBloqueado } from "@/lib/matricula/acesso";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 const TITULOS: Record<MotivoAcessoBloqueado, string> = {
   sem_matricula: "Nenhuma matrícula encontrada",
@@ -32,7 +33,7 @@ export default async function AcessoExpiradoPage() {
     .select("valor")
     .eq("chave", "site.contato.whatsapp")
     .maybeSingle();
-  const numeroWhatsapp = config?.valor as string | undefined;
+  const numeroWhatsapp = textoConfig(config?.valor);
   const motivo = acesso.motivo ?? "expirada";
 
   // Não existe mais catálogo público de planos — renovação/reativação agora

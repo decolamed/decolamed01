@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 // Nome do vestibular/instituição alvo da plataforma. Fica em `configuracoes`
 // (editável em /admin/configuracoes) em vez de escrito no código porque a
@@ -13,7 +14,7 @@ export const VESTIBULAR_PADRAO = "vestibular";
 export async function getNomeVestibular(): Promise<string> {
   const supabase = createClient();
   const { data } = await supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle();
-  const valor = typeof data?.valor === "string" ? data.valor.trim() : "";
+  const valor = textoConfig(data?.valor);
   return valor || VESTIBULAR_PADRAO;
 }
 

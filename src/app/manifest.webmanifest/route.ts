@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 // Manifesto do PWA servido dinamicamente (em vez do antigo
 // public/manifest.json estático) para que o ícone do aplicativo possa ser
@@ -20,7 +21,7 @@ export async function GET() {
   try {
     const supabase = createAdminClient();
     const { data } = await supabase.from("configuracoes").select("valor").eq("chave", "site.marca.icone_url").maybeSingle();
-    if (typeof data?.valor === "string") iconeCustomizado = data.valor.trim();
+    iconeCustomizado = textoConfig(data?.valor);
   } catch (e) {
     // Sem banco disponível o app ainda precisa ser instalável — cai no padrão.
     console.error("Falha ao ler o ícone configurado; usando o padrão:", e);
