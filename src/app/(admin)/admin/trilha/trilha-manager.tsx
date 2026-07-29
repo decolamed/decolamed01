@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Card, PageHeader, Badge } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { PrimaryButton, GhostButton, TextInput, Toast, useToast } from "@/components/admin/interactive";
-import { salvarDiaTrilha, removerDiaTrilha, atualizarTitulosDoDia } from "./actions";
+import { salvarDiaTrilha, removerDiaTrilha, atualizarTitulosDoDia, criarConteudoParaDia } from "./actions";
 import type { TrilhaDia, TrilhaItem, TrilhaItemTipo, ConteudoBiblioteca, LinkExterno, Simulado } from "@/types/database";
 
 const TIPOS: { valor: TrilhaItemTipo; label: string; icone: string }[] = [
@@ -21,6 +22,11 @@ const TIPOS: { valor: TrilhaItemTipo; label: string; icone: string }[] = [
 // Tipos que exigem escolher um conteúdo real cadastrado (aula/pdf/link/
 // simulado por id, questões/flashcards por matéria) — revisão e livre não
 // referenciam nenhum conteúdo, só um título.
+// Tipos que o admin consegue cadastrar sem sair do editor do dia (basta
+// título + link). Simulado/questões/flashcards são módulos inteiros e
+// continuam com atalho para a tela própria.
+const TIPOS_CADASTRAVEIS = new Set<TrilhaItemTipo>(["aula", "pdf", "link"]);
+
 const TIPOS_COM_REFERENCIA = new Set<TrilhaItemTipo>(["aula", "pdf", "link", "questoes", "flashcards", "simulado"]);
 
 // Onde o admin cadastra cada tipo de conteúdo. Sem isso, escolher um tipo
@@ -165,7 +171,13 @@ function DiaEditor({
   const [tipoNovo, setTipoNovo] = useState<TrilhaItemTipo>("aula");
   const [refNovo, setRefNovo] = useState("");
   const [tituloLivre, setTituloLivre] = useState("");
+  const [criando, setCriando] = useState(false);
+  const [novoTitulo, setNovoTitulo] = useState("");
+  const [novoUrl, setNovoUrl] = useState("");
+  const [novaMateria, setNovaMateria] = useState("");
+  const [erroCriar, setErroCriar] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const [buscando, setBuscando] = useState(false);
 
   const aulasGenericas = itens.filter((i) => i.tipo === "aula" && /^Aula \d+$/.test(i.titulo)).length;
@@ -180,6 +192,7 @@ function DiaEditor({
   };
   const opcoes = opcoesPorTipo[tipoNovo] ?? [];
   const precisaReferencia = TIPOS_COM_REFERENCIA.has(tipoNovo);
+  const podeCadastrarAqui = TIPOS_CADASTRAVEIS.has(tipoNovo);
 
   function atualizarItem(i: number, patch: Partial<TrilhaItem>) {
     setItens((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -215,6 +228,25 @@ function DiaEditor({
     }
     if (item) setItens((v) => [...v, item as TrilhaItem]);
     setRefNovo("");
+  }
+
+  // Cadastra o conteúdo e já o anexa ao dia, num passo só.
+  function cadastrarEAnexar() {
+    setErroCriar(null);
+    startTransition(async () => {
+      const r = await criarConteudoParaDia(tipoNovo as "aula" | "pdf" | "link", novoTitulo, novoUrl, novaMateria);
+      if (!r.ok) {
+        setErroCriar(r.erro);
+        return;
+      }
+      setItens((v) => [...v, r.item]);
+      setNovoTitulo("");
+      setNovoUrl("");
+      setNovaMateria("");
+      setCriando(false);
+      // Atualiza os seletores desta tela com o conteúdo recém-criado.
+      router.refresh();
+    });
   }
 
   function salvar() {
@@ -306,13 +338,17 @@ function DiaEditor({
                 </option>
               ))}
             </select>
-            {precisaReferencia && opcoes.length === 0 ? (
+            {precisaReferencia && opcoes.length === 0 && !podeCadastrarAqui ? (
               <a
                 href={ONDE_CADASTRAR[tipoNovo]?.href ?? "/admin"}
                 className="min-w-0 flex-1 rounded-[9px] border border-dashed border-orange/50 bg-orange/5 px-2.5 py-1.5 text-[11px] font-semibold text-orange-dark hover:bg-orange/10"
               >
                 {ONDE_CADASTRAR[tipoNovo]?.texto ?? "Nada cadastrado."} Cadastrar agora →
               </a>
+            ) : precisaReferencia && opcoes.length === 0 ? (
+              <span className="min-w-0 flex-1 rounded-[9px] border border-dashed border-navy-dark/20 px-2.5 py-1.5 text-[11px] font-semibold text-navy-dark/50">
+                {ONDE_CADASTRAR[tipoNovo]?.texto} Use &quot;Cadastrar novo&quot; abaixo.
+              </span>
             ) : precisaReferencia ? (
               <select
                 value={refNovo}
@@ -342,7 +378,53 @@ function DiaEditor({
             >
               + Anexar
             </button>
+            {podeCadastrarAqui && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCriando((v) => !v);
+                  setErroCriar(null);
+                }}
+                className="rounded-[9px] border border-orange/40 px-3 py-1.5 text-[11px] font-extrabold text-orange-dark hover:bg-orange/5"
+              >
+                {criando ? "Cancelar" : "+ Cadastrar novo"}
+              </button>
+            )}
           </div>
+
+          {/* Cadastro do conteúdo sem sair do editor: cria o registro real
+              (conteudos_biblioteca / links_externos) e já anexa ao dia. */}
+          {podeCadastrarAqui && criando && (
+            <div className="space-y-2 rounded-xl border border-orange/30 bg-orange/[0.04] p-3">
+              <p className="text-[11px] font-extrabold uppercase tracking-wide text-orange-dark">
+                Cadastrar {tipoNovo === "aula" ? "aula" : tipoNovo === "pdf" ? "PDF" : "link"} e anexar ao Dia {diaNumero}
+              </p>
+              <TextInput value={novoTitulo} onChange={(e) => setNovoTitulo(e.target.value)} placeholder="Título" />
+              <TextInput
+                value={novoUrl}
+                onChange={(e) => setNovoUrl(e.target.value)}
+                placeholder={tipoNovo === "aula" ? "Link do YouTube" : "https://..."}
+              />
+              {tipoNovo !== "link" && (
+                <input
+                  list={`materias-${diaNumero}`}
+                  value={novaMateria}
+                  onChange={(e) => setNovaMateria(e.target.value)}
+                  placeholder="Matéria"
+                  className="w-full rounded-[10px] border border-navy-dark/15 bg-white px-3 py-2.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+                />
+              )}
+              <datalist id={`materias-${diaNumero}`}>
+                {materias.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+              {erroCriar && <p className="text-[11px] font-bold text-red">{erroCriar}</p>}
+              <PrimaryButton onClick={cadastrarEAnexar} className={pending ? "opacity-60" : ""}>
+                {pending ? "Cadastrando..." : "CADASTRAR E ANEXAR"}
+              </PrimaryButton>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <GhostButton onClick={buscarTitulos} className={buscando ? "opacity-60" : ""}>

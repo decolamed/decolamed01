@@ -99,3 +99,51 @@ export async function atualizarTitulosDoDia(diaNumero: number) {
   revalidatePath("/aluno/cronograma");
   return { ok: !error, atualizados, total: itens.filter((i) => i.tipo === "aula").length };
 }
+
+// Cadastra um conteúdo novo (aula/PDF/link) JÁ no formato de item do
+// cronograma e devolve o item pronto para ser anexado ao dia.
+//
+// Antes, o editor do dia só listava conteúdo que já existisse em outra
+// tela: escolher "Aula" sem nenhuma aula cadastrada deixava o admin num
+// beco sem saída — o tipo era selecionável, mas não havia como anexar o
+// conteúdo em si sem sair da tela, cadastrar em /admin/cursos e voltar.
+// Devolver o item montado (em vez de só criar) mantém o fluxo inteiro
+// dentro do editor, num passo só.
+export async function criarConteudoParaDia(
+  tipo: "aula" | "pdf" | "link",
+  titulo: string,
+  url: string,
+  materia: string
+): Promise<{ ok: true; item: TrilhaItem } | { ok: false; erro: string }> {
+  const admin = await requireAdmin();
+  const supabase = createAdminClient();
+
+  const t = titulo.trim();
+  const u = url.trim();
+  if (!t) return { ok: false, erro: "Informe o título." };
+  if (!u) return { ok: false, erro: "Informe o link." };
+
+  if (tipo === "link") {
+    const { data, error } = await supabase
+      .from("links_externos")
+      .insert({ titulo: t, url: u, ativo: true, criado_por: admin.id })
+      .select("id, titulo, url")
+      .single();
+    if (error || !data) return { ok: false, erro: "Não foi possível cadastrar o link." };
+    revalidatePath(PATH);
+    revalidatePath("/aluno");
+    return { ok: true, item: { tipo: "link", ref_id: data.id, url: data.url, materia: null, titulo: data.titulo } };
+  }
+
+  const m = materia.trim();
+  if (!m) return { ok: false, erro: "Informe a matéria." };
+  const { data, error } = await supabase
+    .from("conteudos_biblioteca")
+    .insert({ tipo, titulo: t, materia: m, url: u, duracao_minutos: 0, ativo: true, criado_por: admin.id })
+    .select("id, titulo, url, materia")
+    .single();
+  if (error || !data) return { ok: false, erro: "Não foi possível cadastrar o conteúdo." };
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
+  return { ok: true, item: { tipo, ref_id: data.id, url: data.url, materia: data.materia, titulo: data.titulo } };
+}
