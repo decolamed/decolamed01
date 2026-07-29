@@ -44,9 +44,19 @@ export function BannersManager({ banners: inicial }: { banners: any[] }) {
     });
   }
 
+  // A troca é otimista (a lista muda antes da resposta do servidor). Se a
+  // gravação falhar, desfaz e avisa — senão o admin ficaria com uma tela
+  // dizendo "inativo" enquanto o item continua aparecendo para o aluno.
   function alternar(id: string, ativo: boolean) {
-    setBanners((a) => a.map((x) => x.id === id ? { ...x, ativo: !ativo } : x));
-    startTransition(() => alternarAtivoBanner(id, ativo));
+    const trocar = (valor: boolean) => setBanners((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
+    trocar(!ativo);
+    startTransition(async () => {
+      const res = await alternarAtivoBanner(id, ativo);
+      if (!res.ok) {
+        trocar(ativo);
+        show("Não foi possível atualizar o banner. Tente de novo.");
+      }
+    });
   }
 
   function excluir(id: string) {

@@ -114,6 +114,9 @@ interface DecolaAppProps {
 // cronograma, copiloto) já lê e grava nas tabelas reais do Supabase — ver
 // aluno/page.tsx e ARCHITECTURE.md.
 export default class DecolaApp extends React.Component<DecolaAppProps, any> {
+  // Timer do aviso de rodapé (ver avisar()/avisoToast()); limpo no unmount
+  // pra não chamar setState num componente já desmontado.
+  timerAviso: ReturnType<typeof setTimeout> | null = null;
   state: any = {
     theme: null,
     // Primeiro acesso (ou aluno que nunca preencheu o "de voo"): entra
@@ -204,6 +207,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     calMonth: 0,
     calSel: null,
     errOpen: false,
+    aviso: null as string | null,
     errSent: false,
     errText: "",
     errCat: "Questão",
@@ -303,6 +307,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     clearInterval(this._b);
     window.removeEventListener("beforeinstallprompt", this._bip);
     window.removeEventListener("appinstalled", this._installed);
+    if (this.timerAviso) clearTimeout(this.timerAviso);
     this.destruirPlayerYoutube();
   }
   // Chamado pelo botão "Instalar aplicativo" do tutorial. Se o navegador
@@ -945,10 +950,27 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   toggleMissao(id: string) {
     const atual = this.state.missoesLocal.find((m: AlunoMissao) => m.id === id);
     const concluida = !atual?.concluida;
-    this.setState({
-      missoesLocal: this.state.missoesLocal.map((m: AlunoMissao) => (m.id === id ? { ...m, concluida } : m))
-    });
-    if (!this.props.demoMode) marcarMissaoConcluida(id, concluida).catch((e) => console.error("Falha ao marcar missão:", e));
+    const trocar = (valor: boolean) =>
+      this.setState((s: any) => ({
+        missoesLocal: s.missoesLocal.map((m: AlunoMissao) => (m.id === id ? { ...m, concluida: valor } : m))
+      }));
+    trocar(concluida);
+    if (this.props.demoMode) return;
+    // Desfaz a marcação otimista se o servidor recusar. Antes só um erro de
+    // rede era capturado: uma falha de gravação que retorna normalmente
+    // (RLS, linha inexistente) deixava o item riscado na tela e intacto no
+    // banco, e o aluno só descobria ao recarregar.
+    marcarMissaoConcluida(id, concluida)
+      .then((res) => {
+        if (!res?.ok) {
+          trocar(!concluida);
+          this.avisar("Não foi possível salvar essa missão. Verifique sua conexão e tente de novo.");
+        }
+      })
+      .catch(() => {
+        trocar(!concluida);
+        this.avisar("Não foi possível salvar essa missão. Verifique sua conexão e tente de novo.");
+      });
   }
   qList() {
     const qs = this.data().questions;
@@ -1160,7 +1182,22 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         }
       }
     }));
-    if (!this.props.demoMode) alternarConclusaoItem(chave, nova).catch((e) => console.error("Falha ao alternar conclusão do item:", e));
+    if (this.props.demoMode) return;
+    const desfazer = () =>
+      this.setState((s: any) => ({
+        progressoLocal: { ...s.progressoLocal, [chave]: atual ?? undefined }
+      }));
+    alternarConclusaoItem(chave, nova)
+      .then((res) => {
+        if (!res?.ok) {
+          desfazer();
+          this.avisar("Não foi possível salvar esse item. Verifique sua conexão e tente de novo.");
+        }
+      })
+      .catch(() => {
+        desfazer();
+        this.avisar("Não foi possível salvar esse item. Verifique sua conexão e tente de novo.");
+      });
   }
   // Vídeo mais recente que o aluno começou e ainda não terminou — alimenta
   // o card "Continuar assistindo" em Estudos.
@@ -1552,6 +1589,48 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   comKey(chave: string, elemento: any) {
     return elemento ? React.createElement(React.Fragment, { key: chave }, elemento) : null;
   }
+  // Aviso curto no rodapé. O app inteiro fazia atualização otimista sem ter
+  // como dizer "não deu certo": quando uma gravação falhava, a tela ficava
+  // mostrando o estado novo e o banco continuava com o antigo. Agora as
+  // ações desfazem a mudança e chamam avisar() — mensagem em português, sem
+  // detalhe técnico, como no resto do app.
+  avisar(mensagem: string) {
+    this.setState({ aviso: mensagem });
+    if (this.timerAviso) clearTimeout(this.timerAviso);
+    this.timerAviso = setTimeout(() => this.setState({ aviso: null }), 4000);
+  }
+  avisoToast() {
+    if (!this.state.aviso) return null;
+    const { C, h, I } = this.ui();
+    return h(
+      "div",
+      {
+        onClick: () => this.setState({ aviso: null }),
+        style: {
+          position: "absolute",
+          left: 16,
+          right: 16,
+          bottom: 92,
+          zIndex: 70,
+          display: "flex",
+          gap: 9,
+          alignItems: "center",
+          padding: "12px 14px",
+          borderRadius: 14,
+          background: C.dark ? "#3a1a17" : "#fff1ef",
+          border: "1.5px solid " + C.red,
+          color: C.txt,
+          fontSize: 12.5,
+          fontWeight: 700,
+          lineHeight: 1.45,
+          boxShadow: "0 10px 26px rgba(2,15,26,.28)",
+          cursor: "pointer",
+          animation: "dm-in .25s ease both"
+        }
+      },
+      [I("alert", 16, C.red), h("span", { key: "t", style: { flex: 1 } }, this.state.aviso)]
+    );
+  }
   screenWrap(children: any, opts: any = {}) {
     const { C, h } = this.ui();
     if (this.wide()) {
@@ -1561,7 +1640,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           this.comKey("demo", this.demoBanner()),
           h("div", { key: "c", style: { display: "flex", flexDirection: "column", maxWidth: 640, margin: "0 auto", padding: "26px 32px 60px" } }, children),
           this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
-          this.state.errOpen ? this.comKey("err", this.errSheet()) : null
+          this.state.errOpen ? this.comKey("err", this.errSheet()) : null,
+          this.comKey("aviso", this.avisoToast())
         ])
       ]);
     }
@@ -1571,7 +1651,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       opts.noTab ? null : this.comKey("tabbar", this.tabbar()),
       this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
       this.state.moreOpen && !opts.noTab ? this.comKey("more", this.moreSheet()) : null,
-      this.state.errOpen ? this.comKey("err", this.errSheet()) : null
+      this.state.errOpen ? this.comKey("err", this.errSheet()) : null,
+      this.comKey("aviso", this.avisoToast())
     ]);
   }
 

@@ -24,9 +24,19 @@ export function PdfsManager({ pdfs: inicial }: { pdfs: any[] }) {
     });
   }
 
+  // A troca é otimista (a lista muda antes da resposta do servidor). Se a
+  // gravação falhar, desfaz e avisa — senão o admin ficaria com uma tela
+  // dizendo "inativo" enquanto o item continua aparecendo para o aluno.
   function alternar(id: string, ativo: boolean) {
-    setPdfs((a) => a.map((x) => x.id === id ? { ...x, ativo: !ativo } : x));
-    startTransition(() => alternarAtivoConteudo(id, ativo));
+    const trocar = (valor: boolean) => setPdfs((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
+    trocar(!ativo);
+    startTransition(async () => {
+      const res = await alternarAtivoConteudo(id, ativo);
+      if (!res.ok) {
+        trocar(ativo);
+        show("Não foi possível atualizar o material. Tente de novo.");
+      }
+    });
   }
 
   function excluir(id: string) {

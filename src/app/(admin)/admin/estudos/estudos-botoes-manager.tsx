@@ -40,9 +40,19 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
     });
   }
 
+  // A troca é otimista (a lista muda antes da resposta do servidor). Se a
+  // gravação falhar, desfaz e avisa — senão o admin ficaria com uma tela
+  // dizendo "inativo" enquanto o item continua aparecendo para o aluno.
   function alternar(id: string, ativo: boolean) {
-    setBotoes((a) => a.map((x) => (x.id === id ? { ...x, ativo: !ativo } : x)));
-    startTransition(() => alternarAtivoBotaoEstudos(id, ativo));
+    const trocar = (valor: boolean) => setBotoes((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
+    trocar(!ativo);
+    startTransition(async () => {
+      const res = await alternarAtivoBotaoEstudos(id, ativo);
+      if (!res.ok) {
+        trocar(ativo);
+        show("Não foi possível atualizar o botão. Tente de novo.");
+      }
+    });
   }
 
   function excluir(id: string) {

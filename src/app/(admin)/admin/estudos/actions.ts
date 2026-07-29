@@ -19,12 +19,17 @@ export async function criarBotaoEstudos(titulo: string, icone: string, tipo: Est
   return { ok: true as const };
 }
 
+// Devolve o resultado (em vez de void) porque a tela faz atualização
+// otimista: ela já pinta o novo estado antes da resposta. Sem saber que a
+// gravação falhou, o admin via o botão trocar, acreditava ter desativado o
+// item e só descobria o contrário no próximo carregamento da página.
 export async function alternarAtivoBotaoEstudos(id: string, ativo: boolean) {
   await requireAdmin();
   const supabase = createAdminClient();
-  await supabase.from("estudos_botoes").update({ ativo: !ativo }).eq("id", id);
+  const { error } = await supabase.from("estudos_botoes").update({ ativo: !ativo }).eq("id", id);
   revalidatePath(PATH);
   revalidatePath("/aluno");
+  return { ok: !error };
 }
 
 export async function excluirBotaoEstudos(id: string) {
