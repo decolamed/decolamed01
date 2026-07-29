@@ -10,5 +10,12 @@ export async function marcarNotificacaoLida(notificacaoId: string) {
   // ("notificacoes_update_own"), mas deixa explícito o que a query faz e
   // evita depender só da política de segurança pra impedir marcar
   // notificação de outra pessoa como lida.
-  await supabase.from("notificacoes").update({ lida: true }).eq("id", notificacaoId).eq("usuario_id", profile.id);
+  const { error } = await supabase
+    .from("notificacoes")
+    .update({ lida: true })
+    .eq("id", notificacaoId)
+    .eq("usuario_id", profile.id);
+  // A tela marca como lida antes da resposta; sem saber que falhou, o
+  // contador de não lidas passaria a mentir até o próximo carregamento.
+  return { ok: !error };
 }

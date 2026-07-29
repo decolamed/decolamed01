@@ -58,12 +58,18 @@ export async function criarConteudosEmLote(
   return { sucesso, falha };
 }
 
+// Devolve o resultado (em vez de void) porque a tela faz atualização
+// otimista: ela já pinta o novo estado antes da resposta. Sem saber que a
+// gravação falhou, o admin via o botão trocar, acreditava ter desativado o
+// item e só descobria o contrário no próximo carregamento da página.
 export async function alternarAtivoConteudo(id: string, ativo: boolean) {
   await requireAdmin();
   const supabase = createAdminClient();
-  await supabase.from("conteudos_biblioteca").update({ ativo: !ativo }).eq("id", id);
+  const { error } = await supabase.from("conteudos_biblioteca").update({ ativo: !ativo }).eq("id", id);
   revalidatePath(`/admin/cursos`);
   revalidatePath(`/admin/pdfs`);
+  revalidatePath("/aluno");
+  return { ok: !error };
 }
 
 export async function excluirConteudo(id: string) {

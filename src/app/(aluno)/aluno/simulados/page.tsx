@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { getNomeVestibular, VESTIBULAR_PADRAO } from "@/lib/site/marca";
 import type { Simulado, SimuladoTentativa } from "@/types/database";
 
 export default async function AlunoSimuladosPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
+  const nomeVestibular = await getNomeVestibular();
+  const rotuloCurtoNota = nomeVestibular === VESTIBULAR_PADRAO ? "Nota ponderada" : `Nota ${nomeVestibular}`;
 
   const { data: simuladosData } = await supabase.from("simulados").select("*").eq("ativo", true);
   const simulados = (simuladosData as Simulado[]) ?? [];
@@ -79,7 +82,7 @@ export default async function AlunoSimuladosPage() {
                       </span>
                       {(t as any).nota_facape != null && (
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-navy-dark/40">
-                          Nota FACAPE
+                          {rotuloCurtoNota}
                         </p>
                       )}
                     </div>

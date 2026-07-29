@@ -3,7 +3,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { CheckinCard } from "@/components/aluno/checkin-card";
-import { marcarRecomendacao } from "@/app/(aluno)/aluno/copiloto/actions";
+import { marcarRecomendacaoViaForm } from "@/app/(aluno)/aluno/copiloto/actions";
 
 const ICONE_TIPO: Record<string, string> = {
   questoes: "🎯",
@@ -72,8 +72,8 @@ export default async function AlunoCopilotoPage() {
             <CheckinCard key={c.id} checkin={c} />
           ))}
           {recs.map((r: any) => {
-            const marcarConcluida = marcarRecomendacao.bind(null, r.id, "concluida" as const);
-            const descartar = marcarRecomendacao.bind(null, r.id, "descartada" as const);
+            const marcarConcluida = marcarRecomendacaoViaForm.bind(null, r.id, "concluida" as const);
+            const descartar = marcarRecomendacaoViaForm.bind(null, r.id, "descartada" as const);
             const linkAtividade = LINK_TIPO[r.tipo]?.(r.materia) ?? "/aluno";
             const icone = ICONE_TIPO[r.tipo] ?? "📌";
             const corPrioridade = r.prioridade >= 3 ? "border-red-400 bg-red-50" : r.prioridade >= 2 ? "border-orange bg-orange/5" : "border-navy/10 bg-white";

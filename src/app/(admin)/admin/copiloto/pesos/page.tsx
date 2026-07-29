@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { getNomeVestibular } from "@/lib/site/marca";
 
 const PATH = "/admin/copiloto/pesos";
 
@@ -47,23 +48,66 @@ export default async function AdminPesosPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("materias_peso")
-    .select("*")
-    .order("pontos_potenciais", { ascending: false })
-    .order("materia");
+  const [{ data }, nomeVestibular, { data: materiasQuestoes }, { data: materiasFlashcards }] = await Promise.all([
+    supabase.from("materias_peso").select("*").order("pontos_potenciais", { ascending: false }).order("materia"),
+    getNomeVestibular(),
+    supabase.from("questoes").select("materia").eq("ativo", true),
+    supabase.from("flashcards").select("materia").eq("ativo", true)
+  ]);
 
   // Calcula relevância pra exibir na tabela
   const lista = data ?? [];
   const totalPontos = lista.reduce((s: number, p: any) => s + (p.peso * p.qtd_questoes), 0);
 
+  // O peso só é aplicado quando o nome bate EXATAMENTE com `questoes.materia`
+  // (ver weights()/priorities() em decola-app.tsx e motor.ts). Um nome
+  // agrupado como "Inglês/Espanhol" nunca casa com questões marcadas como
+  // "Inglês" ou "Espanhol": elas caem no peso 1 padrão e mexer aqui não tem
+  // efeito nenhum. Como a falha é silenciosa, ela precisa ficar visível.
+  const materiasDoConteudo = new Set<string>();
+  [materiasQuestoes, materiasFlashcards].forEach((linhas) =>
+    (linhas ?? []).forEach((l: { materia: string | null }) => {
+      const m = (l.materia ?? "").trim();
+      if (m) materiasDoConteudo.add(m);
+    })
+  );
+  const pesosSemConteudo = lista.map((p: any) => p.materia).filter((m: string) => !materiasDoConteudo.has(m));
+  const conteudoSemPeso = Array.from(materiasDoConteudo).filter(
+    (m) => !lista.some((p: any) => p.materia === m)
+  );
+
   return (
     <div>
       <PageHeader
-        title="Pesos e Questões — FACAPE"
+        title={`Pesos e Questões — ${nomeVestibular}`}
         subtitle="Edite o peso e a quantidade de questões de cada matéria. O algoritmo do Copiloto recalcula a relevância automaticamente."
       />
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+
+      {(pesosSemConteudo.length > 0 || conteudoSemPeso.length > 0) && (
+        <Card className="mb-4 border-l-4 border-red-500">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red-700">Nomes que não se encontram</p>
+          <p className="mt-1 text-sm text-navy-dark/70">
+            O peso só vale quando o nome da matéria aqui é <strong>idêntico</strong> ao usado nas questões e
+            flashcards. Onde os nomes divergem, o peso é ignorado e a matéria conta como peso 1 — sem nenhum
+            aviso para o aluno.
+          </p>
+          {pesosSemConteudo.length > 0 && (
+            <p className="mt-2 text-sm text-navy-dark">
+              <strong>Com peso, mas sem conteúdo com esse nome:</strong> {pesosSemConteudo.join(", ")}
+            </p>
+          )}
+          {conteudoSemPeso.length > 0 && (
+            <p className="mt-1 text-sm text-navy-dark">
+              <strong>Com conteúdo, mas sem peso cadastrado:</strong> {conteudoSemPeso.join(", ")}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-navy-dark/60">
+            Para resolver: use aqui exatamente os mesmos nomes do banco de questões (um peso por matéria), ou
+            renomeie a matéria nas questões.
+          </p>
+        </Card>
+      )}
 
       {/* Explicação da fórmula */}
       <Card className="mb-4 border-l-4 border-orange">

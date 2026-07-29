@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 export async function SiteFooter() {
   const supabase = createClient();
@@ -8,8 +9,8 @@ export async function SiteFooter() {
     .select("chave, valor")
     .in("chave", ["site.contato.whatsapp", "site.contato.instagram"]);
 
-  const whatsapp = (config?.find((c) => c.chave === "site.contato.whatsapp")?.valor as string) ?? "";
-  const instagram = (config?.find((c) => c.chave === "site.contato.instagram")?.valor as string) ?? "decolamed";
+  const whatsapp = textoConfig(config?.find((c) => c.chave === "site.contato.whatsapp")?.valor);
+  const instagram = textoConfig(config?.find((c) => c.chave === "site.contato.instagram")?.valor) || "decolamed";
 
   return (
     <footer className="border-t border-white/10 bg-navy-dark px-5 py-10 text-white/70">

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { getNomeVestibular, rotuloNotaPonderada } from "@/lib/site/marca";
 import { SimuladoRunner } from "@/components/aluno/simulado-runner";
 import type { Simulado } from "@/types/database";
 
@@ -35,12 +36,16 @@ export default async function AlunoSimuladoPage({ params }: { params: { id: stri
     );
   }
 
+  const nomeVestibular = await getNomeVestibular();
+
   return (
     <SimuladoRunner
       simuladoId={params.id}
       titulo={(simulado as Simulado).titulo}
       tempoMinutos={(simulado as Simulado).tempo_minutos}
       questoes={questoes}
+      rotuloNota={rotuloNotaPonderada(nomeVestibular)}
+      nomeVestibular={nomeVestibular}
     />
   );
 }

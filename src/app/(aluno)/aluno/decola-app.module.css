@@ -115,3 +115,64 @@
     opacity: 1;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   PLAYER DE VIDEOAULA
+
+   Em retrato: barra de navegação ACIMA do vídeo (nada sobreposto à imagem),
+   vídeo em 16:9 exato — sem corte e sem distorção — e as ações logo abaixo.
+
+   Em paisagem no celular (tela baixa), o vídeo assume a tela inteira, como
+   no YouTube: a barra e o painel de informações somem e o `.shell` perde o
+   limite de 480px, que é o que impedia o vídeo de ocupar toda a largura.
+   O recorte por altura evita pegar tablet/desktop, que continuam com o
+   layout normal mesmo estando "em paisagem".
+--------------------------------------------------------------------------- */
+.playerShell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  overflow: hidden;
+}
+
+.playerVideo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  flex-shrink: 0;
+}
+
+.playerVideo iframe,
+.playerVideo > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  /* Anula o "cartão" (margens, cantos arredondados e sombra) que as regras
+     de min-width acima aplicam — em paisagem o celular tem largura de
+     tablet, e sem isso o vídeo ficava emoldurado em vez de ocupar a tela. */
+  .shell:has(.playerShell) {
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 100dvh;
+  }
+  .playerBar,
+  .playerInfo,
+  .playerProgresso {
+    display: none !important;
+  }
+  .playerVideo {
+    aspect-ratio: auto;
+    flex: 1;
+    height: 100dvh;
+  }
+}

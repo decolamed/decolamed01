@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { gerarTextoGemini } from "@/lib/gemini/client";
 import { produzirMaterialSobDemanda } from "@/lib/copiloto/producao-sob-demanda";
+import { hojeISO, somarDias, diaDaSemana, diffDias } from "@/lib/site/data";
 
 // ============================================================================
 // COPILOTO DECOLA MED — Motor Adaptativo v5 (cenários completos)
@@ -119,8 +120,9 @@ const DURACAO_TIPO: Record<string, number> = { questoes:40, flashcards:25, revis
 async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   const supabase = createAdminClient();
 
-  const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
+  // Fuso da plataforma, não UTC — ver lib/site/data.ts. Em UTC, o motor
+  // datava as missões geradas à noite no dia seguinte.
+  const hojeStr = hojeISO();
 
   const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR] = await Promise.all([
     supabase.from("respostas_aluno")
@@ -189,7 +191,10 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   let diasRestantes: number | null = null;
 
   if (briefing?.dataProva) {
-    diasRestantes = Math.ceil((new Date(briefing.dataProva).getTime() - hoje.getTime()) / 86400000);
+    // Dias até a prova contados de calendário a calendário, no fuso da
+    // plataforma — antes a conta misturava o instante atual em UTC com a
+    // meia-noite da data da prova, e virava um dia a menos toda noite.
+    diasRestantes = diffDias(hojeISO(), briefing.dataProva.slice(0, 10));
 
     const { data: missoes } = await supabase
       .from("aluno_missoes")
@@ -210,9 +215,8 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
       const diasEstudaSet = new Set(briefing.diasEstuda);
       const datasComMissao = new Set(missoesAgendadas.map((m) => m.data));
       for (let d = 1; d <= diasRestantes; d++) {
-        const data = new Date(hoje); data.setDate(hoje.getDate() + d);
-        const iso = data.toISOString().slice(0, 10);
-        if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[data.getDay()])) continue;
+        const iso = somarDias(hojeISO(), d);
+        if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
         if (!datasComMissao.has(iso)) diasLivres++;
       }
     }
@@ -321,9 +325,8 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   const diasLivresOrdenados: string[] = [];
   const dr = dados.diasRestantes ?? 0;
   for (let d = 1; d <= dr; d++) {
-    const data = new Date(hoje); data.setDate(hoje.getDate() + d);
-    const iso = data.toISOString().slice(0, 10);
-    if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[data.getDay()])) continue;
+    const iso = somarDias(hojeISO(), d);
+    if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
     if (!datasComMissao.has(iso)) diasLivresOrdenados.push(iso);
   }
 
@@ -530,7 +533,7 @@ async function compactarCronograma(dados: DadosAluno): Promise<number> {
     .eq("aluno_id", dados.alunoId)
     .eq("origem", "admin")
     .eq("concluida", false)
-    .gte("data", new Date().toISOString().slice(0, 10));
+    .gte("data", hojeISO());
 
   if ((missoesRestantes?.length ?? 0) > 0) {
     // Reordenar: colocar as de maior GEN nos primeiros dias
@@ -710,10 +713,8 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
           .update({ horas_por_dia_semana: horasNovas, horas_por_dia_fim_semana: horasNovas })
           .eq("aluno_id", dados.alunoId);
         // Adicionar missões extras nos próximos 7 dias que tiverem espaço
-        const hoje = new Date();
         for (let d = 1; d <= 7; d++) {
-          const data = new Date(hoje); data.setDate(hoje.getDate() + d);
-          const iso = data.toISOString().slice(0, 10);
+          const iso = somarDias(hojeISO(), d);
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
           const minUsados = missoesNoDia.reduce((s, m) => s + m.duracao_estimada_min, 0);
           const maxMin = horasNovas * 60;
@@ -722,7 +723,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
               .sort((a, b) => genMateria(b, dados) - genMateria(a, dados))[0];
             if (mat) {
               await supabase.from("aluno_missoes").insert({
-                aluno_id: dados.alunoId, data,
+                aluno_id: dados.alunoId, data: iso,
                 titulo: `Questões · ${mat} — Copiloto (+tempo)`,
                 materia: mat, assunto: null, tipo: "questoes",
                 duracao_minutos: 40, duracao_estimada_min: 40,
@@ -738,11 +739,9 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
       if (acao_tipo === "focar_materia") {
         const mat = acao_payload.materia as string;
         const dias = Number(acao_payload.dias ?? 7);
-        const hoje = new Date();
         let adicionados = 0;
         for (let d = 1; d <= Math.min(dias, dados.diasRestantes ?? dias) && adicionados < 5; d++) {
-          const data = new Date(hoje); data.setDate(hoje.getDate() + d);
-          const iso = data.toISOString().slice(0, 10);
+          const iso = somarDias(hojeISO(), d);
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
           const jaTemMateria = missoesNoDia.some((m) => m.materia === mat);
           if (jaTemMateria) continue;
@@ -750,7 +749,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
           const maxMin = (dados.briefing?.horasPorDia ?? 2) * 60;
           if (minUsados + 40 <= maxMin) {
             await supabase.from("aluno_missoes").insert({
-              aluno_id: dados.alunoId, data,
+              aluno_id: dados.alunoId, data: iso,
               titulo: `Questões · ${mat} — Copiloto (foco)`,
               materia: mat, assunto: null, tipo: "questoes",
               duracao_minutos: 40, duracao_estimada_min: 40,

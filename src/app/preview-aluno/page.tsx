@@ -1,5 +1,9 @@
 import { requirePreviewAluno } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getNomeVestibular } from "@/lib/site/marca";
+import { getMateriasDoConteudo } from "@/lib/site/materias";
+import { hojeISO } from "@/lib/site/data";
+import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
 
@@ -15,6 +19,7 @@ const POOL_LIMITE = 60;
 export default async function PreviewAlunoPage() {
   const profile = await requirePreviewAluno();
   const supabase = createAdminClient();
+  const [nomeVestibular, materias] = await Promise.all([getNomeVestibular(), getMateriasDoConteudo()]);
 
   const [
     { data: questoesData },
@@ -66,6 +71,7 @@ export default async function PreviewAlunoPage() {
         pesos: [],
         missoes: [],
         trilhaHoje: null,
+        trilhaProximos: [],
         progressoItens: {},
         recomendacoes: [],
         notificacoes: [],
@@ -76,9 +82,12 @@ export default async function PreviewAlunoPage() {
         banners: (bannersData as Banner[]) ?? [],
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
+        conteudosTrilha: [],
         estudosBotoes: [],
-        baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
-        hojeStr: new Date().toISOString().slice(0, 10)
+        baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
+        nomeVestibular,
+        materias,
+        hojeStr: hojeISO()
       }}
     />
   );

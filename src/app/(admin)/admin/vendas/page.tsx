@@ -1,8 +1,16 @@
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { AdminAlert } from "@/components/admin/admin-alert";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
-import type { Pagamento } from "@/types/database";
+import { marcarComissaoPaga } from "./actions";
+import type { Pagamento, ComissaoParceiro } from "@/types/database";
+
+const COMISSAO_STATUS_LABEL: Record<string, string> = {
+  pendente: "Pendente",
+  paga: "Paga",
+  cancelada: "Cancelada"
+};
 
 const STATUS_LABEL: Record<string, string> = {
   pendente: "Pendente",
@@ -19,6 +27,8 @@ const ORIGEM_LABEL: Record<string, string> = {
 };
 
 interface VendasSearchParams {
+  erro?: string;
+  sucesso?: string;
   de?: string;
   ate?: string;
   planoId?: string;
@@ -44,14 +54,30 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   if (searchParams.cupom) query = query.eq("cupom_codigo", searchParams.cupom.trim().toUpperCase());
   if (searchParams.parceiroId) query = query.eq("parceiro_id", searchParams.parceiroId);
 
-  const [{ data: vendas }, { data: planos }, { data: cupons }, { data: parceiros }] = await Promise.all([
+  const [{ data: vendas }, { data: planos }, { data: cupons }, { data: parceiros }, { data: comissoesData }] = await Promise.all([
     query,
     supabase.from("planos").select("id, nome").order("ordem"),
     supabase.from("cupons").select("codigo").order("codigo"),
-    supabase.from("profiles").select("id, nome").eq("role", "parceiro").order("nome")
+    supabase.from("profiles").select("id, nome").eq("role", "parceiro").order("nome"),
+    // As comissões são geradas por trigger a partir de `pagamentos` (migração
+    // 005) e ficam em "pendente" até alguém dar baixa — o que só é possível
+    // por aqui. Não segue os filtros da tabela de vendas de propósito: é um
+    // controle de contas a pagar, e esconder uma comissão pendente porque o
+    // filtro de data está estreito seria justamente o jeito de esquecê-la.
+    supabase
+      .from("comissoes_parceiro")
+      .select("*, parceiro:parceiro_id(nome), pagamento:pagamento_id(comprador_nome, plano_nome, data_pagamento)")
+      .order("created_at", { ascending: false })
   ]);
 
   const lista = (vendas as Pagamento[]) ?? [];
+  type ComissaoComRelacoes = ComissaoParceiro & {
+    parceiro: { nome: string } | null;
+    pagamento: { comprador_nome: string | null; plano_nome: string | null; data_pagamento: string | null } | null;
+  };
+  const comissoes = (comissoesData as ComissaoComRelacoes[] | null) ?? [];
+  const comissoesPendentes = comissoes.filter((c) => c.status === "pendente");
+  const totalComissaoPendenteCentavos = comissoesPendentes.reduce((soma, c) => soma + c.valor_centavos, 0);
 
   // Resumo. "Vendido"/"líquido" considera apenas vendas confirmadas ou
   // recebidas — pendentes, estornadas e falhas não entram no faturamento.
@@ -75,6 +101,7 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-navy-dark">Vendas</h1>
+      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
@@ -195,6 +222,64 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
             {lista.length === 0 && (
               <tr>
                 <td colSpan={10} className="p-6 text-center text-navy-dark/50">Nenhuma venda encontrada para este filtro.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="mt-10 font-display text-xl font-bold text-navy-dark">Comissões de parceiros</h2>
+      <p className="mt-1 text-sm text-navy-dark/60">
+        Geradas automaticamente quando uma venda com cupom de parceiro é confirmada.{" "}
+        {comissoesPendentes.length > 0
+          ? `${comissoesPendentes.length} pendente${comissoesPendentes.length !== 1 ? "s" : ""} · ${formatarCentavos(totalComissaoPendenteCentavos)} a pagar.`
+          : "Nenhuma comissão pendente."}
+      </p>
+
+      <div className="mt-4 overflow-x-auto rounded-2xl bg-white shadow">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-navy/5 text-navy-dark/70">
+            <tr>
+              <th className="p-3">Parceiro</th>
+              <th className="p-3">Venda</th>
+              <th className="p-3">Valor</th>
+              <th className="p-3">Status</th>
+              <th className="p-3">Pago em</th>
+              <th className="p-3">Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comissoes.map((c) => (
+              <tr key={c.id} className="border-t">
+                <td className="p-3">{c.parceiro?.nome ?? "—"}</td>
+                <td className="p-3">
+                  <p>{c.pagamento?.comprador_nome ?? "—"}</p>
+                  <p className="text-xs text-navy-dark/50">
+                    {c.pagamento?.plano_nome ?? "—"} · {formatarData(c.pagamento?.data_pagamento ?? null)}
+                  </p>
+                </td>
+                <td className="p-3 font-semibold">{formatarCentavos(c.valor_centavos)}</td>
+                <td className="p-3">{COMISSAO_STATUS_LABEL[c.status] ?? c.status}</td>
+                <td className="p-3">{c.data_pagamento ? formatarData(c.data_pagamento) : "—"}</td>
+                <td className="p-3">
+                  {c.status === "pendente" ? (
+                    <form action={marcarComissaoPaga}>
+                      <input type="hidden" name="id" value={c.id} />
+                      <SubmitButton pendingText="..." className="rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white">
+                        Marcar como paga
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <span className="text-navy-dark/40">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {comissoes.length === 0 && (
+              <tr>
+                <td colSpan={6} className="p-6 text-center text-navy-dark/50">
+                  Nenhuma comissão gerada ainda. Elas aparecem aqui quando uma venda com cupom de parceiro é confirmada.
+                </td>
               </tr>
             )}
           </tbody>

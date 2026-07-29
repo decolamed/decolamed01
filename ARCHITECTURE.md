@@ -136,6 +136,35 @@ $$ language sql stable security definer;
 - **`historico_admin`**: só admin (dado de auditoria sensível).
 - **`pre_cadastros` / `permissoes`**: só admin (dados sensíveis antes de virar usuário, ou não precisam ser públicos).
 - **`notificacoes`**: usuário vê/edita as próprias; admin vê/gerencia todas.
+- **`aluno_progresso_itens`**: cada aluno vê/grava só as próprias linhas; admin vê tudo.
+- **`estudos_botoes`**: admin gerencia; leitura só para `authenticated` (e só dos ativos).
+
+#### Avisos do linter do Supabase que ficam de propósito
+
+Rodar `get_advisors` no projeto sempre devolve estes três — são decisões
+conscientes, não pendências:
+
+- **`ranking_geral` é uma view `SECURITY DEFINER`.** É o que permite ao
+  ranking enxergar todos os alunos, coisa que a RLS de `profiles` e
+  `respostas_aluno` impede por definição. A view expõe só `aluno_id`,
+  `nome` e `xp` de quem tem `role = 'aluno'` — sem e-mail, telefone ou
+  matrícula — e o `SELECT` está revogado de `anon` (migração 038), então
+  só quem está logado enxerga o ranking.
+- **`is_admin()` / `is_parceiro()` / `is_professor()` podem ser executadas
+  por `anon` e `authenticated`.** Isso é **obrigatório**: expressões de
+  policy de RLS são avaliadas com os privilégios de quem consulta, então
+  revogar o `EXECUTE` derrubaria todas as policies que usam essas funções.
+  Também não vazam nada — não recebem argumento e só respondem sobre o
+  próprio chamador (um `anon` recebe `false`).
+- **Muitas policies permissivas por tabela** (aviso de performance). Vem do
+  padrão "uma policy de admin + uma policy do dono" repetido em ~30
+  tabelas. Unificá-las exigiria reescrever a RLS inteira em troca de um
+  ganho que, nesta escala, não se mede.
+
+O que **não** é decisão de projeto e depende do painel do Supabase:
+**Leaked Password Protection** está desligada (Authentication → Policies).
+Ligar faz o Supabase recusar senhas que já vazaram, conferindo no
+HaveIBeenPwned — vale ativar antes de abrir para os alunos.
 
 ### Migrações
 

@@ -86,9 +86,19 @@ export function AtividadeRunner({
           <div className="mt-4 flex flex-col items-center gap-1">
             <p className="font-display text-5xl font-extrabold text-orange">{resultado.nota}%</p>
             {resultado.pesoFacape !== 1 && (
-              <p className="text-xs text-navy-dark/50">Peso {resultado.pesoFacape}x na nota FACAPE</p>
+              <p className="text-xs text-navy-dark/50">Peso {resultado.pesoFacape}x na nota ponderada</p>
             )}
           </div>
+          {/* A correção é feita em memória, então o resultado aparece mesmo
+              quando a gravação da tentativa falha. Sem este aviso, o aluno
+              acharia que ficou tudo registrado e só notaria a ausência
+              depois, ao procurar a atividade no histórico. */}
+          {!resultado.salvo && (
+            <p className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+              Não conseguimos salvar esta tentativa. O resultado acima está correto, mas não entrou no seu
+              histórico nem no seu XP — refaça a atividade quando a conexão estiver estável.
+            </p>
+          )}
           <Link href="/aluno/atividades" className="mt-6 inline-block rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5">
             Voltar às atividades
           </Link>

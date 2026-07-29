@@ -17,12 +17,19 @@ export function SimuladoRunner({
   simuladoId,
   titulo,
   tempoMinutos,
-  questoes
+  questoes,
+  rotuloNota,
+  nomeVestibular
 }: {
   simuladoId: string;
   titulo: string;
   tempoMinutos: number;
   questoes: QuestaoSimulado[];
+  // Rótulo da nota ponderada e nome do vestibular vêm de
+  // /admin/configuracoes (ver lib/site/marca.ts) — nada de instituição
+  // escrita no código.
+  rotuloNota: string;
+  nomeVestibular: string;
 }) {
   const [indice, setIndice] = useState(0);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
@@ -72,9 +79,9 @@ export function SimuladoRunner({
             Você acertou {resultado.acertos} de {resultado.total} questões.
           </p>
 
-          {/* Nota FACAPE (ponderada) em destaque + nota simples menor */}
+          {/* Nota ponderada em destaque + nota simples menor */}
           <div className="mt-4 flex flex-col items-center gap-1">
-            <p className="text-xs font-bold uppercase tracking-widest text-navy-dark/50">Nota FACAPE (ponderada)</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-navy-dark/50">{rotuloNota}</p>
             <p className="font-display text-5xl font-extrabold text-orange">{resultado.notaFacape}%</p>
             <p className="text-xs text-navy-dark/50">
               Acerto simples: {resultado.nota}% · calculado pelos pesos oficiais das disciplinas
@@ -102,7 +109,7 @@ export function SimuladoRunner({
           <div className="mt-6 rounded-2xl bg-white p-6 shadow">
             <h2 className="font-display font-bold text-navy-dark">Desempenho por matéria</h2>
             <p className="mt-1 text-xs text-navy-dark/50">
-              Ordenado do maior peso na FACAPE pro menor.
+              {`Ordenado do maior peso ${nomeVestibular === "vestibular" ? "no vestibular" : `na ${nomeVestibular}`} pro menor.`}
             </p>
             <div className="mt-4 space-y-3">
               {[...resultado.desempenhoPorMateria]

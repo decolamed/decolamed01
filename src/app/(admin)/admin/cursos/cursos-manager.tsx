@@ -82,9 +82,19 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
     });
   }
 
+  // A troca é otimista (a lista muda antes da resposta do servidor). Se a
+  // gravação falhar, desfaz e avisa — senão o admin ficaria com uma tela
+  // dizendo "inativo" enquanto o item continua aparecendo para o aluno.
   function alternar(id: string, ativo: boolean) {
-    setAulas((a) => a.map((x) => x.id === id ? { ...x, ativo: !ativo } : x));
-    startTransition(() => alternarAtivoConteudo(id, ativo));
+    const trocar = (valor: boolean) => setAulas((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
+    trocar(!ativo);
+    startTransition(async () => {
+      const res = await alternarAtivoConteudo(id, ativo);
+      if (!res.ok) {
+        trocar(ativo);
+        show("Não foi possível atualizar a aula. Tente de novo.");
+      }
+    });
   }
 
   function excluir(id: string) {

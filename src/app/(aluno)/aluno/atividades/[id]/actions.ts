@@ -20,6 +20,11 @@ export interface ResultadoAtividade {
   nota: number; // 0-100
   pesoFacape: number;
   gabarito: ItemGabaritoAtividade[];
+  // false quando a tentativa não pôde ser gravada. A correção acontece em
+  // memória, então o aluno vê o resultado de qualquer jeito — mas sem este
+  // sinal ele não teria como saber que a atividade não entrou no histórico
+  // nem no XP, e só perceberia depois, procurando o registro que sumiu.
+  salvo: boolean;
 }
 
 // Corrige uma única questão na hora — usada só quando gabarito_modo é
@@ -82,7 +87,7 @@ export async function submeterAtividade(atividadeId: string, respostas: Record<s
   const nota = total > 0 ? Math.round((acertos / total) * 1000) / 10 : 0;
   const pesoFacape = Number(atividade?.peso_facape ?? 1);
 
-  await supabase.from("atividade_tentativas").insert({
+  const { error: erroTentativa } = await supabase.from("atividade_tentativas").insert({
     aluno_id: profile.id,
     atividade_id: atividadeId,
     respostas,
@@ -92,6 +97,6 @@ export async function submeterAtividade(atividadeId: string, respostas: Record<s
     finalizado_em: new Date().toISOString()
   });
 
-  const resultado: ResultadoAtividade = { acertos, total, nota, pesoFacape, gabarito };
+  const resultado: ResultadoAtividade = { acertos, total, nota, pesoFacape, gabarito, salvo: !erroTentativa };
   return resultado;
 }

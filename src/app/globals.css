@@ -21,6 +21,25 @@ body {
   outline-offset: 2px;
 }
 
+/* Tela de abertura (ver src/components/splash-screen.tsx).
+
+   O fade é feito por animação CSS, e não só por estado do React, de
+   propósito: a splash é uma camada fixa em tela cheia com z-index alto,
+   então se o bundle do cliente não hidratar (rede ruim, chunk que falha,
+   erro durante a hidratação) um fade dependente de JS deixaria o usuário
+   preso numa tela azul que não responde a nada. Com a animação em CSS ela
+   sai sozinha mesmo sem JS; o React só desmonta o nó depois. */
+@keyframes dm-splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.dm-splash {
+  animation: dm-splash-out 400ms ease 900ms forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;

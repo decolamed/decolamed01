@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { getNomeVestibular } from "@/lib/site/marca";
+import { getMateriasDoConteudo } from "@/lib/site/materias";
+import { hojeISO, somarDias } from "@/lib/site/data";
+import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "./decola-app";
 import type {
   Questao,
@@ -32,16 +36,18 @@ export default async function AlunoHomePage() {
   // para quem tem matrícula ativa e dentro do prazo.
   const profile = await requireAcessoAluno();
   const supabase = createClient();
-  const temCopiloto = await alunoTemCopiloto(profile.id);
+  const [temCopiloto, nomeVestibular, materias] = await Promise.all([
+    alunoTemCopiloto(profile.id),
+    getNomeVestibular(),
+    getMateriasDoConteudo()
+  ]);
 
-  const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
-  const fim7 = new Date(hoje);
-  fim7.setDate(fim7.getDate() + 7);
-  const fim7Str = fim7.toISOString().slice(0, 10);
-  const inicio7 = new Date(hoje);
-  inicio7.setDate(inicio7.getDate() - 7);
-  const inicio7Str = inicio7.toISOString().slice(0, 10);
+  // Datas no fuso da plataforma (lib/site/data.ts). Em UTC, das 21h à
+  // meia-noite `hojeStr` já era o dia seguinte e as missões de hoje
+  // desapareciam da tela do aluno.
+  const hojeStr = hojeISO();
+  const fim7Str = somarDias(hojeStr, 7);
+  const inicio7Str = somarDias(hojeStr, -7);
 
   const [
     { data: matricula },
@@ -95,11 +101,9 @@ export default async function AlunoHomePage() {
     supabase.from("respostas_aluno").select("correta, created_at, questoes(materia, assunto)").eq("aluno_id", profile.id),
     supabase.from("flashcard_revisoes").select("lembrou, created_at").eq("aluno_id", profile.id),
     supabase.from("materias_peso").select("*"),
-    // Sempre busca as duas fontes (não só quando tem Copiloto): um aluno
-    // sem o plano PRO também pode ter missões individuais, se o admin
-    // cadastrar algumas manualmente em /admin/usuarios/[id] — decola-app.tsx
-    // usa o cronograma (trilha_dias) só quando esta lista vier vazia e o
-    // aluno não tiver Copiloto.
+    // Missões individuais (Copiloto ou cadastradas à mão pelo admin em
+    // /admin/usuarios/[id]). Elas SOMAM ao cronograma (trilha_dias), não o
+    // substituem — ver scrPlano() em decola-app.tsx.
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -134,15 +138,35 @@ export default async function AlunoHomePage() {
 
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
   const plano = planoNome && planoNome.toLowerCase().includes("guiado") ? "voo-guiado" : "decolando";
-  const numeroWhatsapp = config?.valor as string | undefined;
+  const numeroWhatsapp = textoConfig(config?.valor);
 
-  // Dia de hoje no cronograma (trilha_dias) — usado como plano de estudos
-  // de quem não tem Copiloto nem missões avulsas cadastradas pelo admin.
+  // Dia de hoje no cronograma (trilha_dias) — base de estudo de TODO aluno,
+  // com ou sem Copiloto.
   const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
   const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
-  const trilhaHoje = diaTrilhaHoje
-    ? ((trilhaDiasData as TrilhaDia[]) ?? []).find((d) => d.dia_numero === diaTrilhaHoje) ?? null
-    : null;
+  const todosDias = ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero);
+  const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
+  // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
+  // Client Component) — alimenta a seção "Próximos dias" da tela de
+  // cronograma, que antes só listava missões do Copiloto.
+  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje).slice(0, 7) : [];
+
+  // Aulas/PDFs/links pendurados nos dias do cronograma. Todo o material
+  // importado vive aqui (trilha_dias.itens), não em conteudos_biblioteca —
+  // por isso a aba Estudos anunciava "0 aulas" mesmo com o cronograma
+  // cheio. Só a URL e o título viajam pro cliente; o resto do dia não.
+  const TIPOS_BIBLIOTECA = new Set(["aula", "pdf", "link"]);
+  const conteudosTrilha = todosDias.flatMap((d) =>
+    (d.itens ?? [])
+      .filter((i) => TIPOS_BIBLIOTECA.has(i.tipo) && !!i.url)
+      .map((i) => ({
+        tipo: i.tipo as "aula" | "pdf" | "link",
+        ref_id: i.ref_id,
+        url: i.url as string,
+        titulo: i.titulo,
+        materia: i.materia
+      }))
+  );
 
   const creditosDoPlano = (perfilComPlano as any)?.planos?.creditos_redacao ?? 0;
   const ajustesManuais = (ajustesCreditosData ?? []).reduce((soma: number, a: any) => soma + a.quantidade, 0);
@@ -178,6 +202,7 @@ export default async function AlunoHomePage() {
         pesos: (pesosData as MateriaPeso[]) ?? [],
         missoes: (missoesData as AlunoMissao[]) ?? [],
         trilhaHoje,
+        trilhaProximos,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;
@@ -194,8 +219,11 @@ export default async function AlunoHomePage() {
         banners: (bannersData as Banner[]) ?? [],
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
+        conteudosTrilha,
         estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
-        baseTemasUrl: (baseTemasData?.valor as string | undefined) || null,
+        baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
+        nomeVestibular,
+        materias,
         hojeStr
       }}
     />

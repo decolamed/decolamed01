@@ -48,9 +48,15 @@ export async function adicionarMissaoIndividual(alunoId: string, formData: FormD
 export async function excluirMissaoIndividual(alunoId: string, missaoId: string) {
   await requireAdmin();
   const supabase = createAdminClient();
-  await supabase.from("aluno_missoes").delete().eq("id", missaoId).eq("aluno_id", alunoId);
+  const { error } = await supabase.from("aluno_missoes").delete().eq("id", missaoId).eq("aluno_id", alunoId);
   revalidatePath(`/admin/usuarios/${alunoId}`);
   revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
+  // Antes o redirect anunciava "Missão removida." mesmo quando a exclusão
+  // falhava: o admin lia a confirmação e a missão continuava na lista logo
+  // abaixo, no mesmo carregamento.
+  if (error) {
+    redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível remover a missão.")}`);
+  }
   redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Missão removida.")}`);
 }

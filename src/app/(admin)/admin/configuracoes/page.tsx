@@ -7,8 +7,11 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { pingAsaas } from "@/lib/asaas/client";
 import { getGeminiApiKey, salvarGeminiApiKey, removerGeminiApiKey, gerarTextoGemini } from "@/lib/gemini/client";
 import { getYoutubeApiKey, salvarYoutubeApiKey, removerYoutubeApiKey } from "@/lib/youtube/client";
+import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
 
 const CAMPOS = [
+  { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
+  { chave: "site.marca.icone_url", label: "Ícone do aplicativo (URL de um PNG quadrado, 512x512, fundo opaco) — vazio usa o padrão" },
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
   { chave: "site.contato.instagram", label: "Usuário do Instagram" },
   { chave: "redacao.whatsapp", label: "WhatsApp da professora de redação (somente números, com DDI)" },
@@ -25,7 +28,7 @@ async function salvarConfiguracoes(formData: FormData) {
       supabase
         .from("configuracoes")
         .upsert(
-          { chave: campo.chave, valor: JSON.stringify(String(formData.get(campo.chave) ?? "")) },
+          { chave: campo.chave, valor: valorConfig(String(formData.get(campo.chave) ?? "")) },
           { onConflict: "chave" }
         )
     )
@@ -140,7 +143,7 @@ export default async function AdminConfiguracoesPage({
   const supabase = createAdminClient();
   const { data: config } = await supabase.from("configuracoes").select("chave, valor");
 
-  const valores = new Map((config ?? []).map((c) => [c.chave, c.valor as string]));
+  const valores = new Map((config ?? []).map((c) => [c.chave, textoConfig(c.valor)]));
   const geminiConfigurada = Boolean(await getGeminiApiKey());
   const geminiViaEnv = Boolean(process.env.GEMINI_API_KEY);
   const youtubeConfigurada = Boolean(await getYoutubeApiKey());

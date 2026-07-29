@@ -1,3 +1,4 @@
+import { hojeISO, somarDias } from "@/lib/site/data";
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
@@ -59,114 +60,96 @@ function montarHrefTrilha(item: TrilhaItem): string | null {
   }
 }
 
+// O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive de
+// quem tem Copiloto. As missões individuais (aluno_missoes) são um ACRÉSCIMO
+// adaptativo em cima dele, não um substituto.
+//
+// Esta página ramificava em "tem Copiloto? → só missões" e nunca chegava ao
+// cronograma: um aluno do plano PRO sem missões geradas via "sem cronograma"
+// mesmo com os dias todos preenchidos pelo admin. Agora as duas fontes são
+// buscadas sempre e renderizadas juntas.
 export default async function AlunoCronogramaPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
   const temCopiloto = await alunoTemCopiloto(profile.id);
 
-  const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
-  const fim = new Date(hoje);
-  fim.setDate(fim.getDate() + 7);
-  const fimStr = fim.toISOString().slice(0, 10);
+  // Fuso da plataforma, não UTC — ver lib/site/data.ts.
+  const hojeStr = hojeISO();
+  const fimStr = somarDias(hojeStr, 7);
 
-  const { data: missoesBrutas } = await supabase
-    .from("aluno_missoes")
-    .select("*")
-    .eq("aluno_id", profile.id)
-    .gte("data", hojeStr)
-    .lte("data", fimStr)
-    .order("data")
-    .order("prioridade", { ascending: false });
+  const [{ data: missoesBrutas }, { data: matricula }] = await Promise.all([
+    supabase
+      .from("aluno_missoes")
+      .select("*")
+      .eq("aluno_id", profile.id)
+      .gte("data", hojeStr)
+      .lte("data", fimStr)
+      .order("data")
+      .order("prioridade", { ascending: false }),
+    supabase
+      .from("matriculas")
+      .select("acesso_liberado_em")
+      .eq("aluno_id", profile.id)
+      .not("acesso_liberado_em", "is", null)
+      .order("acesso_liberado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  ]);
 
-  // ==== MODO MISSÕES (Copiloto adaptativo OU missões avulsas do admin) ====
-  if (temCopiloto || (missoesBrutas && missoesBrutas.length > 0)) {
-    const idsAula = (missoesBrutas ?? []).filter((m) => m.tipo === "aula" && m.ref_id).map((m) => m.ref_id as string);
-    const urlsAula = new Map<string, string>();
-    if (idsAula.length > 0) {
-      const { data: conteudos } = await supabase.from("conteudos_biblioteca").select("id, url").in("id", idsAula);
-      (conteudos ?? []).forEach((c) => c.url && urlsAula.set(c.id, c.url));
-    }
-
-    const missoes = (missoesBrutas ?? []).map((m) => ({
-      ...m,
-      href: montarHref(m.tipo, m.ref_id, urlsAula)
-    }));
-
-    return (
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-display text-2xl font-bold text-navy-dark">🗓️ Meu voo</h1>
-          <Link href="/aluno" className="text-sm text-navy hover:underline">
-            ← Voltar ao painel
-          </Link>
-        </div>
-
-        <div
-          className="mt-4 rounded-2xl p-4 text-sm text-white"
-          style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
-        >
-          <p className="font-display font-bold">✈️ {temCopiloto ? "Rota adaptativa do Copiloto" : "Programa de estudos"}</p>
-          <p className="mt-1 text-white/70">
-            {temCopiloto
-              ? "Seu cronograma é ajustado conforme seu desempenho. Quando o Copiloto identifica algo que vale revisar, ele adiciona missões extras aqui automaticamente."
-              : "Sua trilha de estudos, dia a dia, a partir do seu início na plataforma."}
-          </p>
-        </div>
-
-        <CronogramaCopiloto missoes={missoes} hojeStr={hojeStr} />
-      </div>
-    );
+  // ---- Dia de hoje no cronograma ----
+  let diaAtual: number | null = null;
+  let diaTrilha: TrilhaDia | null = null;
+  if (matricula?.acesso_liberado_em) {
+    diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
+    const { data } = await supabase.from("trilha_dias").select("*").eq("dia_numero", diaAtual).maybeSingle();
+    diaTrilha = (data as TrilhaDia) ?? null;
   }
 
-  // ==== MODO TRILHA (programa padrão de 40 dias, sem Copiloto) ====
-  // Dia 1 = data em que o acesso do aluno foi liberado (matriculas.acesso_liberado_em).
-  const { data: matricula } = await supabase
-    .from("matriculas")
-    .select("acesso_liberado_em")
-    .eq("aluno_id", profile.id)
-    .not("acesso_liberado_em", "is", null)
-    .order("acesso_liberado_em", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // ---- Missões individuais (Copiloto ou cadastradas pelo admin) ----
+  const idsAula = (missoesBrutas ?? []).filter((m) => m.tipo === "aula" && m.ref_id).map((m) => m.ref_id as string);
+  const urlsAula = new Map<string, string>();
+  if (idsAula.length > 0) {
+    const { data: conteudos } = await supabase.from("conteudos_biblioteca").select("id, url").in("id", idsAula);
+    (conteudos ?? []).forEach((c) => c.url && urlsAula.set(c.id, c.url));
+  }
+  const missoes = (missoesBrutas ?? []).map((m) => ({ ...m, href: montarHref(m.tipo, m.ref_id, urlsAula) }));
 
-  if (matricula?.acesso_liberado_em) {
-    const diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
-    const { data: diaTrilha } = await supabase
-      .from("trilha_dias")
-      .select("*")
-      .eq("dia_numero", diaAtual)
-      .maybeSingle();
+  const semNada = !diaTrilha && missoes.length === 0;
 
-    if (diaTrilha) {
-      const itens = (diaTrilha as TrilhaDia).itens;
-      return (
-        <div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-bold text-navy-dark">🗓️ Minha trilha</h1>
-            <Link href="/aluno" className="text-sm text-navy hover:underline">
-              ← Voltar ao painel
-            </Link>
-          </div>
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-bold text-navy-dark">🗓️ Cronograma</h1>
+        <Link href="/aluno" className="text-sm text-navy hover:underline">
+          ← Voltar ao painel
+        </Link>
+      </div>
 
-          <div
-            className="mt-4 rounded-2xl p-4 text-sm text-white"
-            style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
-          >
-            <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
-              Dia {diaAtual}
-            </p>
-            <p className="mt-1 font-display font-bold">{(diaTrilha as TrilhaDia).titulo}</p>
-            <p className="mt-1 text-white/70">Sua trilha de estudos, dia a dia, a partir do seu início na plataforma.</p>
+      {temCopiloto && (
+        <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
+          <p className="font-display font-bold">✈️ Rota adaptativa do Copiloto</p>
+          <p className="mt-1 text-white/70">
+            Você segue o cronograma abaixo e, quando o Copiloto identifica algo que vale revisar, ele acrescenta missões extras
+            automaticamente.
+          </p>
+        </div>
+      )}
+
+      {diaTrilha && (
+        <>
+          <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
+            <p className="text-xs font-semibold uppercase tracking-widest text-white/60">Dia {diaAtual}</p>
+            <p className="mt-1 font-display font-bold">{diaTrilha.titulo}</p>
+            <p className="mt-1 text-white/70">Sua missão de hoje, a partir do seu início na plataforma.</p>
           </div>
 
           <div className="mt-4 space-y-2">
-            {itens.length === 0 && (
+            {diaTrilha.itens.length === 0 && (
               <p className="rounded-2xl bg-white p-4 text-sm text-navy-dark/60 shadow">
                 Dia livre — aproveite pra revisar o que quiser.
               </p>
             )}
-            {itens.map((item, i) => {
+            {diaTrilha.itens.map((item, i) => {
               const href = montarHrefTrilha(item);
               const conteudo = (
                 <>
@@ -195,30 +178,24 @@ export default async function AlunoCronogramaPage() {
               );
             })}
           </div>
+        </>
+      )}
+
+      {missoes.length > 0 && (
+        <>
+          <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">
+            {temCopiloto ? "Missões extras do Copiloto" : "Missões individuais"}
+          </h2>
+          <CronogramaCopiloto missoes={missoes} hojeStr={hojeStr} />
+        </>
+      )}
+
+      {semNada && (
+        <div className="mt-6 rounded-2xl p-6 text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
+          <p className="font-display text-xl font-bold">Sem missão cadastrada hoje</p>
+          <p className="mt-2 text-sm text-white/70">Fale com a coordenação ou aguarde o próximo dia do cronograma.</p>
         </div>
-      );
-    }
-  }
-
-  // ==== MODO SEM MISSÃO CADASTRADA ====
-  // Sem Copiloto, sem missões avulsas e sem dia cadastrado no cronograma
-  // (trilha_dias) para o dia atual do aluno — nada a mostrar além do aviso.
-  return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">🗓️ Cronograma</h1>
-        <Link href="/aluno" className="text-sm text-navy hover:underline">
-          ← Voltar ao painel
-        </Link>
-      </div>
-
-      <div
-        className="mt-6 rounded-2xl p-6 text-white"
-        style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
-      >
-        <p className="mt-1 font-display text-xl font-bold">Sem missão cadastrada hoje</p>
-        <p className="mt-2 text-sm text-white/70">Fale com a coordenação ou aguarde o próximo dia do cronograma.</p>
-      </div>
+      )}
     </div>
   );
 }

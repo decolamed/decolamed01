@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { getNomeVestibular, rotuloNotaPonderada } from "@/lib/site/marca";
 import { MetadadosForm } from "./metadados-form";
 import type { Questao, Atividade } from "@/types/database";
 
@@ -50,6 +51,7 @@ export default async function EditarAtividadePage({
   const questoes = (todasQuestoes as Questao[]) ?? [];
 
   const { data: jaSelecionadas } = await supabase.from("atividade_questoes").select("questao_id").eq("atividade_id", params.id);
+  const rotuloNota = rotuloNotaPonderada(await getNomeVestibular());
   const idsJaSelecionados = new Set((jaSelecionadas ?? []).map((q: any) => q.questao_id));
 
   const salvarComId = salvarQuestoesDaAtividade.bind(null, params.id);
@@ -68,7 +70,7 @@ export default async function EditarAtividadePage({
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.4fr]">
-        <MetadadosForm atividade={a} />
+        <MetadadosForm atividade={a} rotuloNota={rotuloNota} />
 
         <div>
           <p className="mb-2 text-sm font-semibold text-navy-dark/70">

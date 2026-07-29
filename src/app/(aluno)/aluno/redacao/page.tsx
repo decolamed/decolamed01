@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 const PASSOS = [
   { icone: "✏️", titulo: "1. Escolha um tema", desc: "Acesse a Base de Temas (link abaixo) ou os materiais de Estudos." },
@@ -29,8 +30,8 @@ export default async function AlunoRedacaoPage() {
   const creditosDisponiveis = Math.max(0, creditosTotais - totalConsumidos);
 
   const mapaConfig = new Map((configs ?? []).map((c: any) => [c.chave, c.valor]));
-  const numeroWhatsapp = mapaConfig.get("redacao.whatsapp") as string | undefined;
-  const baseTemasUrl = mapaConfig.get("redacao.base_temas_url") as string | undefined;
+  const numeroWhatsapp = textoConfig(mapaConfig.get("redacao.whatsapp"));
+  const baseTemasUrl = textoConfig(mapaConfig.get("redacao.base_temas_url")) || undefined;
 
   const linkWhatsapp = montarLinkWhatsapp(
     numeroWhatsapp,
