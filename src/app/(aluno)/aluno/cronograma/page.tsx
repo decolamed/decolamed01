@@ -4,6 +4,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { resolverCronograma } from "@/lib/trilha/resolver";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
@@ -108,7 +109,9 @@ export default async function AlunoCronogramaPage() {
     // "cronograma completo", e mostrar um dia só era o que dava a impressão
     // de que os demais tinham sumido. O painel do admin é a fonte oficial.
     const { data } = await supabase.from("trilha_dias").select("*").order("dia_numero");
-    todosOsDias = (data as TrilhaDia[]) ?? [];
+    // Idem à tela do painel: o cronograma lê o conteúdo atual da biblioteca,
+    // não a cópia gravada no jsonb quando o dia foi montado.
+    todosOsDias = await resolverCronograma((data as TrilhaDia[]) ?? []);
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
 

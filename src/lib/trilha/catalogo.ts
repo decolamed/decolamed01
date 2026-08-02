@@ -138,11 +138,16 @@ export function buscarNoCatalogo(
  * clique do aluno deixaria de abrir alguma coisa.
  */
 export function itemDoCatalogo(item: ItemCatalogo, tituloExibido?: string): TrilhaItem {
+  const titulo = (tituloExibido ?? "").trim() || item.titulo;
   return {
     tipo: item.tipo,
     ref_id: item.ref_id,
     url: item.url,
     materia: item.materia,
-    titulo: (tituloExibido ?? "").trim() || item.titulo
+    titulo,
+    // Só marca como personalizado se realmente ficou diferente. Se o admin
+    // não mexeu no campo, o item continua herdando o título do conteúdo — e
+    // acompanha automaticamente qualquer correção feita em "Cursos e Aulas".
+    ...(titulo !== item.titulo ? { titulo_custom: true } : {})
   };
 }

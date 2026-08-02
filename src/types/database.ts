@@ -332,6 +332,12 @@ export interface TrilhaItem {
   url: string | null;
   materia: string | null;
   titulo: string;
+  // O admin renomeou este item só para exibição (ex.: "Bagagem Essencial —
+  // Livro 1" mostrado como "Resumo do Livro 1"). Sem essa marca não há como
+  // distinguir um título personalizado de uma cópia desatualizada do título
+  // do conteúdo — e o cronograma continuaria mostrando o nome antigo depois
+  // que o admin corrigisse a aula em "Cursos e Aulas". Ver lib/trilha/resolver.
+  titulo_custom?: boolean;
 }
 
 export interface TrilhaDia {

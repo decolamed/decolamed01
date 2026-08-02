@@ -1,10 +1,11 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextArea, TextInput, FieldLabel } from "@/components/admin/interactive";
 import { buscarInfoYoutube, type AulaYoutubeInfo } from "@/lib/importacao/youtube";
-import { criarConteudo, criarConteudosEmLote, atualizarConteudo, alternarAtivoConteudo, excluirConteudo } from "./actions";
+import { criarConteudo, criarConteudosEmLote, atualizarConteudo, alternarAtivoConteudo, excluirConteudo, atualizarTitulosGenericos } from "./actions";
+import { normalizar } from "@/lib/trilha/catalogo";
 
 interface AulaYoutubePrevia extends AulaYoutubeInfo {
   materiaEditada: string;
@@ -22,6 +23,15 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   const [duracao, setDuracao] = useState("30");
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
+
+  // Busca e filtros. Com 253 aulas migradas do cronograma, rolar a lista
+  // agrupada por matéria deixou de ser uma forma viável de achar uma aula.
+  const [busca, setBusca] = useState("");
+  const [filtroMateria, setFiltroMateria] = useState("");
+  const [filtroAssunto, setFiltroAssunto] = useState("");
+
+  const [corrigindoTitulos, setCorrigindoTitulos] = useState(false);
+  const [progressoTitulos, setProgressoTitulos] = useState("");
 
   const [importando, setImportando] = useState(false);
   const [links, setLinks] = useState("");
@@ -71,6 +81,33 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
       setImportando(false);
     } finally {
       setSalvandoLote(false);
+    }
+  }
+
+  // Chama a ação repetidamente porque cada rodada corrige um lote — ver o
+  // comentário em atualizarTitulosGenericos(). O router.refresh no fim traz
+  // os títulos novos; até lá o progresso vai aparecendo na tela.
+  async function corrigirTitulos() {
+    setCorrigindoTitulos(true);
+    let total = 0;
+    let falhas = 0;
+    try {
+      for (let volta = 0; volta < 40; volta++) {
+        const r = await atualizarTitulosGenericos(25).catch(() => null);
+        if (!r || !r.ok) { show("Não foi possível buscar os títulos agora."); break; }
+        total += r.atualizados;
+        falhas += r.semTitulo;
+        setProgressoTitulos(`${total} corrigido(s)${r.restantes ? ` · ${r.restantes} restantes` : ""}`);
+        // Nem só "restantes === 0" encerra: se um lote inteiro falhar
+        // (vídeo removido, rede fora), insistir repetiria o mesmo erro para
+        // sempre em vez de parar e informar.
+        if (r.restantes === 0 || r.atualizados === 0) break;
+      }
+      show(`${total} título(s) atualizado(s)${falhas ? ` · ${falhas} sem título disponível` : ""}.`);
+      if (total > 0) window.location.reload();
+    } finally {
+      setCorrigindoTitulos(false);
+      setProgressoTitulos("");
     }
   }
 
@@ -135,12 +172,49 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   }
 
   const materias = Array.from(new Set(aulas.map((a) => a.materia))).sort();
+  // Aulas que vieram da importação com nome de posição em vez de nome de
+  // conteúdo. Enquanto existirem, a busca por assunto não acha nada.
+  const genericas = aulas.filter((a) => /^Aula \d+$/.test(a.titulo)).length;
+  // Assuntos disponíveis acompanham a matéria escolhida — oferecer assunto de
+  // Química com Biologia filtrada só produziria combinações vazias.
+  const assuntos = Array.from(
+    new Set(
+      aulas
+        .filter((a) => !filtroMateria || a.materia === filtroMateria)
+        .map((a) => a.assunto)
+        .filter(Boolean)
+    )
+  ).sort() as string[];
+
+  const aulasFiltradas = useMemo(() => {
+    const termos = normalizar(busca).split(/\s+/).filter(Boolean);
+    return aulas.filter((a) => {
+      if (filtroMateria && a.materia !== filtroMateria) return false;
+      if (filtroAssunto && a.assunto !== filtroAssunto) return false;
+      if (termos.length === 0) return true;
+      // Título, matéria, assunto e URL — quem procura por "mitose" e quem
+      // cola um link do YouTube para conferir se já está cadastrado precisam
+      // dos dois caminhos.
+      const alvo = normalizar([a.titulo, a.materia, a.assunto ?? "", a.url ?? ""].join(" "));
+      return termos.every((t) => alvo.includes(t));
+    });
+  }, [aulas, busca, filtroMateria, filtroAssunto]);
+
+  const materiasVisiveis = Array.from(new Set(aulasFiltradas.map((a) => a.materia))).sort();
+  const filtrando = Boolean(busca.trim() || filtroMateria || filtroAssunto);
 
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Cursos & Aulas" subtitle="Videoaulas cadastradas na Biblioteca — usadas pelo Cronograma e pelo Copiloto" />
-        <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar do YouTube"}</GhostButton>
+        <div className="flex flex-wrap gap-2">
+          {genericas > 0 && (
+            <GhostButton onClick={corrigirTitulos} className={corrigindoTitulos ? "opacity-60" : ""}>
+              {corrigindoTitulos ? progressoTitulos || "Buscando títulos…" : `🔎 Corrigir ${genericas} título(s) genérico(s)`}
+            </GhostButton>
+          )}
+          <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar do YouTube"}</GhostButton>
+        </div>
       </div>
 
       {importando && (
@@ -216,11 +290,62 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
         </Card>
 
         <Card className="!p-0 sm:!px-[18px]">
+          <div className="sticky top-0 z-10 -mx-[18px] space-y-2 border-b border-navy-dark/10 bg-white px-[18px] py-3">
+            <div className="flex items-center gap-2 rounded-[10px] border border-navy-dark/15 px-2.5 py-2">
+              <Icon name="search" size={14} className="shrink-0 text-navy-dark/40" />
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar por título, assunto, matéria ou link"
+                className="min-w-0 flex-1 text-xs font-semibold text-navy-dark outline-none"
+              />
+              {busca && (
+                <button type="button" onClick={() => setBusca("")} className="shrink-0 text-navy-dark/40 hover:text-navy-dark" title="Limpar">
+                  <Icon name="x" size={12} />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <select
+                value={filtroMateria}
+                onChange={(e) => { setFiltroMateria(e.target.value); setFiltroAssunto(""); }}
+                className="rounded-[9px] border border-navy-dark/15 px-2 py-1.5 text-[11px] font-bold text-navy-dark"
+              >
+                <option value="">Todas as matérias</option>
+                {materias.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select
+                value={filtroAssunto}
+                onChange={(e) => setFiltroAssunto(e.target.value)}
+                disabled={assuntos.length === 0}
+                className="rounded-[9px] border border-navy-dark/15 px-2 py-1.5 text-[11px] font-bold text-navy-dark disabled:opacity-40"
+              >
+                <option value="">Todos os assuntos</option>
+                {assuntos.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+              {filtrando && (
+                <button
+                  type="button"
+                  onClick={() => { setBusca(""); setFiltroMateria(""); setFiltroAssunto(""); }}
+                  className="rounded-[9px] border border-navy-dark/15 px-2.5 py-1.5 text-[11px] font-extrabold text-navy-dark/60"
+                >
+                  Limpar filtros
+                </button>
+              )}
+              <span className="ml-auto text-[11px] font-bold text-navy-dark/45">
+                {aulasFiltradas.length} de {aulas.length}
+              </span>
+            </div>
+          </div>
+
           {aulas.length === 0 && <p className="py-6 text-center text-sm text-navy-dark/50">Nenhuma aula cadastrada ainda.</p>}
-          {materias.map((mat) => (
+          {aulas.length > 0 && aulasFiltradas.length === 0 && (
+            <p className="py-6 text-center text-sm text-navy-dark/50">Nenhuma aula corresponde à busca.</p>
+          )}
+          {materiasVisiveis.map((mat) => (
             <div key={mat}>
               <p className="mt-3 px-0 text-[10px] font-extrabold uppercase tracking-widest text-navy-dark/40">{mat}</p>
-              {aulas.filter((a) => a.materia === mat).map((a, i, arr) => (
+              {aulasFiltradas.filter((a) => a.materia === mat).map((a, i, arr) => (
                 <div key={a.id} className={`flex flex-wrap items-center gap-3 py-3 ${i < arr.length - 1 ? "border-b border-navy-dark/10" : ""}`}>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-navy/10 text-navy-dark">
                     <Icon name="video" size={16} />

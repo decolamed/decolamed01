@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { TrilhaManager } from "./trilha-manager";
 import { PAGINAS_INTERNAS, type ItemCatalogo } from "@/lib/trilha/catalogo";
+import { resolverDias } from "@/lib/trilha/resolver";
 import type { TrilhaDia, ConteudoBiblioteca, LinkExterno, Simulado } from "@/types/database";
 
 export default async function AdminTrilhaPage() {
@@ -148,9 +149,15 @@ export default async function AdminTrilhaPage() {
     });
   });
 
+  // Os dias mostram o título/URL atuais da biblioteca — assim o editor não
+  // exibe o nome antigo de uma aula que já foi corrigida em Cursos e Aulas.
+  const fonteConteudos = new Map(
+    todosConteudos.map((c) => [c.id, { id: c.id, titulo: c.titulo, url: c.url, materia: c.materia, ativo: c.ativo }])
+  );
+
   return (
     <TrilhaManager
-      dias={(dias as TrilhaDia[]) ?? []}
+      dias={resolverDias((dias as TrilhaDia[]) ?? [], fonteConteudos)}
       catalogo={catalogo}
       materias={(materiasData ?? []).map((m: any) => m.materia)}
     />

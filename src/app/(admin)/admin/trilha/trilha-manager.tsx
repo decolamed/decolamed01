@@ -425,7 +425,9 @@ function DiaEditor({
                 </span>
                 <input
                   value={item.titulo}
-                  onChange={(e) => atualizarItem(i, { titulo: e.target.value })}
+                  // Editar aqui é personalizar: a marca impede que o título
+                  // volte a ser sobrescrito pelo do conteúdo original.
+                  onChange={(e) => atualizarItem(i, { titulo: e.target.value, titulo_custom: true })}
                   placeholder="Título"
                   className="min-w-[160px] flex-1 rounded-lg border border-navy-dark/10 px-2 py-1.5 text-xs"
                 />

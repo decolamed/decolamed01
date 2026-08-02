@@ -110,5 +110,93 @@ export async function excluirConteudo(id: string) {
   const { error } = await supabase.from("conteudos_biblioteca").delete().eq("id", id);
   revalidatePath(`/admin/cursos`);
   revalidatePath(`/admin/pdfs`);
+  revalidatePath("/admin/trilha");
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
   return { ok: !error };
+}
+
+// ---- Títulos reais do YouTube ---------------------------------------------
+// A importação inicial gravou 242 das 253 aulas como "Aula 1", "Aula 2"…
+// Isso não é só feio: com título genérico a busca desta tela não encontra
+// nada ("mitose" devolvia zero resultados) e o aluno não sabe o que vai
+// assistir. O oEmbed do YouTube é público e devolve o título real sem
+// precisar de chave de API.
+
+function extrairVideoId(url: string): string | null {
+  return (
+    url.match(/youtu\.be\/([\w-]{6,})/) ||
+    url.match(/[?&]v=([\w-]{6,})/) ||
+    url.match(/youtube\.com\/embed\/([\w-]{6,})/)
+  )?.[1] ?? null;
+}
+
+async function buscarTituloYoutube(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { title?: string };
+    return data.title || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Substitui os títulos genéricos ("Aula N") pelo título real do vídeo.
+ *
+ * Processa no máximo `limite` por chamada de propósito: são requisições de
+ * rede uma a uma, e tentar 242 numa única Server Action estoura o tempo da
+ * requisição e não entrega nada. A tela chama de novo enquanto `restantes`
+ * for maior que zero, mostrando o progresso — assim uma falha no meio do
+ * caminho não perde o que já foi corrigido.
+ */
+export async function atualizarTitulosGenericos(limite = 25) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { data: aulas, error } = await supabase
+    .from("conteudos_biblioteca")
+    .select("id, titulo, url")
+    .eq("tipo", "aula")
+    .not("url", "is", null)
+    .order("titulo");
+  if (error) return { ok: false as const, erro: "Não foi possível listar as aulas." };
+
+  const genericas = ((aulas as { id: string; titulo: string; url: string }[]) ?? []).filter((a) =>
+    /^Aula \d+$/.test(a.titulo)
+  );
+
+  let atualizados = 0;
+  let semTitulo = 0;
+  for (const aula of genericas.slice(0, limite)) {
+    if (!extrairVideoId(aula.url)) {
+      semTitulo++;
+      continue;
+    }
+    const titulo = await buscarTituloYoutube(aula.url);
+    if (!titulo) {
+      semTitulo++;
+      continue;
+    }
+    const { error: erroUpdate } = await supabase
+      .from("conteudos_biblioteca")
+      .update({ titulo })
+      .eq("id", aula.id);
+    if (erroUpdate) semTitulo++;
+    else atualizados++;
+  }
+
+  revalidatePath("/admin/cursos");
+  revalidatePath("/admin/trilha");
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  return {
+    ok: true as const,
+    atualizados,
+    semTitulo,
+    restantes: Math.max(0, genericas.length - limite)
+  };
 }

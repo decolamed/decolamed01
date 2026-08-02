@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { resolverCronograma } from "@/lib/trilha/resolver";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO, somarDias } from "@/lib/site/data";
@@ -151,7 +152,12 @@ export default async function AlunoHomePage() {
   // com ou sem Copiloto.
   const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
   const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
-  const todosDias = ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero);
+  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
+  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
+  // aula já corrigida pelo admin em "Cursos e Aulas".
+  const todosDias = await resolverCronograma(
+    ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
+  );
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de

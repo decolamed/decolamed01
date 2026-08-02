@@ -86,16 +86,28 @@ export async function atualizarTitulosDoDia(diaNumero: number) {
     }
     const videoId = extrairVideoId(item.url);
     const info = videoId ? await buscarTituloYoutube(item.url) : null;
-    if (info) {
-      novos.push({ ...item, titulo: info.titulo });
-      atualizados += 1;
-    } else {
+    if (!info) {
       novos.push(item);
+      continue;
     }
+    if (item.ref_id) {
+      // A aula tem registro na biblioteca, e é de lá que o título é lido
+      // (ver lib/trilha/resolver). Gravar só no item do dia não teria efeito
+      // nenhum: o resolver sobrescreveria pelo título antigo da biblioteca na
+      // próxima renderização. Corrigir na origem também conserta a mesma aula
+      // em todos os outros dias em que ela aparece.
+      await supabase.from("conteudos_biblioteca").update({ titulo: info.titulo }).eq("id", item.ref_id);
+      novos.push(item);
+    } else {
+      novos.push({ ...item, titulo: info.titulo });
+    }
+    atualizados += 1;
   }
 
   const { error } = await supabase.from("trilha_dias").update({ itens: novos }).eq("dia_numero", diaNumero);
   revalidatePath(PATH);
+  revalidatePath("/admin/cursos");
+  revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
   return { ok: !error, atualizados, total: itens.filter((i) => i.tipo === "aula").length };
 }
