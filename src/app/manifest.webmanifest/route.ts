@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { textoConfig } from "@/lib/site/configuracoes";
+import { AZUL_MARCA } from "@/components/marca-carregando";
 
 // Manifesto do PWA servido dinamicamente (em vez do antigo
 // public/manifest.json estático) para que o ícone do aplicativo possa ser
@@ -48,8 +49,11 @@ export async function GET() {
       scope: "/",
       display: "standalone",
       orientation: "portrait",
-      background_color: "#01395E",
-      theme_color: "#01395E",
+      // O splash que o Android/iOS desenham ao abrir o PWA usa esta cor. Ela
+      // precisa ser IDÊNTICA ao fundo de components/splash-screen, senão o
+      // usuário vê duas telas de carregamento seguidas — ver o comentário lá.
+      background_color: AZUL_MARCA,
+      theme_color: AZUL_MARCA,
       icons
     },
     { headers: { "Content-Type": "application/manifest+json" } }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import { SplashScreen } from "@/components/splash-screen";
+import { AZUL_MARCA } from "@/components/marca-carregando";
 import "./globals.css";
 
 // Nova identidade visual (Fase 1): tudo em Montserrat, com pesos diferentes
@@ -45,7 +46,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#01395E"
+  // Mesma cor do manifesto e da splash — ver components/splash-screen. Com
+  // valores diferentes, a barra do sistema destoa da tela de abertura e
+  // reaparece a emenda que a unificação da splash corrigiu.
+  themeColor: AZUL_MARCA
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
