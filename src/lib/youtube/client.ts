@@ -214,15 +214,35 @@ export async function buscarTitulosYoutube(videoIds: string[]): Promise<Resultad
       if (!res.ok) {
         const motivo: string = data?.error?.message ?? `HTTP ${res.status}`;
         console.error("[youtube] falha ao buscar títulos:", motivo);
-        // "blocked" é o que a API responde quando a chave é válida mas a
-        // YouTube Data API v3 não está habilitada no projeto do Google.
-        if (/blocked|has not been used|disabled/i.test(motivo)) {
+        // Duas causas diferentes, com correções em telas diferentes do
+        // console — e a mensagem genérica ("are blocked") não distingue as
+        // duas. O que separa é o `reason` estruturado:
+        //
+        //   API_KEY_SERVICE_BLOCKED → a chave existe e a API pode estar
+        //     habilitada, mas a CHAVE está restrita a uma lista de APIs que
+        //     não inclui o YouTube. Corrige-se em Credenciais.
+        //   SERVICE_DISABLED / "has not been used" → a API não está
+        //     habilitada no projeto. Corrige-se na Biblioteca.
+        const razoes: string = JSON.stringify(data?.error?.details ?? "");
+        if (/API_KEY_SERVICE_BLOCKED/.test(razoes)) {
+          return {
+            titulos,
+            erro:
+              "A chave do YouTube está restrita e não permite a YouTube Data API v3. " +
+              "Em console.cloud.google.com → APIs e Serviços → Credenciais → (sua chave) → " +
+              "Restrições de API, inclua “YouTube Data API v3” na lista permitida."
+          };
+        }
+        if (/SERVICE_DISABLED|has not been used|disabled/i.test(motivo + razoes)) {
           return {
             titulos,
             erro:
               "A YouTube Data API v3 não está habilitada no projeto desta chave. " +
               "Ative em console.cloud.google.com → APIs e Serviços → Biblioteca → YouTube Data API v3."
           };
+        }
+        if (/blocked/i.test(motivo)) {
+          return { titulos, erro: "O Google recusou a chave para esta API. Verifique as restrições da chave no console." };
         }
         if (/quota/i.test(motivo)) {
           return { titulos, erro: "Cota diária da YouTube Data API esgotada. Tente amanhã." };

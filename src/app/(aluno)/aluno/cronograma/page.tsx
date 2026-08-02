@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
+import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
@@ -80,7 +81,7 @@ export default async function AlunoCronogramaPage() {
   const hojeStr = hojeISO();
   const fimStr = somarDias(hojeStr, 7);
 
-  const [{ data: missoesBrutas }, { data: matricula }] = await Promise.all([
+  const [{ data: missoesBrutas }, { data: matricula }, { data: progresso }] = await Promise.all([
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -96,8 +97,18 @@ export default async function AlunoCronogramaPage() {
       .not("acesso_liberado_em", "is", null)
       .order("acesso_liberado_em", { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle(),
+    // O que o aluno já concluiu. Sem isso esta tela mostrava o cronograma
+    // inteiro sem nenhuma marca de progresso — o aluno via a mesma lista
+    // depois de cumprir metade dela.
+    supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", profile.id).eq("concluida", true)
   ]);
+
+  const concluidas = new Set(((progresso as { chave: string }[]) ?? []).map((p) => p.chave));
+  const itemConcluido = (diaNumero: number, indice: number, item: TrilhaItem) => {
+    const chave = chaveDeItemTrilha(diaNumero, indice, item);
+    return chave ? concluidas.has(chave) : false;
+  };
 
   // ---- Dia de hoje no cronograma ----
   let diaAtual: number | null = null;
@@ -161,11 +172,15 @@ export default async function AlunoCronogramaPage() {
             )}
             {diaTrilha.itens.map((item, i) => {
               const href = montarHrefTrilha(item);
+              const feito = itemConcluido(diaTrilha!.dia_numero, i, item);
               const conteudo = (
                 <>
                   <span className="text-xl">{ICONE_TRILHA[item.tipo] ?? "📌"}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-display font-bold text-navy-dark">{item.titulo}</p>
+                    <p className={`truncate font-display font-bold ${feito ? "text-navy-dark/45 line-through" : "text-navy-dark"}`}>
+                      {item.titulo}
+                      {feito && <span className="ml-2 align-middle text-[10px] font-black text-green">✓ CONCLUÍDO</span>}
+                    </p>
                     {item.materia && <p className="text-xs text-navy-dark/50">{item.materia}</p>}
                   </div>
                   {href && <span className="text-navy-dark/30">↗</span>}
@@ -202,31 +217,64 @@ export default async function AlunoCronogramaPage() {
             {todosOsDias.map((d) => {
               const passado = diaAtual != null && d.dia_numero < diaAtual;
               const hoje = d.dia_numero === diaAtual;
+              const itensDoDia = d.itens ?? [];
+              const feitos = itensDoDia.filter((it, i) => itemConcluido(d.dia_numero, i, it)).length;
+              const diaConcluido = itensDoDia.length > 0 && feitos === itensDoDia.length;
               return (
                 <details
                   key={d.dia_numero}
-                  open={hoje}
-                  className={`rounded-2xl bg-white p-4 shadow ${passado ? "opacity-70" : ""}`}
+                  // Dia concluído abre junto com o de hoje: o aluno precisa
+                  // conseguir voltar e reassistir o que já cumpriu.
+                  open={hoje || diaConcluido}
+                  className={`rounded-2xl p-4 shadow ${
+                    diaConcluido ? "border border-green/40 bg-green/5" : "bg-white"
+                  } ${passado && !diaConcluido ? "opacity-70" : ""}`}
                 >
                   <summary className="flex cursor-pointer items-center gap-3">
-                    <span className="rounded-full bg-navy-dark/5 px-2.5 py-1 text-[11px] font-extrabold text-navy-dark/60">
+                    {diaConcluido && (
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green text-[11px] font-black text-white">
+                        ✓
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+                        diaConcluido ? "bg-green/15 text-green" : "bg-navy-dark/5 text-navy-dark/60"
+                      }`}
+                    >
                       Dia {d.dia_numero}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-display font-bold text-navy-dark">{d.titulo}</span>
-                    <span className="text-xs font-semibold text-navy-dark/40">
-                      {d.itens?.length ?? 0} {(d.itens?.length ?? 0) === 1 ? "item" : "itens"}
+                    <span className={`text-xs font-semibold ${diaConcluido ? "text-green" : "text-navy-dark/40"}`}>
+                      {itensDoDia.length > 0 ? `${feitos}/${itensDoDia.length}` : "0 itens"}
                     </span>
                   </summary>
                   <div className="mt-3 space-y-1.5">
                     {(d.itens ?? []).length === 0 && (
                       <p className="text-sm text-navy-dark/50">Dia livre.</p>
                     )}
-                    {(d.itens ?? []).map((item, i) => {
+                    {itensDoDia.map((item, i) => {
                       const href = montarHrefTrilha(item);
+                      const feito = itemConcluido(d.dia_numero, i, item);
                       const linha = (
                         <>
+                          {/* O item cumprido permanece na lista e clicável —
+                              só ganha a marca. Removê-lo tiraria do aluno a
+                              chance de rever a aula. */}
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+                              feito ? "bg-green text-white" : "border border-navy-dark/20"
+                            }`}
+                          >
+                            {feito ? "✓" : ""}
+                          </span>
                           <span>{ICONE_TRILHA[item.tipo] ?? "📌"}</span>
-                          <span className="min-w-0 flex-1 truncate text-sm text-navy-dark">{item.titulo}</span>
+                          <span
+                            className={`min-w-0 flex-1 truncate text-sm ${
+                              feito ? "text-navy-dark/45 line-through" : "text-navy-dark"
+                            }`}
+                          >
+                            {item.titulo}
+                          </span>
                           {href && <span className="text-navy-dark/30">↗</span>}
                         </>
                       );

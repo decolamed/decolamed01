@@ -217,7 +217,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     calSel: null,
     errOpen: false,
     aviso: null as string | null,
-    mostrarDiasAnteriores: false,
+    // A trilha é contínua: o que já passou continua na tela, marcado como
+    // concluído, para o aluno poder revisitar e reassistir. Começar recolhido
+    // dava a impressão de que os dias cumpridos sumiam do cronograma.
+    mostrarDiasAnteriores: true,
     // Feedback visual do salvamento das anotações: "Salvando..." enquanto o
     // aluno digita, "Salvo ✓" logo depois. O salvamento sempre foi
     // automático, mas nada indicava isso na tela.
@@ -3639,19 +3642,53 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const { C, h, I, card } = this.ui();
     const itens = dia.itens || [];
     const feitos = itens.filter((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item))).length;
+    const concluido = itens.length > 0 && feitos === itens.length;
+    // Um dia cumprido continua na trilha — não some, fica marcado. A opacidade
+    // reduzida some quando o dia está concluído: apagar um dia que o aluno
+    // completou é o oposto do reconhecimento que ele merece ali.
+    const opacidade = concluido ? 1 : passado ? 0.75 : 1;
     return h(
       "div",
-      { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px", opacity: passado ? 0.75 : 1 } },
-      card({ padding: 15 }, [
-        h("div", { key: "t", style: { display: "flex", alignItems: "center", gap: 8 } }, [
-          h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
-          itens.length
-            ? h("span", { key: "c", style: { fontSize: 10, fontWeight: 800, color: feitos === itens.length ? C.green : C.faint } }, feitos + "/" + itens.length)
-            : null
-        ]),
-        h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: itens.length ? 8 : 0 } }, dia.titulo),
-        ...itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
-      ])
+      { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px", opacity: opacidade } },
+      card(
+        {
+          padding: 15,
+          ...(concluido ? { border: "1.5px solid " + C.green, background: C.greenSoft } : {})
+        },
+        [
+          h("div", { key: "t", style: { display: "flex", alignItems: "center", gap: 8 } }, [
+            // Selo de conclusão: o "confere" que sinaliza o passo cumprido.
+            concluido
+              ? h(
+                  "span",
+                  {
+                    key: "ok",
+                    style: { width: 18, height: 18, borderRadius: 99, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+                  },
+                  I("check", 10, "#fff", 3)
+                )
+              : null,
+            h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 800, color: concluido ? C.green : C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
+            itens.length
+              ? h("span", { key: "c", style: { fontSize: 10, fontWeight: 800, color: concluido ? C.green : C.faint } }, feitos + "/" + itens.length)
+              : null,
+            concluido
+              ? h("span", { key: "lbl", style: { marginLeft: "auto", fontSize: 9, fontWeight: 900, color: "#fff", background: C.green, padding: "3px 8px", borderRadius: 99, letterSpacing: ".05em" } }, "CONCLUÍDO")
+              : null
+          ]),
+          h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: itens.length ? 8 : 0 } }, dia.titulo),
+          // Barra de progresso do dia: mostra o avanço sem precisar contar os
+          // itens um a um.
+          itens.length && !concluido
+            ? h(
+                "div",
+                { key: "bar", style: { height: 4, borderRadius: 99, background: C.chip, overflow: "hidden", marginBottom: 8 } },
+                h("div", { key: "f", style: { width: Math.round((feitos / itens.length) * 100) + "%", height: "100%", background: C.green, borderRadius: 99, transition: "width .25s" } })
+              )
+            : null,
+          ...itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
+        ]
+      )
     );
   }
   scrPlano() {
@@ -3760,7 +3797,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 I("chevR", 15, C.sub)
               ),
               h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 800, color: C.sub } },
-                this.props.dados.trilhaAnteriores.length + (this.props.dados.trilhaAnteriores.length === 1 ? " dia anterior" : " dias anteriores"))
+                this.props.dados.trilhaAnteriores.length + (this.props.dados.trilhaAnteriores.length === 1 ? " dia anterior" : " dias anteriores")
+                  + " · " + this.props.dados.trilhaAnteriores.filter((d) => {
+                      const its = d.itens || [];
+                      return its.length > 0 && its.every((item, i) => this.estaConcluido(this.chaveDeItemTrilha(d.dia_numero, i, item)));
+                    }).length + " concluído(s)")
             ]
           )
         : null,
