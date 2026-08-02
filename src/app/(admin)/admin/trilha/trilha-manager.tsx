@@ -39,9 +39,11 @@ interface Props {
   dias: TrilhaDia[];
   catalogo: ItemCatalogo[];
   materias: string[];
+  /** Itens do cronograma que hoje abririam uma tela vazia para o aluno. */
+  itensSemConteudo: { dia: number; titulo: string; motivo: string }[];
 }
 
-export function TrilhaManager({ dias, catalogo, materias }: Props) {
+export function TrilhaManager({ dias, catalogo, materias, itensSemConteudo }: Props) {
   const porDia = new Map(dias.map((d) => [d.dia_numero, d]));
   const { toast, show } = useToast();
   const [numeros, setNumeros] = useState<number[]>(() => {
@@ -96,6 +98,30 @@ export function TrilhaManager({ dias, catalogo, materias }: Props) {
         </p>
         <GhostButton onClick={adicionarDia}>+ Adicionar dia</GhostButton>
       </Card>
+
+      {itensSemConteudo.length > 0 && (
+        <Card className="mt-3 border border-orange/40 bg-orange/[0.06]">
+          <p className="text-sm font-extrabold text-orange-dark">
+            ⚠ {itensSemConteudo.length} {itensSemConteudo.length === 1 ? "item aponta" : "itens apontam"} para conteúdo
+            que não existe
+          </p>
+          <p className="mt-1 text-xs font-semibold text-navy-dark/60">
+            O aluno abre e encontra uma tela vazia. Cadastre o conteúdo ou remova o item do dia.
+          </p>
+          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+            {itensSemConteudo.slice(0, 30).map((i, idx) => (
+              <p key={idx} className="text-[11px] font-semibold text-navy-dark/70">
+                <span className="font-extrabold">Dia {i.dia}</span> · {i.titulo} — {i.motivo}
+              </p>
+            ))}
+            {itensSemConteudo.length > 30 && (
+              <p className="text-[11px] font-bold text-navy-dark/45">
+                …e mais {itensSemConteudo.length - 30}.
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="mt-4 space-y-2">
         {numeros.map((n) => (

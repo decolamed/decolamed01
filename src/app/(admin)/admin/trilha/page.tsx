@@ -149,6 +149,36 @@ export default async function AdminTrilhaPage() {
     });
   });
 
+  // ---- Itens apontando para conteúdo que não existe ------------------------
+  // A Alteração 2 pede que o aluno nunca abra uma atividade vazia. O Copiloto
+  // já respeita isso ao gerar missões, mas os itens FIXOS cadastrados pelo
+  // admin não tinham nenhuma verificação: depois da limpeza do banco de
+  // questões, 36 itens de "questões" continuaram no cronograma apontando para
+  // um banco com zero questões. O aluno vê "ainda não há questões" — não
+  // quebra, mas é uma missão que não leva a lugar nenhum, e o admin não tinha
+  // como saber disso sem abrir os 40 dias um a um.
+  const materiasComQuestoes = new Set(questoesPorMateria.keys());
+  const materiasComFlashcards = new Set(flashcardsPorMateria.keys());
+  const idsSimulados = new Set(((simulados as Simulado[]) ?? []).map((x) => x.id));
+  const idsConteudos = new Set(todosConteudos.map((c) => c.id));
+
+  const itensSemConteudo: { dia: number; titulo: string; motivo: string }[] = [];
+  ((dias as TrilhaDia[]) ?? []).forEach((d) => {
+    (d.itens ?? []).forEach((item) => {
+      const falta =
+        item.tipo === "questoes" && !materiasComQuestoes.has(item.materia ?? "")
+          ? `nenhuma questão cadastrada${item.materia ? ` em ${item.materia}` : ""}`
+          : item.tipo === "flashcards" && !materiasComFlashcards.has(item.materia ?? "")
+          ? `nenhum flashcard cadastrado${item.materia ? ` em ${item.materia}` : ""}`
+          : item.tipo === "simulado" && item.ref_id && !idsSimulados.has(item.ref_id)
+          ? "o simulado não existe mais"
+          : (item.tipo === "aula" || item.tipo === "pdf") && item.ref_id && !idsConteudos.has(item.ref_id)
+          ? "o conteúdo foi excluído ou desativado"
+          : null;
+      if (falta) itensSemConteudo.push({ dia: d.dia_numero, titulo: item.titulo, motivo: falta });
+    });
+  });
+
   // Os dias mostram o título/URL atuais da biblioteca — assim o editor não
   // exibe o nome antigo de uma aula que já foi corrigida em Cursos e Aulas.
   const fonteConteudos = new Map(
@@ -160,6 +190,7 @@ export default async function AdminTrilhaPage() {
       dias={resolverDias((dias as TrilhaDia[]) ?? [], fonteConteudos)}
       catalogo={catalogo}
       materias={(materiasData ?? []).map((m: any) => m.materia)}
+      itensSemConteudo={itensSemConteudo}
     />
   );
 }
