@@ -319,6 +319,8 @@ export type TrilhaItemTipo =
   | "questoes"
   | "flashcards"
   | "simulado"
+  | "atividade"
+  | "pagina"
   | "revisao"
   | "leitura"
   | "redacao"

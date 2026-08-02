@@ -26,11 +26,15 @@ export const PESO_TIPO: Record<string, number> = {
   simulado: 12,
   redacao: 10,
   aula: 8,
+  atividade: 7,
   questoes: 7,
   flashcards: 5,
   pdf: 4,
   leitura: 3,
-  link: 2
+  link: 2,
+  // Página do app é navegação, não estudo: se ficou para trás, o aluno
+  // chega lá sozinho pelo menu. Fica abaixo do corte de importância.
+  pagina: 1
 };
 
 export const PESO_TIPO_PADRAO = 4;

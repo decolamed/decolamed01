@@ -46,6 +46,8 @@ export const MINUTOS_POR_TIPO: Record<string, number> = {
   questoes: 40,
   flashcards: 20,
   simulado: 90,
+  atividade: 40,
+  pagina: 10,
   revisao: 30,
   redacao: 60,
   livre: 0

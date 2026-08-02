@@ -1044,11 +1044,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // sem nenhum caminho de navegação porque só "Atividades" tinha um
   // `window.location.href` escrito à mão no meio do JSX.
   irParaItemMenu(item: { k: string; href?: string }) {
-    if (item.href) {
-      if (typeof window !== "undefined") window.location.href = item.href;
-      return;
-    }
+    if (item.href) return this.irParaRota(item.href);
     this.nav(item.k);
+  }
+  // Sai da SPA para uma rota real do Next (Atividades, Raio-X, Desempenho…).
+  irParaRota(rota: string) {
+    if (typeof window !== "undefined") window.location.href = rota;
   }
   // Domínios que recusam ser exibidos em iframe de outra origem (enviam
   // X-Frame-Options/CSP frame-ancestors bloqueando) — não é algo que dê pra
@@ -1145,6 +1146,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.nav("simulados");
     } else if (item.tipo === "simulado") {
       this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
+    } else if (item.tipo === "atividade") {
+      // Atividades são rota real do Next, não tela da SPA.
+      this.irParaRota(item.ref_id ? `/aluno/atividades/${item.ref_id}` : "/aluno/atividades");
+    } else if (item.tipo === "pagina") {
+      // Página interna escolhida pelo admin no editor do cronograma. A rota
+      // vem em `url` — se vier vazia, cai no painel em vez de não fazer nada.
+      this.irParaRota(item.url || "/aluno");
     } else if (item.tipo === "revisao") {
       this.startReview();
     } else if (item.tipo === "redacao") {

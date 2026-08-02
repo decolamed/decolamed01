@@ -7,16 +7,9 @@ import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
-const ICONE_TRILHA: Record<string, string> = {
-  aula: "🎬",
-  pdf: "📄",
-  link: "🔗",
-  questoes: "🎯",
-  flashcards: "🃏",
-  simulado: "⏱️",
-  revisao: "🔁",
-  livre: "☕"
-};
+import { ICONE_TIPO } from "@/lib/trilha/catalogo";
+
+const ICONE_TRILHA = ICONE_TIPO;
 
 // Monta o link de destino de cada missão a partir do tipo + ref_id. Sem isso
 // a lista fica só de leitura; com isso o aluno toca no item e vai direto pra
@@ -54,8 +47,17 @@ function montarHrefTrilha(item: TrilhaItem): string | null {
     case "flashcards":
       return item.materia ? `/aluno/flashcards?materia=${encodeURIComponent(item.materia)}` : "/aluno/flashcards";
     case "simulado":
-      return "/aluno/simulados";
+      return item.ref_id ? `/aluno/simulados/${item.ref_id}` : "/aluno/simulados";
+    case "atividade":
+      return item.ref_id ? `/aluno/atividades/${item.ref_id}` : "/aluno/atividades";
+    case "pagina":
+      // A rota interna escolhida pelo admin vem gravada em `url`.
+      return item.url || "/aluno";
+    case "redacao":
+      return "/aluno/redacao";
     default:
+      // "leitura", "revisao" e "livre" não abrem nada de propósito: são
+      // blocos de marcar como feito, não conteúdo com destino.
       return null;
   }
 }
