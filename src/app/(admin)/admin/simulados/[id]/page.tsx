@@ -6,6 +6,40 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import type { Questao, Simulado } from "@/types/database";
 
+// Título, descrição e tempo do simulado. Só podiam ser definidos na
+// criação — que usa "Novo simulado"/60min fixos — e não havia nenhuma tela
+// para mudá-los depois: corrigir o nome obrigava a excluir o simulado, e
+// junto iriam as questões já montadas.
+async function salvarMetadadosSimulado(id: string, formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descricao = String(formData.get("descricao") ?? "").trim();
+  const tempo = Number(formData.get("tempo_minutos") ?? 60);
+
+  if (!titulo) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("Informe um título para o simulado.")}`);
+  }
+  if (!Number.isFinite(tempo) || tempo <= 0) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("O tempo precisa ser maior que zero.")}`);
+  }
+
+  const { error } = await supabase
+    .from("simulados")
+    .update({ titulo, descricao: descricao || null, tempo_minutos: tempo })
+    .eq("id", id);
+
+  revalidatePath(`/admin/simulados/${id}`);
+  revalidatePath("/admin/simulados");
+  revalidatePath("/aluno");
+  if (error) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("Não foi possível salvar os dados do simulado.")}`);
+  }
+  redirect(`/admin/simulados/${id}?sucesso=${encodeURIComponent("Dados do simulado atualizados.")}`);
+}
+
 async function salvarQuestoesDoSimulado(id: string, formData: FormData) {
   "use server";
   await requireAdmin();
@@ -76,6 +110,25 @@ export default async function EscolherQuestoesSimuladoPage({
         Marque quais questões do banco fazem parte deste simulado. Só questões ativas aparecem aqui.
       </p>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+
+      <form action={salvarMetadadosSimulado.bind(null, params.id)} className="mt-6 rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Dados do simulado</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[2fr_1fr]">
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="titulo">Título</label>
+            <input id="titulo" name="titulo" defaultValue={s.titulo} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="tempo_minutos">Tempo (minutos)</label>
+            <input id="tempo_minutos" name="tempo_minutos" type="number" min={1} defaultValue={s.tempo_minutos} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+          </div>
+        </div>
+        <label className="mt-3 block text-xs font-semibold text-navy-dark/60" htmlFor="descricao">Descrição (opcional)</label>
+        <input id="descricao" name="descricao" defaultValue={s.descricao ?? ""} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+        <SubmitButton pendingText="Salvando..." className="mt-4 rounded-lg bg-navy px-5 py-2 text-sm font-semibold text-white">
+          Salvar dados
+        </SubmitButton>
+      </form>
 
       <form action={salvarComId} className="mt-6">
         <div className="max-h-[60vh] overflow-y-auto rounded-2xl bg-white shadow">

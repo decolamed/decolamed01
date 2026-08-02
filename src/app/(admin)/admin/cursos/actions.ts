@@ -23,6 +23,38 @@ export async function criarConteudo(tipo: "aula" | "pdf", titulo: string, materi
   return { ok: true as const };
 }
 
+// Edição de conteúdo já cadastrado. Sem isso, corrigir um título com erro
+// de digitação ou uma URL trocada exigia excluir e cadastrar de novo — o
+// que, além de trabalhoso, quebra qualquer dia do cronograma que já aponte
+// para aquele item pelo ref_id.
+export async function atualizarConteudo(
+  id: string,
+  titulo: string,
+  materia: string,
+  assunto: string | null,
+  url: string | null,
+  duracao: number
+) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+  if (!titulo.trim() || !materia.trim()) return { ok: false as const, erro: "Preencha título e matéria." };
+  const { error } = await supabase
+    .from("conteudos_biblioteca")
+    .update({
+      titulo: titulo.trim(),
+      materia: materia.trim(),
+      assunto: assunto?.trim() || null,
+      url: url?.trim() || null,
+      duracao_minutos: duracao
+    })
+    .eq("id", id);
+  revalidatePath(`/admin/cursos`);
+  revalidatePath(`/admin/pdfs`);
+  revalidatePath("/aluno");
+  if (error) return { ok: false as const, erro: "Não foi possível salvar as alterações." };
+  return { ok: true as const };
+}
+
 // Importação em massa de aulas via YouTube — ver buscarInfoYoutube() em
 // src/lib/importacao/youtube.ts, que já buscou título/matéria sugerida
 // antes desta chamada. Mesmo padrão de retorno de salvarQuestoesEmLote().

@@ -4,7 +4,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextArea, TextInput, FieldLabel } from "@/components/admin/interactive";
 import { buscarInfoYoutube, type AulaYoutubeInfo } from "@/lib/importacao/youtube";
-import { criarConteudo, criarConteudosEmLote, alternarAtivoConteudo, excluirConteudo } from "./actions";
+import { criarConteudo, criarConteudosEmLote, atualizarConteudo, alternarAtivoConteudo, excluirConteudo } from "./actions";
 
 interface AulaYoutubePrevia extends AulaYoutubeInfo {
   materiaEditada: string;
@@ -17,6 +17,8 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   const [materia, setMateria] = useState("Biologia");
   const [assunto, setAssunto] = useState("");
   const [url, setUrl] = useState("");
+  // Preenchido = o cartão de cadastro vira "editar".
+  const [editId, setEditId] = useState<string | null>(null);
   const [duracao, setDuracao] = useState("30");
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
@@ -72,13 +74,38 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
     }
   }
 
-  function adicionar() {
+  function limpar() {
+    setEditId(null);
+    setTitulo("");
+    setUrl("");
+    setAssunto("");
+  }
+
+  function editar(a: any) {
+    setEditId(a.id);
+    setTitulo(a.titulo);
+    setMateria(a.materia);
+    setAssunto(a.assunto ?? "");
+    setUrl(a.url ?? "");
+    setDuracao(String(a.duracao_minutos ?? 30));
+  }
+
+  function salvar() {
     startTransition(async () => {
-      const res = await criarConteudo("aula", titulo, materia, assunto, url, Number(duracao) || 30);
+      const min = Number(duracao) || 30;
+      if (editId) {
+        const res = await atualizarConteudo(editId, titulo, materia, assunto, url, min).catch(() => ({ ok: false, erro: undefined }));
+        if (!res.ok) { show(res.erro ?? "Não foi possível salvar."); return; }
+        setAulas((a) => a.map((x) => (x.id === editId ? { ...x, titulo, materia, assunto, url, duracao_minutos: min } : x)));
+        limpar();
+        show("Aula atualizada.");
+        return;
+      }
+      const res = await criarConteudo("aula", titulo, materia, assunto, url, min).catch(() => ({ ok: false, erro: undefined }));
       if (!res.ok) { show(res.erro ?? "Erro."); return; }
+      setAulas((a) => [{ id: crypto.randomUUID(), titulo, materia, assunto, url, duracao_minutos: min, ativo: true }, ...a]);
+      limpar();
       show("Aula adicionada.");
-      setTitulo(""); setUrl(""); setAssunto("");
-      setAulas((a) => [{ id: crypto.randomUUID(), titulo, materia, assunto, url, duracao_minutos: Number(duracao), ativo: true }, ...a]);
     });
   }
 
@@ -171,7 +198,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1.5fr]">
         <Card>
-          <h2 className="text-sm font-extrabold text-navy-dark">Adicionar aula</h2>
+          <h2 className="text-sm font-extrabold text-navy-dark">{editId ? "Editar aula" : "Adicionar aula"}</h2>
           <FieldLabel>Título</FieldLabel>
           <TextInput value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Introdução à Citologia" />
           <FieldLabel>Matéria</FieldLabel>
@@ -182,7 +209,10 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
           <TextInput value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
           <FieldLabel>Duração estimada (minutos)</FieldLabel>
           <TextInput type="number" value={duracao} onChange={(e) => setDuracao(e.target.value)} placeholder="30" />
-          <PrimaryButton onClick={adicionar} className="mt-4">ADICIONAR AULA</PrimaryButton>
+          <div className="mt-4 flex gap-2">
+            <PrimaryButton onClick={salvar}>{editId ? "SALVAR ALTERAÇÕES" : "ADICIONAR AULA"}</PrimaryButton>
+            {editId && <GhostButton onClick={limpar}>Cancelar</GhostButton>}
+          </div>
         </Card>
 
         <Card className="!p-0 sm:!px-[18px]">
@@ -200,6 +230,9 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
                     <p className="text-xs font-semibold text-navy-dark/40">{a.assunto ? `${a.assunto} · ` : ""}{a.duracao_minutos} min</p>
                   </div>
                   <Toggle on={a.ativo} onClick={() => alternar(a.id, a.ativo)} />
+                  <button type="button" onClick={() => editar(a)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-navy-dark/5 text-navy-dark/60" title="Editar">
+                    <Icon name="pencil" size={14} />
+                  </button>
                   <button type="button" onClick={() => excluir(a.id)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-red/10 text-red" title="Excluir">
                     <Icon name="trash" size={13} />
                   </button>

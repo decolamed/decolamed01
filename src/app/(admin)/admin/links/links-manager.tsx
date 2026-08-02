@@ -2,23 +2,46 @@
 import { useState, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
-import { Toggle, Toast, useToast, PrimaryButton, TextInput, FieldLabel } from "@/components/admin/interactive";
-import { criarLink, alternarAtivoLink, excluirLink } from "./actions";
+import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextInput, FieldLabel } from "@/components/admin/interactive";
+import { criarLink, atualizarLink, alternarAtivoLink, excluirLink } from "./actions";
 
 export function LinksManager({ links: inicial }: { links: any[] }) {
   const [links, setLinks] = useState(inicial);
   const [titulo, setTitulo] = useState("");
   const [url, setUrl] = useState("");
+  // Quando preenchido, o cartão da esquerda vira "editar" em vez de
+  // "adicionar" — mesmo padrão do banco de questões.
+  const [editId, setEditId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
 
-  function adicionar() {
+  function limpar() {
+    setEditId(null);
+    setTitulo("");
+    setUrl("");
+  }
+
+  function editar(l: any) {
+    setEditId(l.id);
+    setTitulo(l.titulo);
+    setUrl(l.url);
+  }
+
+  function salvar() {
     startTransition(async () => {
-      const res = await criarLink(titulo, url);
+      if (editId) {
+        const res = await atualizarLink(editId, titulo, url).catch(() => ({ ok: false, erro: undefined }));
+        if (!res.ok) { show(res.erro ?? "Não foi possível salvar."); return; }
+        setLinks((a) => a.map((x) => (x.id === editId ? { ...x, titulo, url } : x)));
+        limpar();
+        show("Link atualizado.");
+        return;
+      }
+      const res = await criarLink(titulo, url).catch(() => ({ ok: false, erro: undefined }));
       if (!res.ok) { show(res.erro ?? "Erro."); return; }
-      setTitulo(""); setUrl("");
-      show("Link adicionado.");
       setLinks((a) => [{ id: crypto.randomUUID(), titulo, url, ativo: true }, ...a]);
+      limpar();
+      show("Link adicionado.");
     });
   }
 
@@ -52,12 +75,15 @@ export function LinksManager({ links: inicial }: { links: any[] }) {
       <PageHeader title="Links Externos" subtitle="Páginas parceiras que abrem no app do aluno" />
       <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
         <Card>
-          <h2 className="text-sm font-extrabold text-navy-dark">Adicionar link</h2>
+          <h2 className="text-sm font-extrabold text-navy-dark">{editId ? "Editar link" : "Adicionar link"}</h2>
           <FieldLabel>Título</FieldLabel>
           <TextInput value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Livro digital · Química" />
           <FieldLabel>URL</FieldLabel>
           <TextInput value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." />
-          <PrimaryButton onClick={adicionar} className="mt-4">ADICIONAR LINK</PrimaryButton>
+          <div className="mt-4 flex gap-2">
+            <PrimaryButton onClick={salvar}>{editId ? "SALVAR ALTERAÇÕES" : "ADICIONAR LINK"}</PrimaryButton>
+            {editId && <GhostButton onClick={limpar}>Cancelar</GhostButton>}
+          </div>
           <div className="mt-4 flex items-center gap-2 rounded-[11px] bg-blue-soft p-3 text-[10.5px] font-semibold leading-relaxed text-navy-dark">
             <Icon name="bot" size={14} className="shrink-0 text-orange" />
             Os links abrem no app sem tirar o aluno da plataforma.
@@ -74,6 +100,9 @@ export function LinksManager({ links: inicial }: { links: any[] }) {
                 <p className="truncate text-xs font-semibold text-navy-dark/40">{l.url}</p>
               </div>
               <Toggle on={l.ativo} onClick={() => alternar(l.id, l.ativo)} />
+              <button type="button" onClick={() => editar(l)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-navy-dark/5 text-navy-dark/60" title="Editar">
+                <Icon name="pencil" size={14} />
+              </button>
               <button type="button" onClick={() => excluir(l.id)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-red/10 text-red" title="Excluir">
                 <Icon name="trash" size={14} />
               </button>
