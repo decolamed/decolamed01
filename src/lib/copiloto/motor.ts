@@ -95,6 +95,11 @@ interface DadosAluno {
   checkinsNaoAplicados: Array<{
     id: string; resposta_valor: string; resposta_acao: Record<string, unknown>;
   }>;
+  // Quanto conteúdo ATIVO existe por matéria. Sem isso o Copiloto criava
+  // missão de "Flashcards de Português" contando as revisões que o aluno já
+  // tinha feito — o que não diz nada sobre os flashcards ainda existirem. O
+  // aluno abria a missão e via "Não há flashcards disponíveis".
+  inventario: Map<string, { questoes: number; flashcards: number }>;
 }
 
 // ---- Configurações por modo ------------------------------------------------
@@ -233,7 +238,45 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     alunoId: ctx.alunoId, ctx, respostas, revisoes, tentativas,
     materias, briefing, modo, diasRestantes, diasLivres, diasOcupados,
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
+    inventario: await carregarInventario(),
   };
+}
+
+// Conta o conteúdo ativo por matéria. É a checagem que faltava antes de
+// prometer uma missão ao aluno: só se cria missão de um tipo que realmente
+// tem conteúdo disponível para aquela matéria.
+async function carregarInventario(): Promise<Map<string, { questoes: number; flashcards: number }>> {
+  const supabase = createAdminClient();
+  const [{ data: qs }, { data: fs }] = await Promise.all([
+    supabase.from("questoes").select("materia").eq("ativo", true),
+    supabase.from("flashcards").select("materia").eq("ativo", true),
+  ]);
+  const mapa = new Map<string, { questoes: number; flashcards: number }>();
+  const somar = (materia: string | null, campo: "questoes" | "flashcards") => {
+    const m = (materia ?? "").trim();
+    if (!m) return;
+    const atual = mapa.get(m) ?? { questoes: 0, flashcards: 0 };
+    atual[campo] += 1;
+    mapa.set(m, atual);
+  };
+  (qs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "questoes"));
+  (fs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "flashcards"));
+  return mapa;
+}
+
+// Devolve um tipo de missão que REALMENTE tem conteúdo para a matéria, ou
+// null quando não há nada — nesse caso a missão simplesmente não é criada,
+// em vez de virar um beco sem saída na tela do aluno.
+function tipoComConteudo(
+  dados: DadosAluno,
+  materia: string,
+  preferido: "questoes" | "flashcards" | "aula" | "revisao"
+): "questoes" | "flashcards" | null {
+  const inv = dados.inventario.get(materia) ?? { questoes: 0, flashcards: 0 };
+  if ((preferido === "flashcards" || preferido === "revisao") && inv.flashcards > 0) return "flashcards";
+  if (inv.questoes > 0) return "questoes";
+  if (inv.flashcards > 0) return "flashcards";
+  return null;
 }
 
 // ---- Detecção de modo ------------------------------------------------------
@@ -420,15 +463,16 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
 
     // --- OPÇÃO A: adicionar missão extra se couber no tempo disponível ---
     const minExtra = DURACAO_TIPO.questoes;
-    if (minUsados + minExtra <= maxMinPorDia) {
+    const tipoExtra = tipoComConteudo(dados, maisUrgente.mat, "questoes");
+    if (tipoExtra && minUsados + minExtra <= maxMinPorDia) {
       const jaTemMateria = missoesDoDia.some((m) => m.materia === maisUrgente.mat);
       if (!jaTemMateria) {
         await supabase.from("aluno_missoes").insert({
           aluno_id: dados.alunoId, data,
-          titulo: `Questões · ${maisUrgente.mat} — Copiloto (extra)`,
+          titulo: `${tipoExtra === "flashcards" ? "Flashcards" : "Questões"} · ${maisUrgente.mat} — Copiloto (extra)`,
           materia: maisUrgente.mat,
           assunto: null,
-          tipo: "questoes",
+          tipo: tipoExtra,
           duracao_minutos: minExtra,
           duracao_estimada_min: minExtra,
           prioridade: 2,
@@ -453,14 +497,18 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     const genSubst = candidataSubstituir.gen;
     if (maisUrgente.gen < genSubst * 1.8) continue; // não vale a troca
 
-    // Substituir: marca a missão como "substituída" (cria nova copiloto + remove a antiga)
+    // Substituir: cria a nova missão do Copiloto e remove a antiga. A troca
+    // só pode acontecer se a nova tiver conteúdo — trocar uma missão válida
+    // por uma vazia deixaria o aluno com menos do que tinha antes.
+    const tipoSubst = tipoComConteudo(dados, maisUrgente.mat, "questoes");
+    if (!tipoSubst) continue;
     await supabase.from("aluno_missoes").delete().eq("id", candidataSubstituir.m.id);
     await supabase.from("aluno_missoes").insert({
       aluno_id: dados.alunoId, data,
-      titulo: `Questões · ${maisUrgente.mat} — Copiloto (substituiu ${candidataSubstituir.m.materia})`,
+      titulo: `${tipoSubst === "flashcards" ? "Flashcards" : "Questões"} · ${maisUrgente.mat} — Copiloto (substituiu ${candidataSubstituir.m.materia})`,
       materia: maisUrgente.mat,
       assunto: null,
-      tipo: "questoes",
+      tipo: tipoSubst,
       duracao_minutos: candidataSubstituir.m.duracao_minutos,
       duracao_estimada_min: candidataSubstituir.m.duracao_estimada_min,
       prioridade: 2,
@@ -719,13 +767,17 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
           const minUsados = missoesNoDia.reduce((s, m) => s + m.duracao_estimada_min, 0);
           const maxMin = horasNovas * 60;
           if (minUsados + 40 <= maxMin) {
+            // Só considera matérias que têm conteúdo — antes bastava ter GEN
+            // alto, e o aluno ganhava uma missão que não abria nada.
             const mat = [...dados.materias.keys()]
+              .filter((m) => tipoComConteudo(dados, m, "questoes") !== null)
               .sort((a, b) => genMateria(b, dados) - genMateria(a, dados))[0];
-            if (mat) {
+            const tipoMat = mat ? tipoComConteudo(dados, mat, "questoes") : null;
+            if (mat && tipoMat) {
               await supabase.from("aluno_missoes").insert({
                 aluno_id: dados.alunoId, data: iso,
-                titulo: `Questões · ${mat} — Copiloto (+tempo)`,
-                materia: mat, assunto: null, tipo: "questoes",
+                titulo: `${tipoMat === "flashcards" ? "Flashcards" : "Questões"} · ${mat} — Copiloto (+tempo)`,
+                materia: mat, assunto: null, tipo: tipoMat,
                 duracao_minutos: 40, duracao_estimada_min: 40,
                 prioridade: 2, origem: "copiloto",
                 motivo_copiloto: `[checkin] aluno aceitou aumentar tempo de estudo`,
@@ -745,13 +797,15 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
           const jaTemMateria = missoesNoDia.some((m) => m.materia === mat);
           if (jaTemMateria) continue;
+          const tipoFoco = tipoComConteudo(dados, mat, "questoes");
+          if (!tipoFoco) break; // matéria pedida no check-in não tem conteúdo
           const minUsados = missoesNoDia.reduce((s, m) => s + m.duracao_estimada_min, 0);
           const maxMin = (dados.briefing?.horasPorDia ?? 2) * 60;
           if (minUsados + 40 <= maxMin) {
             await supabase.from("aluno_missoes").insert({
               aluno_id: dados.alunoId, data: iso,
-              titulo: `Questões · ${mat} — Copiloto (foco)`,
-              materia: mat, assunto: null, tipo: "questoes",
+              titulo: `${tipoFoco === "flashcards" ? "Flashcards" : "Questões"} · ${mat} — Copiloto (foco)`,
+              materia: mat, assunto: null, tipo: tipoFoco,
               duracao_minutos: 40, duracao_estimada_min: 40,
               prioridade: 3, origem: "copiloto",
               motivo_copiloto: `[checkin] aluno pediu foco em ${mat}`,
@@ -769,12 +823,16 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         const missoesParaSubstituir = dados.missoesAgendadas
           .filter((m) => m.materia === de && m.origem === "admin" && !m.concluida)
           .slice(0, 3);
-        for (const m of missoesParaSubstituir) {
+        // Redistribuir apaga missões existentes: se a matéria de destino não
+        // tem conteúdo, o aluno terminaria com menos missões válidas do que
+        // começou.
+        const tipoPara = tipoComConteudo(dados, para, "questoes");
+        for (const m of tipoPara ? missoesParaSubstituir : []) {
           await supabase.from("aluno_missoes").delete().eq("id", m.id);
           await supabase.from("aluno_missoes").insert({
             aluno_id: dados.alunoId, data: m.data,
-            titulo: `Questões · ${para} — Copiloto (redistribuído)`,
-            materia: para, assunto: null, tipo: "questoes",
+            titulo: `${tipoPara === "flashcards" ? "Flashcards" : "Questões"} · ${para} — Copiloto (redistribuído)`,
+            materia: para, assunto: null, tipo: tipoPara,
             duracao_minutos: m.duracao_minutos, duracao_estimada_min: m.duracao_estimada_min,
             prioridade: 2, origem: "copiloto",
             motivo_copiloto: `[checkin] redistribuído de ${de} para ${para}`,
@@ -836,10 +894,16 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento });
     if (gen < cfg.genMin) continue;
-    const tipo = dados.modo === "cirurgico" ? "questoes"
+    // `flashPorMat` conta REVISÕES JÁ FEITAS, não flashcards existentes —
+    // era o que fazia o Copiloto prometer "Flashcards de X" para uma matéria
+    // sem nenhum flashcard cadastrado. A preferência continua a mesma, mas
+    // agora passa pelo inventário real antes de virar missão.
+    const preferido = dados.modo === "cirurgico" ? "questoes"
       : d.e >= 3 ? "questoes"
       : precisao < 35 && (flashPorMat.get(materia) ?? 0) > 0 ? "flashcards"
       : "questoes";
+    const tipo = tipoComConteudo(dados, materia, preferido);
+    if (!tipo) continue; // sem conteúdo para essa matéria: nada a recomendar
     lista.push({ materia, assunto, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipo, urgencia: gen > 15 ? 3 : gen > 6 ? 2 : 1, descricao: gerarDescricao({ assunto, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
 
@@ -857,7 +921,9 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento }) * 0.7;
     if (gen < cfg.genMin) continue;
-    lista.push({ materia, assunto: null, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: "questoes", urgencia: gen > 12 ? 3 : gen > 5 ? 2 : 1, descricao: gerarDescricao({ assunto: null, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
+    const tipoMat = tipoComConteudo(dados, materia, "questoes");
+    if (!tipoMat) continue; // sem questões nem flashcards: não vira missão
+    lista.push({ materia, assunto: null, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipoMat, urgencia: gen > 12 ? 3 : gen > 5 ? 2 : 1, descricao: gerarDescricao({ assunto: null, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
 
   return lista.sort((a, b) => b.gen - a.gen);
