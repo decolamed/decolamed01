@@ -32,6 +32,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
 
   const [corrigindoTitulos, setCorrigindoTitulos] = useState(false);
   const [progressoTitulos, setProgressoTitulos] = useState("");
+  const [avisoTitulos, setAvisoTitulos] = useState<string | null>(null);
 
   const [importando, setImportando] = useState(false);
   const [links, setLinks] = useState("");
@@ -89,6 +90,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   // os títulos novos; até lá o progresso vai aparecendo na tela.
   async function corrigirTitulos() {
     setCorrigindoTitulos(true);
+    setAvisoTitulos(null);
     let total = 0;
     let falhas = 0;
     try {
@@ -98,12 +100,19 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
         total += r.atualizados;
         falhas += r.semTitulo;
         setProgressoTitulos(`${total} corrigido(s)${r.restantes ? ` · ${r.restantes} restantes` : ""}`);
+        // O aviso só vem quando NADA pôde ser corrigido — e aí explica o
+        // motivo real (chave ausente, API não habilitada, cota estourada),
+        // que é a diferença entre o admin resolver em 2 minutos ou achar
+        // que a plataforma está quebrada.
+        if (r.aviso) { setAvisoTitulos(r.aviso); break; }
         // Nem só "restantes === 0" encerra: se um lote inteiro falhar
         // (vídeo removido, rede fora), insistir repetiria o mesmo erro para
         // sempre em vez de parar e informar.
         if (r.restantes === 0 || r.atualizados === 0) break;
       }
-      show(`${total} título(s) atualizado(s)${falhas ? ` · ${falhas} sem título disponível` : ""}.`);
+      if (total > 0 || falhas > 0) {
+        show(`${total} título(s) atualizado(s)${falhas ? ` · ${falhas} sem título disponível` : ""}.`);
+      }
       if (total > 0) window.location.reload();
     } finally {
       setCorrigindoTitulos(false);
@@ -216,6 +225,15 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
           <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar do YouTube"}</GhostButton>
         </div>
       </div>
+
+      {avisoTitulos && (
+        <div className="mb-3 flex items-start gap-2 rounded-[11px] border border-orange/40 bg-orange/[0.06] p-3 text-xs font-semibold text-navy-dark">
+          <Icon name="bot" size={14} className="mt-0.5 shrink-0 text-orange" />
+          <span>
+            Não foi possível buscar os títulos: {avisoTitulos}
+          </span>
+        </div>
+      )}
 
       {importando && (
         <Card className="mb-3">

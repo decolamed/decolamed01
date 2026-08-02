@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { buscarTitulosYoutube } from "@/lib/youtube/client";
 
 export async function criarConteudo(tipo: "aula" | "pdf", titulo: string, materia: string, assunto: string | null, url: string | null, duracao: number) {
   const admin = await requireAdmin();
@@ -120,10 +121,16 @@ export async function excluirConteudo(id: string) {
 // A importação inicial gravou 242 das 253 aulas como "Aula 1", "Aula 2"…
 // Isso não é só feio: com título genérico a busca desta tela não encontra
 // nada ("mitose" devolvia zero resultados) e o aluno não sabe o que vai
-// assistir. O oEmbed do YouTube é público e devolve o título real sem
-// precisar de chave de API.
+// assistir.
+//
+// Duas fontes possíveis, nesta ordem:
+//   1. YouTube Data API — 50 vídeos por chamada, então as 253 aulas saem em
+//      6 requisições. Usa a mesma chave da Produção sob Demanda do Copiloto.
+//   2. oEmbed público — sem chave, mas UMA requisição por aula.
+// A ordem importa: com a Data API disponível, o oEmbed seria 40x mais lento
+// para o mesmo resultado. Sem ela, o oEmbed ainda salva o dia.
 
-function extrairVideoId(url: string): string | null {
+function extrairVideoIdOembed(url: string): string | null {
   return (
     url.match(/youtu\.be\/([\w-]{6,})/) ||
     url.match(/[?&]v=([\w-]{6,})/) ||
@@ -131,14 +138,14 @@ function extrairVideoId(url: string): string | null {
   )?.[1] ?? null;
 }
 
-async function buscarTituloYoutube(url: string): Promise<string | null> {
+async function tituloViaOembed(url: string): Promise<string | null> {
   try {
     const resp = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
       signal: AbortSignal.timeout(6000)
     });
     if (!resp.ok) return null;
     const data = (await resp.json()) as { title?: string };
-    return data.title || null;
+    return data.title?.trim() || null;
   } catch {
     return null;
   }
@@ -147,11 +154,10 @@ async function buscarTituloYoutube(url: string): Promise<string | null> {
 /**
  * Substitui os títulos genéricos ("Aula N") pelo título real do vídeo.
  *
- * Processa no máximo `limite` por chamada de propósito: são requisições de
- * rede uma a uma, e tentar 242 numa única Server Action estoura o tempo da
- * requisição e não entrega nada. A tela chama de novo enquanto `restantes`
- * for maior que zero, mostrando o progresso — assim uma falha no meio do
- * caminho não perde o que já foi corrigido.
+ * `limite` só é usado no caminho oEmbed, onde cada aula custa uma requisição
+ * de rede e tentar 242 numa Server Action só estouraria o tempo da
+ * requisição sem entregar nada. Pela Data API o lote inteiro resolve de uma
+ * vez, e `restantes` volta zero.
  */
 export async function atualizarTitulosGenericos(limite = 25) {
   await requireAdmin();
@@ -165,38 +171,54 @@ export async function atualizarTitulosGenericos(limite = 25) {
     .order("titulo");
   if (error) return { ok: false as const, erro: "Não foi possível listar as aulas." };
 
-  const genericas = ((aulas as { id: string; titulo: string; url: string }[]) ?? []).filter((a) =>
-    /^Aula \d+$/.test(a.titulo)
-  );
+  const genericas = ((aulas as { id: string; titulo: string; url: string }[]) ?? [])
+    .filter((a) => /^Aula \d+$/.test(a.titulo))
+    .map((a) => ({ ...a, videoId: extrairVideoIdOembed(a.url) }))
+    .filter((a): a is { id: string; titulo: string; url: string; videoId: string } => !!a.videoId);
 
-  let atualizados = 0;
-  let semTitulo = 0;
-  for (const aula of genericas.slice(0, limite)) {
-    if (!extrairVideoId(aula.url)) {
-      semTitulo++;
-      continue;
-    }
-    const titulo = await buscarTituloYoutube(aula.url);
-    if (!titulo) {
-      semTitulo++;
-      continue;
-    }
-    const { error: erroUpdate } = await supabase
-      .from("conteudos_biblioteca")
-      .update({ titulo })
-      .eq("id", aula.id);
-    if (erroUpdate) semTitulo++;
-    else atualizados++;
+  if (genericas.length === 0) {
+    return { ok: true as const, atualizados: 0, semTitulo: 0, restantes: 0, aviso: null };
   }
 
-  revalidatePath("/admin/cursos");
-  revalidatePath("/admin/trilha");
-  revalidatePath("/aluno");
-  revalidatePath("/aluno/cronograma");
+  const gravar = async (id: string, titulo: string) => {
+    const { error: e } = await supabase.from("conteudos_biblioteca").update({ titulo }).eq("id", id);
+    return !e;
+  };
+
+  let atualizados = 0;
+
+  // --- Caminho 1: Data API em lote ---
+  const viaApi = await buscarTitulosYoutube(genericas.map((a) => a.videoId));
+  for (const aula of genericas) {
+    const titulo = viaApi.titulos.get(aula.videoId);
+    if (titulo && (await gravar(aula.id, titulo))) atualizados++;
+  }
+
+  // --- Caminho 2: oEmbed, só para o que sobrou ---
+  const faltando = genericas.filter((a) => !viaApi.titulos.has(a.videoId));
+  let restantes = 0;
+  if (faltando.length > 0) {
+    for (const aula of faltando.slice(0, limite)) {
+      const titulo = await tituloViaOembed(aula.url);
+      if (titulo && (await gravar(aula.id, titulo))) atualizados++;
+    }
+    restantes = Math.max(0, faltando.length - limite);
+  }
+
+  if (atualizados > 0) {
+    revalidatePath("/admin/cursos");
+    revalidatePath("/admin/trilha");
+    revalidatePath("/aluno");
+    revalidatePath("/aluno/cronograma");
+  }
+
   return {
     ok: true as const,
     atualizados,
-    semTitulo,
-    restantes: Math.max(0, genericas.length - limite)
+    semTitulo: genericas.length - atualizados - restantes,
+    restantes,
+    // Só vira aviso se NADA foi corrigido: se o oEmbed cobriu a falha da
+    // Data API, o admin não precisa ver um erro que não teve consequência.
+    aviso: atualizados === 0 ? viaApi.erro : null
   };
 }

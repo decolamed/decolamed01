@@ -154,3 +154,91 @@ function parseDuracaoISO8601(iso: string): number {
   const [, h, m, s] = match;
   return (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
 }
+
+// ============================================================================
+// TÍTULOS EM LOTE
+//
+// A importação inicial do cronograma gravou as aulas como "Aula 1", "Aula 2"…
+// Buscar o título real de cada uma pelo oEmbed custa UMA requisição por aula
+// (253 no total), e o oEmbed nem sempre está acessível — em ambientes com
+// proxy restritivo, youtube.com é bloqueado enquanto googleapis.com passa.
+//
+// O endpoint /videos da Data API aceita até 50 IDs por chamada, então as 253
+// aulas saem em 6 requisições em vez de 253. É a mesma chave já usada pela
+// Produção sob Demanda do Copiloto.
+// ============================================================================
+
+export function extrairVideoIdYoutube(url: string): string | null {
+  return (
+    url.match(/youtu\.be\/([\w-]{6,})/) ||
+    url.match(/[?&]v=([\w-]{6,})/) ||
+    url.match(/youtube\.com\/(?:embed|shorts)\/([\w-]{6,})/)
+  )?.[1] ?? null;
+}
+
+export interface ResultadoTitulos {
+  /** videoId → título real. Só contém os que a API devolveu. */
+  titulos: Map<string, string>;
+  /** Mensagem pronta para o admin quando nada pôde ser buscado. */
+  erro: string | null;
+}
+
+/**
+ * Busca o título real de vários vídeos de uma vez.
+ *
+ * Devolve `erro` preenchido — em vez de só uma lista vazia — porque as duas
+ * causas de falha têm soluções opostas e o admin precisa saber qual é: chave
+ * ausente se resolve colando a chave em Configurações; API não habilitada só
+ * se resolve no console do Google. Sem essa distinção, o botão falharia em
+ * silêncio e pareceria defeito da plataforma.
+ */
+export async function buscarTitulosYoutube(videoIds: string[]): Promise<ResultadoTitulos> {
+  const titulos = new Map<string, string>();
+  if (videoIds.length === 0) return { titulos, erro: null };
+
+  const apiKey = await getYoutubeApiKey();
+  if (!apiKey) {
+    return { titulos, erro: "Nenhuma chave da YouTube Data API configurada. Cadastre em Configurações." };
+  }
+
+  const LOTE = 50; // teto do endpoint /videos
+  for (let i = 0; i < videoIds.length; i += LOTE) {
+    const ids = videoIds.slice(i, i + LOTE);
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${ids.join(",")}&key=${encodeURIComponent(apiKey)}`,
+        { cache: "no-store", signal: AbortSignal.timeout(15000) }
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        const motivo: string = data?.error?.message ?? `HTTP ${res.status}`;
+        console.error("[youtube] falha ao buscar títulos:", motivo);
+        // "blocked" é o que a API responde quando a chave é válida mas a
+        // YouTube Data API v3 não está habilitada no projeto do Google.
+        if (/blocked|has not been used|disabled/i.test(motivo)) {
+          return {
+            titulos,
+            erro:
+              "A YouTube Data API v3 não está habilitada no projeto desta chave. " +
+              "Ative em console.cloud.google.com → APIs e Serviços → Biblioteca → YouTube Data API v3."
+          };
+        }
+        if (/quota/i.test(motivo)) {
+          return { titulos, erro: "Cota diária da YouTube Data API esgotada. Tente amanhã." };
+        }
+        return { titulos, erro: "Não foi possível consultar o YouTube agora." };
+      }
+
+      ((data?.items ?? []) as { id: string; snippet?: { title?: string } }[]).forEach((item) => {
+        const t = item.snippet?.title?.trim();
+        if (item.id && t) titulos.set(item.id, t);
+      });
+    } catch (e) {
+      console.error("[youtube] erro de rede ao buscar títulos:", e);
+      return { titulos, erro: "Falha de rede ao consultar o YouTube." };
+    }
+  }
+
+  return { titulos, erro: null };
+}
