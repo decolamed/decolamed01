@@ -53,6 +53,9 @@ interface DecolaAppDados {
   // abaixo da missão de hoje (antes, só as missões do Copiloto apareciam
   // ali, então quem não tinha missões via um cronograma "vazio").
   trilhaProximos: TrilhaDia[];
+  // Dias já passados do cronograma. Ficam visíveis (recolhidos) para o aluno
+  // consultar e concluir o que ficou para trás.
+  trilhaAnteriores: TrilhaDia[];
   progressoItens: Record<string, AlunoProgressoItem>;
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
@@ -211,6 +214,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     calSel: null,
     errOpen: false,
     aviso: null as string | null,
+    mostrarDiasAnteriores: false,
     errSent: false,
     errText: "",
     errCat: "Questão",
@@ -3584,6 +3588,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ]
     );
   }
+  // Cartão de um dia do cronograma (usado nos dias anteriores e nos
+  // próximos). `passado` só muda a aparência — os itens continuam clicáveis,
+  // para o aluno poder concluir o que ficou para trás.
+  cartaoDiaTrilha(dia: TrilhaDia, passado: boolean) {
+    const { C, h, I, card } = this.ui();
+    const itens = dia.itens || [];
+    const feitos = itens.filter((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item))).length;
+    return h(
+      "div",
+      { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px", opacity: passado ? 0.75 : 1 } },
+      card({ padding: 15 }, [
+        h("div", { key: "t", style: { display: "flex", alignItems: "center", gap: 8 } }, [
+          h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
+          itens.length
+            ? h("span", { key: "c", style: { fontSize: 10, fontWeight: 800, color: feitos === itens.length ? C.green : C.faint } }, feitos + "/" + itens.length)
+            : null
+        ]),
+        h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: itens.length ? 8 : 0 } }, dia.titulo),
+        ...itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
+      ])
+    );
+  }
   scrPlano() {
     const { C, h, I, card, btn, iconBox } = this.ui();
     // O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive
@@ -3672,34 +3698,38 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             ])
           )
         : null,
-      // Próximos dias do cronograma — "ver cronograma completo" precisa
-      // mostrar o que vem depois de hoje, e não só as missões do Copiloto.
-      this.props.dados.trilhaProximos.length
-        ? h("div", { key: "lblProx", style: { margin: "20px 20px 8px", fontSize: 11.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Próximos dias")
+      // Dias já passados, recolhidos atrás de um toque. Ficam acessíveis para
+      // o aluno concluir o que ficou para trás — sumir com eles é o que dava
+      // a impressão de que o cronograma "perdia" dias.
+      this.props.dados.trilhaAnteriores.length
+        ? h(
+            "div",
+            {
+              key: "lblAnt",
+              onClick: () => this.setState({ mostrarDiasAnteriores: !this.state.mostrarDiasAnteriores }),
+              style: { margin: "16px 18px 8px", padding: "10px 14px", borderRadius: 13, background: C.chip, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }
+            },
+            [
+              h(
+                "span",
+                { key: "ch", style: { display: "flex", transform: this.state.mostrarDiasAnteriores ? "rotate(90deg)" : "none", transition: "transform .2s" } },
+                I("chevR", 15, C.sub)
+              ),
+              h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 800, color: C.sub } },
+                this.props.dados.trilhaAnteriores.length + (this.props.dados.trilhaAnteriores.length === 1 ? " dia anterior" : " dias anteriores"))
+            ]
+          )
         : null,
-      ...this.props.dados.trilhaProximos.map((dia) =>
-        h(
-          "div",
-          { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px" } },
-          card({ padding: 15 }, [
-            h("div", { key: "t", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
-            h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: dia.itens?.length ? 8 : 0 } }, dia.titulo),
-            ...(dia.itens || []).map((item, i) => {
-              const chave = this.chaveDeItemTrilha(dia.dia_numero, i, item);
-              const feito = this.estaConcluido(chave);
-              return h(
-                "div",
-                { key: i, onClick: () => this.abrirItemTrilha(item), style: { display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderTop: i ? "1px solid " + C.line : "none", cursor: "pointer" } },
-                [
-                  h("span", { key: "i", style: { display: "flex", flexShrink: 0 } }, I(this.iconeMissao(item.tipo), 15, feito ? C.green : C.faint)),
-                  h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 700, color: C.txt, textDecoration: feito ? "line-through" : "none" } }, item.titulo),
-                  I("chevR", 14, C.faint)
-                ]
-              );
-            })
-          ])
-        )
+      ...(this.state.mostrarDiasAnteriores ? this.props.dados.trilhaAnteriores : []).map((dia) =>
+        this.cartaoDiaTrilha(dia, true)
       ),
+      // Próximos dias do cronograma — todos, sem corte: o painel do admin é a
+      // fonte oficial, e se ele cadastrou 40 dias o aluno vê os 40.
+      this.props.dados.trilhaProximos.length
+        ? h("div", { key: "lblProx", style: { margin: "20px 20px 8px", fontSize: 11.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } },
+            "Próximos dias · " + this.props.dados.trilhaProximos.length)
+        : null,
+      ...this.props.dados.trilhaProximos.map((dia) => this.cartaoDiaTrilha(dia, false)),
       ...Array.from(porDia.entries()).map(([data, ms]) =>
         h(
           "div",

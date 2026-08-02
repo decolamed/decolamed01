@@ -149,7 +149,14 @@ export default async function AlunoHomePage() {
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
   // cronograma, que antes só listava missões do Copiloto.
-  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje).slice(0, 7) : [];
+  // TODOS os dias seguintes, sem corte. O limite de 7 fazia o aluno ver um
+  // pedaço do cronograma em "Ver cronograma completo" — o painel do admin é
+  // a fonte oficial, e se ele cadastrou 40 dias o aluno precisa ver os 40.
+  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje) : [];
+  // Dias já vencidos ficam disponíveis para consulta e para o aluno concluir
+  // o que ficou para trás — sumir com eles é o que dava a impressão de que o
+  // cronograma "perdia" dias.
+  const trilhaAnteriores = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero < diaTrilhaHoje) : [];
 
   // Aulas/PDFs/links pendurados nos dias do cronograma. Todo o material
   // importado vive aqui (trilha_dias.itens), não em conteudos_biblioteca —
@@ -203,6 +210,7 @@ export default async function AlunoHomePage() {
         missoes: (missoesData as AlunoMissao[]) ?? [],
         trilhaHoje,
         trilhaProximos,
+        trilhaAnteriores,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;

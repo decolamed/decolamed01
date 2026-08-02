@@ -99,10 +99,15 @@ export default async function AlunoCronogramaPage() {
   // ---- Dia de hoje no cronograma ----
   let diaAtual: number | null = null;
   let diaTrilha: TrilhaDia | null = null;
+  let todosOsDias: TrilhaDia[] = [];
   if (matricula?.acesso_liberado_em) {
     diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
-    const { data } = await supabase.from("trilha_dias").select("*").eq("dia_numero", diaAtual).maybeSingle();
-    diaTrilha = (data as TrilhaDia) ?? null;
+    // Busca o cronograma inteiro, não só o dia de hoje: esta rota é o
+    // "cronograma completo", e mostrar um dia só era o que dava a impressão
+    // de que os demais tinham sumido. O painel do admin é a fonte oficial.
+    const { data } = await supabase.from("trilha_dias").select("*").order("dia_numero");
+    todosOsDias = (data as TrilhaDia[]) ?? [];
+    diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
 
   // ---- Missões individuais (Copiloto ou cadastradas pelo admin) ----
@@ -175,6 +180,69 @@ export default async function AlunoCronogramaPage() {
                 <div key={i} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow">
                   {conteudo}
                 </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Cronograma completo — todos os dias cadastrados pelo admin, com o de
+          hoje já destacado acima. Antes esta tela mostrava só o dia atual. */}
+      {todosOsDias.length > 1 && (
+        <>
+          <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">
+            Cronograma completo · {todosOsDias.length} dias
+          </h2>
+          <div className="mt-3 space-y-2">
+            {todosOsDias.map((d) => {
+              const passado = diaAtual != null && d.dia_numero < diaAtual;
+              const hoje = d.dia_numero === diaAtual;
+              return (
+                <details
+                  key={d.dia_numero}
+                  open={hoje}
+                  className={`rounded-2xl bg-white p-4 shadow ${passado ? "opacity-70" : ""}`}
+                >
+                  <summary className="flex cursor-pointer items-center gap-3">
+                    <span className="rounded-full bg-navy-dark/5 px-2.5 py-1 text-[11px] font-extrabold text-navy-dark/60">
+                      Dia {d.dia_numero}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-display font-bold text-navy-dark">{d.titulo}</span>
+                    <span className="text-xs font-semibold text-navy-dark/40">
+                      {d.itens?.length ?? 0} {(d.itens?.length ?? 0) === 1 ? "item" : "itens"}
+                    </span>
+                  </summary>
+                  <div className="mt-3 space-y-1.5">
+                    {(d.itens ?? []).length === 0 && (
+                      <p className="text-sm text-navy-dark/50">Dia livre.</p>
+                    )}
+                    {(d.itens ?? []).map((item, i) => {
+                      const href = montarHrefTrilha(item);
+                      const linha = (
+                        <>
+                          <span>{ICONE_TRILHA[item.tipo] ?? "📌"}</span>
+                          <span className="min-w-0 flex-1 truncate text-sm text-navy-dark">{item.titulo}</span>
+                          {href && <span className="text-navy-dark/30">↗</span>}
+                        </>
+                      );
+                      return href ? (
+                        <a
+                          key={i}
+                          href={href}
+                          target={item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" ? "_blank" : undefined}
+                          rel="noreferrer"
+                          className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-navy-dark/5"
+                        >
+                          {linha}
+                        </a>
+                      ) : (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1.5">
+                          {linha}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               );
             })}
           </div>
