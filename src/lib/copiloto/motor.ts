@@ -2,6 +2,13 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { gerarTextoGemini } from "@/lib/gemini/client";
 import { produzirMaterialSobDemanda } from "@/lib/copiloto/producao-sob-demanda";
 import { hojeISO, somarDias, diaDaSemana, diffDias } from "@/lib/site/data";
+import { chaveDeItemTrilha, minutosDoItem, itemReagendavel } from "@/lib/trilha/progresso";
+import {
+  distribuirPendencias, selecionarPendencias, importanciaDe, motivoRemarcacao, chaveDoMotivo,
+  type Pendencia, type DiaAlvo
+} from "@/lib/copiloto/pendencias";
+import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import type { TrilhaItem } from "@/types/database";
 
 // ============================================================================
 // COPILOTO DECOLA MED — Motor Adaptativo v5 (cenários completos)
@@ -100,6 +107,10 @@ interface DadosAluno {
   // tinha feito — o que não diz nada sobre os flashcards ainda existirem. O
   // aluno abria a missão e via "Não há flashcards disponíveis".
   inventario: Map<string, { questoes: number; flashcards: number }>;
+  // Em que dia do cronograma o aluno está hoje (null se a matrícula não tem
+  // data de liberação). É o que separa o passado — onde moram as pendências
+  // — do futuro, onde elas podem ser reagendadas.
+  diaTrilhaHoje: number | null;
 }
 
 // ---- Configurações por modo ------------------------------------------------
@@ -239,6 +250,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     materias, briefing, modo, diasRestantes, diasLivres, diasOcupados,
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
+    diaTrilhaHoje: await carregarDiaTrilhaHoje(ctx.alunoId),
   };
 }
 
@@ -262,6 +274,19 @@ async function carregarInventario(): Promise<Map<string, { questoes: number; fla
   (qs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "questoes"));
   (fs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "flashcards"));
   return mapa;
+}
+
+async function carregarDiaTrilhaHoje(alunoId: string): Promise<number | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("matriculas")
+    .select("acesso_liberado_em")
+    .eq("aluno_id", alunoId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const liberado = (data as { acesso_liberado_em: string | null } | null)?.acesso_liberado_em;
+  return liberado ? calcularDiaTrilha(liberado) : null;
 }
 
 // Devolve um tipo de missão que REALMENTE tem conteúdo para a matéria, ou
@@ -524,6 +549,218 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
   }
 
   return acoes;
+}
+
+// ============================================================================
+// PENDÊNCIAS — conteúdo que passou da data e não foi concluído
+//
+// Antes, um dia que passava em branco simplesmente ficava para trás: o
+// cronograma seguia em frente e o conteúdo se perdia sem ninguém notar. Aqui
+// o Copiloto recupera o que ficou pendente e reagenda com critério.
+//
+// Três regras guiam a decisão:
+//
+//  1. "Marcar como concluído" é a palavra final. O aluno pode ter assistido
+//     a aula no YouTube, feito as questões no caderno ou estudado por outro
+//     meio — se marcou, está feito, e nunca volta como pendência.
+//  2. Só reagenda o que vale a pena. A importância vem do GEN da matéria
+//     (relevância na prova × desempenho do aluno × urgência) somada ao peso
+//     do próprio tipo de conteúdo. Item pouco relevante com prova longe não
+//     ocupa espaço no cronograma.
+//  3. Dia livre primeiro. Quem tem 40 dias de cronograma e 80 até a prova
+//     tem folga de sobra: o pendente vai para os dias vazios antes de somar
+//     carga em qualquer dia que já tem conteúdo. Só quando os livres acabam
+//     é que a distribuição passa a completar os dias parcialmente ocupados,
+//     sempre respeitando a carga horária que o aluno informou.
+// ============================================================================
+
+async function reagendarPendencias(dados: DadosAluno): Promise<number> {
+  const supabase = createAdminClient();
+  const hoje = hojeISO();
+  if (dados.diaTrilhaHoje == null) return 0;
+
+  // 1. O que o aluno já concluiu — inclusive o que ele marcou à mão.
+  const { data: progresso } = await supabase
+    .from("aluno_progresso_itens")
+    .select("chave, concluida")
+    .eq("aluno_id", dados.alunoId)
+    .eq("concluida", true);
+  const concluidas = new Set((progresso ?? []).map((p: { chave: string }) => p.chave));
+
+  // 2. O que já foi remarcado antes. Cada remarcação carimba
+  // `[pendencia:<chave>]` no motivo, e é esse carimbo que evita a mesma
+  // atividade ser recriada toda vez que o motor roda. Três destinos
+  // diferentes conforme o estado da missão:
+  const { data: jaReagendadas } = await supabase
+    .from("aluno_missoes")
+    .select("id, data, concluida, motivo_copiloto")
+    .eq("aluno_id", dados.alunoId)
+    .eq("origem", "copiloto")
+    // Filtrar o carimbo no PostgREST exigiria um LIKE com `[` e `:`, que são
+    // caracteres delicados na sintaxe de filtro. O regex resolve com
+    // segurança e o volume por aluno é pequeno.
+    .not("motivo_copiloto", "is", null);
+
+  const chavesReagendadas = new Set<string>();
+  const paraRemover: string[] = [];
+  (jaReagendadas ?? []).forEach((m: { id: string; data: string; concluida: boolean; motivo_copiloto: string | null }) => {
+    const chave = chaveDoMotivo(m.motivo_copiloto);
+    if (!chave) return;
+    if (m.concluida) {
+      // Concluída como missão vale como concluída, ponto. O aluno não precisa
+      // marcar de novo no item original do cronograma.
+      concluidas.add(chave);
+    } else if (concluidas.has(chave)) {
+      // O aluno voltou ao dia original e marcou o item como concluído depois
+      // que a recuperação já tinha sido criada. A missão de recuperação perdeu
+      // o motivo de existir — some, em vez de ficar cobrando algo já feito.
+      paraRemover.push(m.id);
+    } else if (m.data >= hoje) {
+      // Já está agendada para hoje ou para frente: nada a fazer.
+      chavesReagendadas.add(chave);
+    } else {
+      // Remarcada, a data passou e continua pendente. A linha antiga sai para
+      // a atividade poder ser remarcada de novo — sem isso ela duplicaria a
+      // cada rodada ou ficaria presa num dia que já passou.
+      paraRemover.push(m.id);
+    }
+  });
+  if (paraRemover.length > 0) {
+    await supabase.from("aluno_missoes").delete().in("id", paraRemover);
+    // O que saiu do banco também precisa sair da cópia em memória, senão os
+    // cenários seguintes contam carga que não existe mais.
+    const removidos = new Set(paraRemover);
+    dados.missoesAgendadas = dados.missoesAgendadas.filter((m) => !removidos.has(m.id));
+    recontarOcupacao(dados);
+  }
+
+  // 3. Levantar as pendências dos dias que já passaram.
+  const { data: diasPassados } = await supabase
+    .from("trilha_dias")
+    .select("dia_numero, itens")
+    .lt("dia_numero", dados.diaTrilhaHoje)
+    .order("dia_numero");
+
+  const pendencias: Pendencia[] = [];
+  ((diasPassados ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((dia) => {
+    (dia.itens ?? []).forEach((item, i) => {
+      if (!itemReagendavel(item)) return;
+      const chave = chaveDeItemTrilha(dia.dia_numero, i, item);
+      if (!chave || concluidas.has(chave) || chavesReagendadas.has(chave)) return;
+      const gen = item.materia ? genMateria(item.materia, dados) : 0;
+      pendencias.push({
+        chave,
+        titulo: item.titulo,
+        materia: item.materia,
+        tipo: item.tipo,
+        minutos: minutosDoItem(item),
+        importancia: importanciaDe(gen, item.tipo),
+        diaOrigem: dia.dia_numero
+      });
+    });
+  });
+
+  const aReagendar = selecionarPendencias(pendencias);
+  if (aReagendar.length === 0) return 0;
+
+  // 4. Montar a capacidade dos próximos dias.
+  const maxMinPorDia = (dados.briefing?.horasPorDia ?? 2) * 60;
+  const limite = dados.diasRestantes && dados.diasRestantes > 0 ? Math.min(dados.diasRestantes, 60) : 30;
+  const carga = new Map<string, number>();
+  dados.missoesAgendadas.forEach((m) => {
+    carga.set(m.data, (carga.get(m.data) ?? 0) + (m.duracao_estimada_min || m.duracao_minutos));
+  });
+  // Um dia do cronograma também ocupa tempo, mesmo sem missão do Copiloto.
+  const { data: diasFuturos } = await supabase
+    .from("trilha_dias")
+    .select("dia_numero, itens")
+    .gte("dia_numero", dados.diaTrilhaHoje);
+  const cargaTrilhaPorDiaNumero = new Map<number, number>();
+  ((diasFuturos ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((d) => {
+    cargaTrilhaPorDiaNumero.set(d.dia_numero, (d.itens ?? []).reduce((soma, it) => soma + minutosDoItem(it), 0));
+  });
+
+  const diasEstuda = new Set(dados.briefing?.diasEstuda ?? []);
+  const MAPA_DIA: Record<number, string> = { 0: "dom", 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sab" };
+
+  const alvos: DiaAlvo[] = [];
+  for (let d = 1; d <= limite; d++) {
+    const iso = somarDias(hoje, d);
+    if (diasEstuda.size > 0 && !diasEstuda.has(MAPA_DIA[diaDaSemana(iso)])) continue;
+    const doCronograma = cargaTrilhaPorDiaNumero.get(dados.diaTrilhaHoje + d) ?? 0;
+    alvos.push({ data: iso, usados: (carga.get(iso) ?? 0) + doCronograma });
+  }
+
+  // 5. Decidir (puro, testável em lib/copiloto/pendencias.ts) e gravar.
+  const { alocacoes } = distribuirPendencias(aReagendar, alvos, maxMinPorDia);
+  if (alocacoes.length === 0) return 0;
+
+  let reagendadas = 0;
+  for (const a of alocacoes) {
+    const p = a.pendencia;
+    const { error } = await supabase.from("aluno_missoes").insert({
+      aluno_id: dados.alunoId,
+      data: a.data,
+      titulo: p.titulo,
+      materia: p.materia,
+      assunto: null,
+      tipo: p.tipo,
+      duracao_minutos: p.minutos,
+      duracao_estimada_min: p.minutos,
+      prioridade: p.importancia >= 15 ? 3 : 2,
+      origem: "copiloto",
+      motivo_copiloto: motivoRemarcacao(a)
+    });
+    if (error) continue;
+    reagendadas++;
+
+    // A pendência remarcada passa a contar como carga já existente. Sem isso,
+    // `preencherDiasLivres` continuaria enxergando o dia como vazio e
+    // empilharia mais uma missão em cima — o oposto de "sem aumentar a carga
+    // dos demais dias".
+    dados.missoesAgendadas.push({
+      id: `pendencia:${p.chave}`,
+      data: a.data,
+      titulo: p.titulo,
+      materia: p.materia ?? "",
+      assunto: null,
+      tipo: p.tipo,
+      duracao_minutos: p.minutos,
+      duracao_estimada_min: p.minutos,
+      prioridade: p.importancia >= 15 ? 3 : 2,
+      origem: "copiloto",
+      concluida: false
+    });
+  }
+
+  if (reagendadas > 0) {
+    recontarOcupacao(dados);
+    await registrarEvento(dados.alunoId, "pendencias_reagendadas", null, null, {
+      total_pendentes: pendencias.length,
+      reagendadas,
+      descartadas_por_baixa_importancia: pendencias.length - aReagendar.length
+    });
+  }
+  return reagendadas;
+}
+
+// Recalcula dias livres/ocupados a partir de `missoesAgendadas`. Mesma conta
+// de `carregarDados`, extraída porque agora precisa rodar de novo depois que
+// o reagendamento de pendências ocupa dias que antes estavam vazios — é isso
+// que decide qual cenário o motor vai executar em seguida.
+function recontarOcupacao(dados: DadosAluno): void {
+  const datasComMissao = new Set(dados.missoesAgendadas.map((m) => m.data));
+  dados.diasOcupados = datasComMissao.size;
+  dados.diasLivres = 0;
+  if (!dados.diasRestantes || dados.diasRestantes <= 0) return;
+  const MAPA_DIA: Record<number, string> = { 0: "dom", 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sab" };
+  const diasEstudaSet = new Set(dados.briefing?.diasEstuda ?? []);
+  const hoje = hojeISO();
+  for (let d = 1; d <= dados.diasRestantes; d++) {
+    const iso = somarDias(hoje, d);
+    if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
+    if (!datasComMissao.has(iso)) dados.diasLivres++;
+  }
 }
 
 // ============================================================================
@@ -1032,6 +1269,13 @@ export async function rodarCopiloto(ctx: ContextoAluno): Promise<void> {
     // 0. Aplicar respostas de check-in pendentes (antes de qualquer outra coisa)
     await aplicarCheckinsRespondidos(dados);
 
+    // 0.5. Recuperar o que ficou para trás. Vem ANTES dos cenários porque
+    // pendência tem prioridade sobre conteúdo novo: de nada adianta o
+    // Copiloto encher os dias livres de missão inédita se o aluno ainda deve
+    // a aula da semana passada. Rodando aqui, os dias que a recuperação
+    // ocupar já entram como carga na hora de decidir o cenário.
+    await reagendarPendencias(dados);
+
     // 1. Ajustes no cronograma segundo o cenário
     if (dados.diasLivres > 0) {
       // Cenário 1: dias livres → preencher
@@ -1063,6 +1307,7 @@ export interface ResultadoCronograma {
   diasLivres: number;
   missoesGeradas: number;
   missoesIgnoradas: number;
+  pendenciasRecuperadas: number;
   distribuicao: Record<string, number>;
   log: string[];
 }
@@ -1071,8 +1316,11 @@ export async function gerarCronogramaAdaptativo(alunoId: string): Promise<Result
   const dados = await carregarDados({ alunoId });
   const log: string[] = [];
   log.push(`Modo: ${dados.modo} | Dias restantes: ${dados.diasRestantes ?? "??"} | Livres: ${dados.diasLivres} | Ocupados: ${dados.diasOcupados}`);
-  if (!dados.briefing?.dataProva) return { modo: dados.modo, diasLivres: 0, missoesGeradas: 0, missoesIgnoradas: 0, distribuicao: {}, log: ["Sem data de prova."] };
-  if ((dados.diasRestantes ?? 0) <= 0) return { modo: dados.modo, diasLivres: 0, missoesGeradas: 0, missoesIgnoradas: 0, distribuicao: {}, log: ["Prova já passou."] };
+  if (!dados.briefing?.dataProva) return { modo: dados.modo, diasLivres: 0, missoesGeradas: 0, missoesIgnoradas: 0, pendenciasRecuperadas: 0, distribuicao: {}, log: ["Sem data de prova."] };
+  if ((dados.diasRestantes ?? 0) <= 0) return { modo: dados.modo, diasLivres: 0, missoesGeradas: 0, missoesIgnoradas: 0, pendenciasRecuperadas: 0, distribuicao: {}, log: ["Prova já passou."] };
+
+  const recuperadas = await reagendarPendencias(dados);
+  if (recuperadas > 0) log.push(`Recuperação: ${recuperadas} atividades pendentes remarcadas (dias livres primeiro).`);
 
   let geradas = 0;
   if (dados.diasLivres > 0) {
@@ -1090,5 +1338,5 @@ export async function gerarCronogramaAdaptativo(alunoId: string): Promise<Result
   const dist: Record<string, number> = {};
   (mis ?? []).forEach((m: any) => { dist[m.materia] = (dist[m.materia] ?? 0) + 1; });
 
-  return { modo: dados.modo, diasLivres: dados.diasLivres, missoesGeradas: geradas, missoesIgnoradas: dados.diasOcupados, distribuicao: dist, log };
+  return { modo: dados.modo, diasLivres: dados.diasLivres, missoesGeradas: geradas, missoesIgnoradas: dados.diasOcupados, pendenciasRecuperadas: recuperadas, distribuicao: dist, log };
 }

@@ -13,6 +13,7 @@ import { salvarBriefingApp } from "./briefing/actions";
 import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias } from "@/lib/site/data";
+import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -1163,21 +1164,20 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // assistindo" e SEM poder ser marcadas como concluídas. Por isso a chave
   // cai para o ID do vídeo no YouTube, que é tão estável quanto o ref_id e
   // continua igual mesmo se o admin reordenar os itens do dia.
+  // As chaves vivem em lib/trilha/progresso.ts: o Copiloto (no servidor)
+  // lê as mesmas chaves para saber o que o aluno já concluiu, e duas
+  // implementações separadas acabariam divergindo.
   chaveAula(conteudoId: string): string {
-    return "aula:" + conteudoId;
+    return chaveAula(conteudoId);
   }
   chaveDeAula(refId: string | null, url: string | null): string | null {
-    if (refId) return this.chaveAula(refId);
-    const videoId = url ? this.youtubeVideoId(url) : null;
-    if (videoId) return "aula-yt:" + videoId;
-    return url ? "aula-url:" + url : null;
+    return chaveDeAula(refId, url);
   }
   chaveItemTrilha(diaNumero: number, indice: number): string {
-    return "trilha:" + diaNumero + ":" + indice;
+    return chaveItemTrilha(diaNumero, indice);
   }
   chaveDeItemTrilha(diaNumero: number, indice: number, item: TrilhaItem): string | null {
-    if (item.tipo === "aula") return this.chaveDeAula(item.ref_id, item.url);
-    return this.chaveItemTrilha(diaNumero, indice);
+    return chaveDeItemTrilha(diaNumero, indice, item);
   }
   progressoDe(chave: string | null): AlunoProgressoItem | undefined {
     return chave ? this.state.progressoLocal[chave] : undefined;
@@ -1303,8 +1303,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // Extrai só o ID do vídeo (não a URL /embed/ inteira) — é o que a
   // YouTube IFrame Player API espera em { videoId }.
   youtubeVideoId(url: string): string | null {
-    const m = (url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{6,})/i);
-    return m ? m[1] : null;
+    return youtubeVideoId(url);
   }
   // Injeta o script da YouTube IFrame Player API uma única vez (mesmo se
   // várias aulas forem abertas na mesma sessão) e encadeia callbacks de

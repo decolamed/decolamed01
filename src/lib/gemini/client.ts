@@ -7,6 +7,71 @@ const CHAVE_CONFIG = "gemini_api_key";
 // integração sem nenhuma mudança no nosso código.
 const MODELO = "gemini-flash-latest";
 
+// ATENÇÃO ao mexer nos limites de token abaixo.
+//
+// O alias acima hoje aponta para um modelo de *raciocínio*, que gasta tokens
+// pensando ANTES de escrever — e esses tokens saem do mesmo `maxOutputTokens`
+// da resposta. Verificado contra a API real: com 300 tokens, 287 foram para o
+// raciocínio e a frase voltou cortada no meio ("Cada hora de estudo te
+// aproxima do"); com 50 tokens, os 47 do raciocínio consumiram tudo e o texto
+// voltou VAZIO, sem erro nenhum — a chamada respondia HTTP 200 e a integração
+// simplesmente não fazia efeito. Com 2000 tokens, o raciocínio ocupou ~700 e
+// a resposta veio inteira.
+//
+// Por isso os limites são folgados: eles não são o tamanho esperado da
+// resposta, são o teto de raciocínio + resposta. Apertá-los para "economizar"
+// reintroduz uma falha silenciosa.
+const TOKENS_TEXTO = 2000;
+const TOKENS_ESCOLHA = 1500;
+const TOKENS_FLASHCARDS = 8000;
+
+// Ponto único de chamada da API. Antes as três funções abaixo repetiam o mesmo
+// fetch, e por isso o mesmo defeito de orçamento existia em triplicata.
+// Devolve null em qualquer falha — inclusive quando a resposta veio truncada,
+// porque meia resposta é pior que nenhuma: um JSON pela metade quebra o parse
+// e uma frase cortada chegaria ao aluno assim mesmo.
+async function chamarGemini(
+  apiKey: string,
+  prompt: string,
+  temperatura: number,
+  maxOutputTokens: number,
+  rotulo: string
+): Promise<string | null> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: temperatura, maxOutputTokens }
+      }),
+      cache: "no-store"
+    }
+  );
+
+  if (!res.ok) {
+    console.error(`[gemini] ${rotulo}: erro ${res.status}:`, await res.text());
+    return null;
+  }
+
+  const data = await res.json();
+  const candidato = data?.candidates?.[0];
+
+  if (candidato?.finishReason === "MAX_TOKENS") {
+    // Log explícito: sem isso, o sintoma no ar é "a IA parou de funcionar" sem
+    // nenhuma pista de causa, porque o HTTP foi 200.
+    console.error(
+      `[gemini] ${rotulo}: resposta truncada em ${maxOutputTokens} tokens ` +
+      `(raciocínio: ${data?.usageMetadata?.thoughtsTokenCount ?? "?"}). Descartada.`
+    );
+    return null;
+  }
+
+  const texto = candidato?.content?.parts?.[0]?.text;
+  return typeof texto === "string" ? texto.trim() : null;
+}
+
 // Prioriza variável de ambiente (mais seguro — nunca passa pelo banco) e só
 // cai pro valor salvo em /admin/configuracoes se a env var não existir.
 // Nunca lida com `configuracoes` (essa tabela tem SELECT público — ver
@@ -38,27 +103,7 @@ export async function gerarTextoGemini(prompt: string): Promise<string | null> {
   if (!apiKey) return null;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 300 }
-        }),
-        cache: "no-store"
-      }
-    );
-
-    if (!res.ok) {
-      console.error(`[gemini] erro ${res.status}:`, await res.text());
-      return null;
-    }
-
-    const data = await res.json();
-    const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    return typeof texto === "string" ? texto.trim() : null;
+    return await chamarGemini(apiKey, prompt, 0.7, TOKENS_TEXTO, "texto");
   } catch (e) {
     console.error("[gemini] falha na chamada:", e);
     return null;
@@ -108,24 +153,7 @@ Responda APENAS com um JSON válido neste formato exato, sem markdown, sem comen
 [{"frente":"...","verso":"..."},{"frente":"...","verso":"..."}]`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 1200 }
-        }),
-        cache: "no-store"
-      }
-    );
-    if (!res.ok) {
-      console.error(`[gemini] erro flashcards ${res.status}:`, await res.text());
-      return [];
-    }
-    const data = await res.json();
-    const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const texto = await chamarGemini(apiKey, prompt, 0.4, TOKENS_FLASHCARDS, "flashcards");
     if (typeof texto !== "string") return [];
 
     // Remove possíveis cercas de código markdown (```json ... ```)
@@ -178,21 +206,7 @@ Critérios: conteúdo completo e aprofundado (não superficial), canal educacion
 Responda APENAS com o ID exato de uma das opções acima (a parte depois de "ID:"), sem nenhum texto adicional, sem explicação.`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 50 }
-        }),
-        cache: "no-store"
-      }
-    );
-    if (!res.ok) return candidatos[0].videoId;
-    const data = await res.json();
-    const texto: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const texto = await chamarGemini(apiKey, prompt, 0.1, TOKENS_ESCOLHA, "escolha de vídeo");
     const idEscolhido = texto?.trim();
 
     // Defesa contra alucinação: só aceita se o ID devolvido é EXATAMENTE
