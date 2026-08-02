@@ -128,6 +128,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // Timer do aviso de rodapé (ver avisar()/avisoToast()); limpo no unmount
   // pra não chamar setState num componente já desmontado.
   timerAviso: ReturnType<typeof setTimeout> | null = null;
+  timerNota: ReturnType<typeof setTimeout> | null = null;
   state: any = {
     theme: null,
     // Primeiro acesso (ou aluno que nunca preencheu o "de voo"): entra
@@ -215,6 +216,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     errOpen: false,
     aviso: null as string | null,
     mostrarDiasAnteriores: false,
+    // Feedback visual do salvamento das anotações: "Salvando..." enquanto o
+    // aluno digita, "Salvo ✓" logo depois. O salvamento sempre foi
+    // automático, mas nada indicava isso na tela.
+    notaStatus: null as null | "salvando" | "salvo",
     errSent: false,
     errText: "",
     errCat: "Questão",
@@ -315,6 +320,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     window.removeEventListener("beforeinstallprompt", this._bip);
     window.removeEventListener("appinstalled", this._installed);
     if (this.timerAviso) clearTimeout(this.timerAviso);
+    if (this.timerNota) clearTimeout(this.timerNota);
     this.destruirPlayerYoutube();
   }
   // Chamado pelo botão "Instalar aplicativo" do tutorial. Se o navegador
@@ -1088,8 +1094,20 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // "https://" na frente (ex.: "decolamed.my.canva.site").
   normalizarUrl(url: string) {
     if (!url) return url;
-    if (url.startsWith("/") || /^https?:\/\//i.test(url)) return url;
-    return "https://" + url;
+    const comProtocolo = url.startsWith("/") || /^https?:\/\//i.test(url) ? url : "https://" + url;
+    return this.urlDriveEmbutivel(comProtocolo);
+  }
+  // Converte um link do Google Drive/Docs para a forma que abre dentro do
+  // app. O link que o admin copia do botão "Compartilhar" é o /view (ou
+  // /edit), que o Google recusa exibir em iframe — o aluno via "página
+  // indisponível" no navegador interno. O /preview é justamente a forma
+  // documentada para embutir, e funciona igual no celular.
+  urlDriveEmbutivel(url: string) {
+    const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([\w-]{10,})/i);
+    if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
+    const doc = url.match(/https?:\/\/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([\w-]{10,})/i);
+    if (doc) return `https://docs.google.com/${doc[1]}/d/${doc[2]}/preview`;
+    return url;
   }
   // Converte qualquer formato de link do YouTube (watch, youtu.be, shorts)
   // pro formato /embed/ — só esse formato pode ser exibido num iframe.
@@ -1601,6 +1619,24 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // mostrando o estado novo e o banco continuava com o antigo. Agora as
   // ações desfazem a mudança e chamam avisar() — mensagem em português, sem
   // detalhe técnico, como no resto do app.
+  // Marca a anotação como salva com um pequeno atraso, para o rótulo não
+  // piscar a cada tecla.
+  marcarNotaSalva() {
+    this.setState({ notaStatus: "salvando" });
+    if (this.timerNota) clearTimeout(this.timerNota);
+    this.timerNota = setTimeout(() => this.setState({ notaStatus: "salvo" }), 500);
+  }
+  rotuloSalvamento() {
+    const { C, h, I } = this.ui();
+    const st = this.state.notaStatus;
+    if (!st) return null;
+    const salvo = st === "salvo";
+    return h(
+      "span",
+      { key: "st", style: { display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 800, color: salvo ? C.green : C.faint } },
+      [salvo ? I("check", 12, C.green) : null, salvo ? "Salvo" : "Salvando..."]
+    );
+  }
   avisar(mensagem: string) {
     this.setState({ aviso: mensagem });
     if (this.timerAviso) clearTimeout(this.timerAviso);
@@ -4029,7 +4065,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         "div",
         { key: "free", style: { margin: "6px 18px 0" } },
         card({ padding: 14 }, [
-          h("div", { key: "l", style: { display: "flex", gap: 7, alignItems: "center", marginBottom: 8 } }, [I("pencil", 13, C.sub), h("span", { key: "t", style: { fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: ".04em", textTransform: "uppercase" } }, "Caderno livre · salva automaticamente")]),
+          h("div", { key: "l", style: { display: "flex", gap: 7, alignItems: "center", marginBottom: 8 } }, [
+            I("pencil", 13, C.sub),
+            h("span", { key: "t", style: { flex: 1, fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: ".04em", textTransform: "uppercase" } }, "Caderno livre"),
+            this.rotuloSalvamento()
+          ]),
           h("textarea", {
             key: "ta",
             defaultValue: (function () {
@@ -4042,7 +4082,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             onChange: (e: any) => {
               try {
                 localStorage.setItem("dm-note-livre", e.target.value);
-              } catch (err) {}
+                this.marcarNotaSalva();
+              } catch (err) {
+                this.avisar("Não foi possível salvar a anotação neste navegador.");
+              }
             },
             placeholder: "Escreva aqui suas anotações de estudo...",
             style: { width: "100%", height: 150, resize: "vertical", background: C.dark ? "rgba(191,221,242,.05)" : "#fff", border: "1.5px solid " + C.line, borderRadius: 11, padding: "10px 12px", fontSize: 12.5, fontWeight: 600, color: C.txt, outline: "none", fontFamily: "inherit", lineHeight: 1.6 }
@@ -4080,6 +4123,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   onChange: (e: any) => {
                     try {
                       localStorage.setItem("dm-note-" + n.code, e.target.value);
+                      this.marcarNotaSalva();
                     } catch (err) {}
                   },
                   style: { width: "100%", height: 56, resize: "vertical", background: C.dark ? "rgba(191,221,242,.05)" : "#fff", border: "1.5px solid " + C.line, borderRadius: 10, padding: "9px 11px", fontSize: 12, fontWeight: 600, color: C.txt, outline: "none", fontFamily: "inherit" }

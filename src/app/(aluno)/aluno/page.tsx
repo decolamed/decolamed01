@@ -52,6 +52,7 @@ export default async function AlunoHomePage() {
   const [
     { data: matricula },
     { data: config },
+    { data: configRedacao },
     { data: perfilComPlano },
     { data: questoesData },
     { data: flashcardsData },
@@ -84,6 +85,7 @@ export default async function AlunoHomePage() {
       .limit(1)
       .maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "site.contato.whatsapp").maybeSingle(),
+    supabase.from("configuracoes").select("valor").eq("chave", "redacao.whatsapp").maybeSingle(),
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
     supabase.from("questoes").select("*").eq("ativo", true).limit(POOL_LIMITE),
     supabase.from("flashcards").select("*").eq("ativo", true).limit(POOL_LIMITE),
@@ -139,6 +141,11 @@ export default async function AlunoHomePage() {
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
   const plano = planoNome && planoNome.toLowerCase().includes("guiado") ? "voo-guiado" : "decolando";
   const numeroWhatsapp = textoConfig(config?.valor);
+  // O botão da redação leva ao WhatsApp da professora, não ao geral da
+  // plataforma — eram dois números configurados e os dois botões abriam o
+  // mesmo. Cai no geral só se o número da professora não estiver preenchido,
+  // para o aluno nunca ficar sem canal.
+  const numeroWhatsappRedacao = textoConfig(configRedacao?.valor) || numeroWhatsapp;
 
   // Dia de hoje no cronograma (trilha_dias) — base de estudo de TODO aluno,
   // com ou sem Copiloto.
@@ -187,7 +194,7 @@ export default async function AlunoHomePage() {
       email={profile.email}
       plano={plano}
       whatsappSuporte={montarLinkWhatsapp(numeroWhatsapp, "Olá! Preciso de ajuda com a plataforma Decola Med.")}
-      whatsappRedacao={montarLinkWhatsapp(numeroWhatsapp, "Olá! Quero enviar minha redação ✍")}
+      whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
       dados={{
         temCopiloto,
         questoes: (questoesData as Questao[]) ?? [],
