@@ -4,6 +4,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { enviarRelatoErro } from "./relato-actions";
 import { nomeDaTela } from "@/lib/site/telas";
+import { formatarNota } from "@/lib/site/nota";
 import { registrarResposta } from "./questoes/actions";
 import { registrarRevisao } from "./flashcards/actions";
 import { submeterSimulado, buscarGabaritoTentativa, type ResultadoSimulado, type ItemGabarito } from "./simulados/[id]/actions";
@@ -2811,7 +2812,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const porMateria = new Map<string, number>();
     qs.forEach((q) => porMateria.set(q.materia, (porMateria.get(q.materia) ?? 0) + 1));
     const desempenhoPorMateria = Array.from(porMateria.entries()).map(([materia, total]) => ({ materia, peso: 1, acertos: total, total, precisao: 100 }));
-    return { acertos: qs.length, total: qs.length, nota: 100, notaFacape: 100, gabarito, desempenhoPorMateria };
+    // O modo demonstração não tem simulado real, então não há configuração de
+    // pesos para consultar: nulos mantêm a tela mostrando o percentual.
+    return {
+      acertos: qs.length, total: qs.length, nota: 100, notaFacape: 100, gabarito, desempenhoPorMateria,
+      notaPonderada: null, valorTotal: null, pontosPorMateria: null
+    };
   }
   async enviarSimulado() {
     const S = this.state;
@@ -2933,6 +2939,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const S = this.state;
     const r = S.simResult as ResultadoSimulado;
     const pct = Math.round(r.notaFacape);
+    // Quando o admin ligou o cálculo por pesos, a nota principal passa a ser a
+    // ponderada na escala do simulado (ex.: 720 / 1000). O pedido é explícito:
+    // nesse caso o percentual vira informação complementar, não o destaque.
+    const temPonderada = r.notaPonderada != null && r.valorTotal != null;
     const mm = String(Math.floor(S.simSec / 60)).padStart(2, "0"),
       ss = String(S.simSec % 60).padStart(2, "0");
     return this.screenWrap(
@@ -2941,9 +2951,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           this.mascoteBadge("trophy", 132, { anim: "dm-pop .5s ease both" }),
           h("div", { key: "t", style: { fontSize: 23, fontWeight: 900, marginTop: 18 } }, "Simulado concluído!"),
           h("div", { key: "d", style: { fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 6 } }, "Parabéns, piloto. Voo finalizado com segurança."),
-          h("div", { key: "pct", style: { fontSize: 52, fontWeight: 900, color: pct >= 70 ? C.green : C.orange, marginTop: 14 } }, pct + "%"),
-          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } }, "Nota ponderada pelos pesos das disciplinas"),
-          h("div", { key: "obj", style: { marginTop: 10, fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "7px 13px", borderRadius: 99 } }, Math.round(r.nota) + "% de acertos simples"),
+          temPonderada
+            ? h("div", { key: "pct", style: { fontSize: 46, fontWeight: 900, color: (r.notaPonderada as number) / (r.valorTotal as number) >= 0.7 ? C.green : C.orange, marginTop: 14 } },
+                formatarNota(r.notaPonderada as number, r.valorTotal as number))
+            : h("div", { key: "pct", style: { fontSize: 52, fontWeight: 900, color: pct >= 70 ? C.green : C.orange, marginTop: 14 } }, pct + "%"),
+          h("div", { key: "sub", style: { fontSize: 12.5, color: C.sub, fontWeight: 700 } },
+            temPonderada ? "Nota final pela pontuação das disciplinas" : "Nota ponderada pelos pesos das disciplinas"),
+          h("div", { key: "obj", style: { marginTop: 10, fontSize: 11, fontWeight: 800, color: C.sub, background: C.chip, padding: "7px 13px", borderRadius: 99 } },
+            Math.round(r.nota) + "% de acertos" + (temPonderada ? " · " + r.acertos + "/" + r.total + " questões" : " simples")),
+          // Quanto o aluno somou em cada disciplina — sem isso a nota final é
+          // um número solto e ele não sabe onde perdeu ponto.
+          temPonderada && r.pontosPorMateria && r.pontosPorMateria.length > 0
+            ? h("div", { key: "pm", style: { marginTop: 14, width: "100%" } },
+                card({ padding: 14 }, [
+                  h("div", { key: "t", style: { fontSize: 10, fontWeight: 900, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 8 } }, "Pontos por disciplina"),
+                  ...r.pontosPorMateria.map((m, i) =>
+                    h("div", { key: "l" + i, style: { display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 11.5, fontWeight: 700 } }, [
+                      h("span", { key: "n", style: { flex: 1, textAlign: "left", color: C.txt } }, m.materia),
+                      h("span", { key: "v", style: { color: C.sub } }, m.pontosObtidos.toFixed(0) + " / " + m.valorDaMateria.toFixed(0))
+                    ])
+                  )
+                ]))
+            : null,
           h(
             "div",
             { key: "stats", style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 22, width: "100%" } },

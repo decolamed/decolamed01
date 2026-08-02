@@ -1,6 +1,7 @@
 "use server";
 
 import { requireAcessoAluno } from "@/lib/auth/permissions";
+import { calcularNotaPonderada } from "@/lib/site/nota";
 import { createClient } from "@/lib/supabase/server";
 import { rodarCopiloto } from "@/lib/copiloto/motor";
 
@@ -32,6 +33,12 @@ export interface ResultadoSimulado {
   notaFacape: number;    // % ponderado pelos pesos oficiais (0-100)
   gabarito: ItemGabarito[];
   desempenhoPorMateria: DesempenhoMateria[];
+  // Nota na escala do simulado (Alteração 7.6), só quando o admin ligou
+  // "calcular pela pontuação das disciplinas". Nula nos demais casos — o que
+  // sinaliza à tela que ela deve mostrar o percentual, como antes.
+  notaPonderada: number | null;
+  valorTotal: number | null;
+  pontosPorMateria: { materia: string; valorDaMateria: number; pontosObtidos: number }[] | null;
 }
 
 /**
@@ -97,7 +104,10 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
   // na prova (evita puxar a tabela inteira sem necessidade)
   const materiasDaProva = Array.from(contadoresMateria.keys());
   const { data: pesosData } = materiasDaProva.length > 0
-    ? await supabase.from("materias_peso").select("materia, peso").in("materia", materiasDaProva)
+    ? await supabase
+        .from("materias_peso")
+        .select("materia, peso, pontuacao_maxima")
+        .in("materia", materiasDaProva)
     : { data: [] };
 
   const pesos = new Map<string, number>();
@@ -125,6 +135,39 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
   });
   const notaFacape = somaPesos > 0 ? Math.round((somaPonderada / somaPesos) * 10) / 10 : 0;
 
+  // ---- Nota ponderada na escala do simulado (Alteração 7.6) ----------------
+  // Só é calculada quando o admin ligou a opção no simulado. Desligada, tudo
+  // continua exatamente como antes — ligar isso sozinho mudaria a régua de
+  // avaliação de todo mundo sem ninguém pedir.
+  const { data: cfgSimulado } = await supabase
+    .from("simulados")
+    .select("usar_pesos, valor_total")
+    .eq("id", simuladoId)
+    .maybeSingle();
+
+  let notaPonderada: number | null = null;
+  let valorTotal: number | null = null;
+  let pontosPorMateria: ResultadoSimulado["pontosPorMateria"] = null;
+
+  if (cfgSimulado?.usar_pesos) {
+    valorTotal = Number(cfgSimulado.valor_total) || 1000;
+    const resultadoPeso = calcularNotaPonderada(
+      desempenhoPorMateria.map((d) => ({ materia: d.materia, acertos: d.acertos, total: d.total })),
+      (pesosData ?? []).map((p: any) => ({
+        materia: p.materia,
+        peso: Number(p.peso),
+        pontuacaoMaxima: p.pontuacao_maxima != null ? Number(p.pontuacao_maxima) : null
+      })),
+      valorTotal
+    );
+    notaPonderada = resultadoPeso.notaPonderada;
+    pontosPorMateria = resultadoPeso.porMateria.map((m) => ({
+      materia: m.materia,
+      valorDaMateria: m.valorDaMateria,
+      pontosObtidos: m.pontosObtidos
+    }));
+  }
+
   // Grava a tentativa com todos os campos calculados
   // (o formato do desempenho_por_materia é o que o Raio-X vai consumir)
   const desempenhoJson: Record<string, { peso: number; acertos: number; total: number; precisao: number }> = {};
@@ -141,6 +184,11 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
     nota,
     nota_facape: notaFacape,
     desempenho_por_materia: desempenhoJson,
+    // Guardadas na tentativa, não recalculadas depois: se o admin mudar os
+    // pesos amanhã, a nota que este aluno viu precisa continuar sendo a nota
+    // registrada no histórico dele.
+    nota_ponderada: notaPonderada,
+    valor_total_simulado: valorTotal,
     finalizado_em: new Date().toISOString()
   });
 
@@ -148,7 +196,10 @@ export async function submeterSimulado(simuladoId: string, respostas: Record<str
     console.error("[copiloto] falha no ponto de entrada de simulado:", e)
   );
 
-  const resultado: ResultadoSimulado = { acertos, total, nota, notaFacape, gabarito, desempenhoPorMateria };
+  const resultado: ResultadoSimulado = {
+    acertos, total, nota, notaFacape, gabarito, desempenhoPorMateria,
+    notaPonderada, valorTotal, pontosPorMateria
+  };
   return resultado;
 }
 

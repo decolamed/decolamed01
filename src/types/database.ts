@@ -230,6 +230,13 @@ export interface Simulado {
   titulo: string;
   descricao: string | null;
   tempo_minutos: number;
+  // Mesmas configurações do módulo de Atividades — os dois montam uma lista de
+  // questões e não havia motivo para terem formulários diferentes (Alt. 4.4).
+  gabarito_modo: "ao_final" | "imediato";
+  /** Escala da nota quando `usar_pesos` está ligado (ex.: 1000). */
+  valor_total: number;
+  /** Nota calculada pelos pesos de `materias_peso` em vez de % de acertos. */
+  usar_pesos: boolean;
   ativo: boolean;
   criado_por: string | null;
   created_at: string;
