@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput, TextArea, FieldLabel } from "@/components/admin/interactive";
 import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
-import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, type QuestaoForm } from "./actions";
+import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, alternarAtivoQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
 const DIFICULDADE_LABEL: Record<string, "Fácil" | "Média" | "Difícil"> = { facil: "Fácil", media: "Média", dificil: "Difícil" };
@@ -18,7 +18,8 @@ const VAZIO: QuestaoForm = {
   gabarito: "a",
   comentario: "",
   fonte: "",
-  alternativas: { a: "", b: "", c: "", d: "", e: "" }
+  alternativas: { a: "", b: "", c: "", d: "", e: "" },
+  imagens: []
 };
 
 function codigo(id: string) {
@@ -42,6 +43,11 @@ export function QuestoesManager({
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
   const [editId, setEditId] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  // Sobrescreve `ativo` só até o servidor confirmar (a lista vem por props).
+  const [listaLocal, setListaLocal] = useState<Record<string, boolean>>({});
+  const [novaImagem, setNovaImagem] = useState("");
+  const [novaLegenda, setNovaLegenda] = useState("");
   const [draft, setDraft] = useState<QuestaoForm>(VAZIO);
   const [pending, startTransition] = useTransition();
   const { toast, show } = useToast();
@@ -101,13 +107,50 @@ export function QuestoesManager({
       gabarito: q.resposta_correta,
       comentario: q.explicacao ?? "",
       fonte: (q as any).fonte ?? "",
-      alternativas: alt
+      alternativas: alt,
+      imagens: (q.imagens ?? [])
+        .slice()
+        .sort((a, b) => a.ordem - b.ordem)
+        .map((img) => ({ url: img.url, legenda: img.legenda }))
     });
+    // Em telas menores que `lg` o grid vira uma coluna só e o formulário
+    // fica abaixo da lista inteira — com centenas de questões, clicar no
+    // lápis parecia não fazer nada, porque o formulário preenchido estava
+    // longe demais para aparecer. Levar o admin até ele é parte do botão
+    // cumprir o que promete.
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function limpar() {
     setEditId(null);
     setDraft(VAZIO);
+    setNovaImagem("");
+    setNovaLegenda("");
+  }
+
+  const imagens = draft.imagens ?? [];
+
+  function adicionarImagem() {
+    const url = novaImagem.trim();
+    if (!url) return;
+    setDraft({ ...draft, imagens: [...imagens, { url, legenda: novaLegenda.trim() || null }] });
+    setNovaImagem("");
+    setNovaLegenda("");
+  }
+
+  function removerImagem(indice: number) {
+    setDraft({ ...draft, imagens: imagens.filter((_, i) => i !== indice) });
+  }
+
+  // A ordem de exibição para o aluno é a ordem desta lista (a action grava
+  // `ordem` pela posição), então mover para cima/baixo é o que permite
+  // corrigir a sequência de um enunciado com vários trechos de prova.
+  function moverImagem(indice: number, direcao: -1 | 1) {
+    const destino = indice + direcao;
+    if (destino < 0 || destino >= imagens.length) return;
+    const novas = imagens.slice();
+    [novas[indice], novas[destino]] = [novas[destino], novas[indice]];
+    setDraft({ ...draft, imagens: novas });
   }
 
   function salvar() {
@@ -119,6 +162,22 @@ export function QuestoesManager({
       }
       show(editId ? "Questão atualizada." : "Questão cadastrada.");
       limpar();
+    });
+  }
+
+  // Troca otimista com desfazer, como nas outras telas de conteúdo.
+  function alternarAtivo(q: Questao) {
+    const trocar = (valor: boolean) => setListaLocal((a) => ({ ...a, [q.id]: valor }));
+    trocar(!q.ativo);
+    startTransition(async () => {
+      // .catch aqui não é decoração: uma Server Action que rejeita (rede fora,
+      // servidor reiniciando) vira exceção não tratada e derruba a tela inteira,
+      // em vez de só falhar o botão. Verificado no navegador.
+      const res = await alternarAtivoQuestao(q.id, q.ativo).catch(() => ({ ok: false }));
+      if (!res.ok) {
+        trocar(q.ativo);
+        show("Não foi possível alterar a situação da questão. Tente de novo.");
+      }
     });
   }
 
@@ -212,7 +271,9 @@ export function QuestoesManager({
                     <span className="rounded-full bg-orange/10 px-2.5 py-1 text-[10px] font-extrabold text-orange">
                       {DIFICULDADE_LABEL[q.dificuldade] ?? q.dificuldade} · Gabarito {q.resposta_correta.toUpperCase()}
                     </span>
-                    {!q.ativo && <span className="rounded-full bg-red/10 px-2.5 py-1 text-[10px] font-extrabold text-red">Inativa</span>}
+                    {!(listaLocal[q.id] ?? q.ativo) && (
+                      <span className="rounded-full bg-red/10 px-2.5 py-1 text-[10px] font-extrabold text-red">Inativa</span>
+                    )}
                     {q.imagens?.length > 0 && (
                       <span className="rounded-full bg-navy/10 px-2.5 py-1 text-[10px] font-extrabold text-navy">
                         🖼️ {q.imagens.length}
@@ -221,6 +282,14 @@ export function QuestoesManager({
                     <div className="flex-1" />
                     <button type="button" onClick={() => editar(q)} className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-navy-dark/5 text-navy-dark/60" title="Editar">
                       <Icon name="pencil" size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alternarAtivo({ ...q, ativo: listaLocal[q.id] ?? q.ativo })}
+                      className="rounded-[8px] bg-navy-dark/5 px-2 py-1 text-[10px] font-extrabold text-navy-dark/60"
+                      title={(listaLocal[q.id] ?? q.ativo) ? "Tirar do ar (sem excluir)" : "Voltar a exibir para os alunos"}
+                    >
+                      {(listaLocal[q.id] ?? q.ativo) ? "Desativar" : "Ativar"}
                     </button>
                     <button type="button" onClick={() => excluir(q.id)} className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-red/10 text-red" title="Excluir">
                       <Icon name="trash" size={12} />
@@ -243,6 +312,7 @@ export function QuestoesManager({
           </Card>
         </div>
 
+        <div ref={formRef} className="h-fit scroll-mt-4">
         <Card className="h-fit">
           <h2 className="text-sm font-extrabold text-navy-dark">{editId ? "Editar questão" : "Nova questão"}</h2>
           <FieldLabel>Enunciado</FieldLabel>
@@ -281,6 +351,47 @@ export function QuestoesManager({
             ))}
           </div>
 
+          <FieldLabel>Imagens da questão</FieldLabel>
+          {imagens.length === 0 ? (
+            <p className="text-xs text-navy-dark/50">Nenhuma imagem. Questões de gráfico, mapa ou trecho de prova precisam de pelo menos uma.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {imagens.map((img, i) => (
+                <div key={img.url + i} className="flex items-center gap-2 rounded-[10px] border border-navy-dark/10 bg-white p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt={img.legenda ?? `Imagem ${i + 1}`} className="h-12 w-12 shrink-0 rounded-[6px] object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-semibold text-navy-dark">{img.url}</p>
+                    <TextInput
+                      value={img.legenda ?? ""}
+                      placeholder="Legenda (opcional)"
+                      onChange={(e) => {
+                        const novas = imagens.slice();
+                        novas[i] = { ...novas[i], legenda: e.target.value };
+                        setDraft({ ...draft, imagens: novas });
+                      }}
+                    />
+                  </div>
+                  <div className="flex shrink-0 flex-col gap-1">
+                    <button type="button" onClick={() => moverImagem(i, -1)} disabled={i === 0} title="Mover para cima"
+                      className="flex h-5 w-6 items-center justify-center rounded-[6px] bg-navy-dark/5 text-[10px] font-extrabold text-navy-dark/60 disabled:opacity-30">▲</button>
+                    <button type="button" onClick={() => moverImagem(i, 1)} disabled={i === imagens.length - 1} title="Mover para baixo"
+                      className="flex h-5 w-6 items-center justify-center rounded-[6px] bg-navy-dark/5 text-[10px] font-extrabold text-navy-dark/60 disabled:opacity-30">▼</button>
+                  </div>
+                  <button type="button" onClick={() => removerImagem(i)} title="Remover imagem"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-red/10 text-red">
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex flex-col gap-1.5 rounded-[10px] bg-navy-dark/[0.03] p-2">
+            <TextInput value={novaImagem} onChange={(e) => setNovaImagem(e.target.value)} placeholder="/questoes-facape/arquivo.png ou https://..." />
+            <TextInput value={novaLegenda} onChange={(e) => setNovaLegenda(e.target.value)} placeholder="Legenda (opcional)" />
+            <GhostButton onClick={adicionarImagem}>+ Adicionar imagem</GhostButton>
+          </div>
+
           <FieldLabel>Comentário do gabarito</FieldLabel>
           <TextArea rows={2} value={draft.comentario} onChange={(e) => setDraft({ ...draft, comentario: e.target.value })} placeholder="Explicação exibida ao aluno..." />
 
@@ -291,6 +402,7 @@ export function QuestoesManager({
             <GhostButton onClick={limpar}>Limpar</GhostButton>
           </div>
         </Card>
+        </div>
       </div>
 
       <Toast message={toast} />

@@ -26,7 +26,10 @@ export function SimuladosManager({ simulados, totalQuestoesPorId }: { simulados:
 
   function alternar(id: string, ativo: boolean) {
     startTransition(async () => {
-      const res = await alternarAtivoSimulado(id, ativo);
+      // .catch aqui não é decoração: uma Server Action que rejeita (rede fora,
+      // servidor reiniciando) vira exceção não tratada e derruba a tela inteira,
+      // em vez de só falhar o botão. Verificado no navegador.
+      const res = await alternarAtivoSimulado(id, ativo).catch(() => ({ ok: false }));
       if (!res.ok) show("Não foi possível atualizar.");
     });
   }

@@ -31,7 +31,10 @@ export function PdfsManager({ pdfs: inicial }: { pdfs: any[] }) {
     const trocar = (valor: boolean) => setPdfs((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
     trocar(!ativo);
     startTransition(async () => {
-      const res = await alternarAtivoConteudo(id, ativo);
+      // .catch aqui não é decoração: uma Server Action que rejeita (rede fora,
+      // servidor reiniciando) vira exceção não tratada e derruba a tela inteira,
+      // em vez de só falhar o botão. Verificado no navegador.
+      const res = await alternarAtivoConteudo(id, ativo).catch(() => ({ ok: false }));
       if (!res.ok) {
         trocar(ativo);
         show("Não foi possível atualizar o material. Tente de novo.");

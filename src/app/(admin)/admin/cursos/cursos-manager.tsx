@@ -89,7 +89,10 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
     const trocar = (valor: boolean) => setAulas((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
     trocar(!ativo);
     startTransition(async () => {
-      const res = await alternarAtivoConteudo(id, ativo);
+      // .catch aqui não é decoração: uma Server Action que rejeita (rede fora,
+      // servidor reiniciando) vira exceção não tratada e derruba a tela inteira,
+      // em vez de só falhar o botão. Verificado no navegador.
+      const res = await alternarAtivoConteudo(id, ativo).catch(() => ({ ok: false }));
       if (!res.ok) {
         trocar(ativo);
         show("Não foi possível atualizar a aula. Tente de novo.");
