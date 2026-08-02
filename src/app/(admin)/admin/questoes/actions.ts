@@ -24,6 +24,16 @@ export interface QuestaoForm {
   // como trocar, remover nem acrescentar uma pelo painel, só direto no
   // banco. As 92 questões que já têm imagem dependem disso.
   imagens?: { url: string; legenda: string | null }[];
+  // Identificação da prova de origem. As colunas já existiam no banco desde
+  // a importação inicial, mas nenhuma era editável nem exibida — não dava
+  // para corrigir o ano de uma questão nem localizar "as questões da FACAPE
+  // 2025.1" no painel.
+  provaNome?: string;
+  ano?: string;
+  semestre?: string;
+  modalidade?: string;
+  numeroQuestao?: string;
+  anulada?: boolean;
 }
 
 // Tira/devolve a questão de circulação sem apagá-la. A lista já mostrava o
@@ -64,6 +74,12 @@ export async function salvarQuestao(form: QuestaoForm) {
     explicacao: form.comentario.trim() || null,
     fonte: form.fonte?.trim() || null,
     alternativas,
+    prova_nome: form.provaNome?.trim() || null,
+    ano: form.ano?.trim() ? Number(form.ano) : null,
+    semestre: form.semestre?.trim() ? Number(form.semestre) : null,
+    modalidade: form.modalidade?.trim() || null,
+    numero_questao: form.numeroQuestao?.trim() ? Number(form.numeroQuestao) : null,
+    anulada: form.anulada ?? false,
     // `ordem` é derivada da posição na lista, então reordenar no formulário
     // já reordena para o aluno.
     imagens: (form.imagens ?? [])

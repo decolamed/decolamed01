@@ -19,7 +19,13 @@ const VAZIO: QuestaoForm = {
   comentario: "",
   fonte: "",
   alternativas: { a: "", b: "", c: "", d: "", e: "" },
-  imagens: []
+  imagens: [],
+  provaNome: "",
+  ano: "",
+  semestre: "",
+  modalidade: "",
+  numeroQuestao: "",
+  anulada: false
 };
 
 function codigo(id: string) {
@@ -42,6 +48,9 @@ export function QuestoesManager({
 }) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
+  const [filtroProva, setFiltroProva] = useState("Todas");
+  const [filtroAno, setFiltroAno] = useState("Todos");
+  const [filtroAssunto, setFiltroAssunto] = useState("Todos");
   const [editId, setEditId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement | null>(null);
   // Sobrescreve `ativo` só até o servidor confirmar (a lista vem por props).
@@ -87,12 +96,44 @@ export function QuestoesManager({
   }
 
   const materias = ["Todas", ...materiasExistentes];
+
+  // Opções de filtro derivadas das próprias questões — nada fixo no código:
+  // conforme o admin importa provas novas, elas aparecem aqui sozinhas.
+  const opcoes = (campo: (q: Questao) => string | null | undefined) =>
+    Array.from(new Set(questoes.map((q) => (campo(q) ?? "").toString().trim()).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, "pt-BR", { numeric: true })
+    );
+  const provas = opcoes((q) => q.prova_nome);
+  const anos = opcoes((q) => (q.ano != null ? String(q.ano) : null)).reverse();
+  const assuntos = opcoes((q) => q.assunto);
+
   const termo = busca.trim().toLowerCase();
-  const lista = questoes.filter(
-    (q) =>
-      (filtro === "Todas" || q.materia === filtro) &&
-      (!termo || (codigo(q.id) + " " + q.enunciado + " " + q.materia + " " + (q.assunto ?? "")).toLowerCase().includes(termo))
-  );
+  const lista = questoes.filter((q) => {
+    if (filtro !== "Todas" && q.materia !== filtro) return false;
+    if (filtroProva !== "Todas" && (q.prova_nome ?? "") !== filtroProva) return false;
+    if (filtroAno !== "Todos" && String(q.ano ?? "") !== filtroAno) return false;
+    if (filtroAssunto !== "Todos" && (q.assunto ?? "") !== filtroAssunto) return false;
+    if (!termo) return true;
+    // A busca cobre o que o admin realmente usa para achar uma questão:
+    // código curto, id completo, número na prova, enunciado e identificação
+    // da prova.
+    const alvo = [
+      codigo(q.id),
+      q.id,
+      q.enunciado,
+      q.materia,
+      q.assunto ?? "",
+      q.prova_nome ?? "",
+      q.modalidade ?? "",
+      q.fonte ?? "",
+      q.ano != null ? String(q.ano) : "",
+      q.numero_questao != null ? String(q.numero_questao) : ""
+    ]
+      .join(" ")
+      .toLowerCase();
+    return alvo.includes(termo);
+  });
+  const temFiltro = filtro !== "Todas" || filtroProva !== "Todas" || filtroAno !== "Todos" || filtroAssunto !== "Todos" || !!termo;
 
   function editar(q: Questao) {
     setEditId(q.id);
@@ -111,7 +152,13 @@ export function QuestoesManager({
       imagens: (q.imagens ?? [])
         .slice()
         .sort((a, b) => a.ordem - b.ordem)
-        .map((img) => ({ url: img.url, legenda: img.legenda }))
+        .map((img) => ({ url: img.url, legenda: img.legenda })),
+      provaNome: q.prova_nome ?? "",
+      ano: q.ano != null ? String(q.ano) : "",
+      semestre: q.semestre != null ? String(q.semestre) : "",
+      modalidade: q.modalidade ?? "",
+      numeroQuestao: q.numero_questao != null ? String(q.numero_questao) : "",
+      anulada: q.anulada ?? false
     });
     // Em telas menores que `lg` o grid vira uma coluna só e o formulário
     // fica abaixo da lista inteira — com centenas de questões, clicar no
@@ -252,14 +299,60 @@ export function QuestoesManager({
             <TextInput
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Pesquisar por código, enunciado, disciplina ou assunto..."
+              placeholder="Pesquisar por código, ID, nº da questão, prova ou enunciado..."
               className="mb-3"
             />
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-2 flex flex-wrap gap-2">
               {materias.map((m) => (
                 <Chip key={m} active={filtro === m} onClick={() => setFiltro(m)}>{m}</Chip>
               ))}
             </div>
+            {(provas.length > 0 || anos.length > 0 || assuntos.length > 0) && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {provas.length > 0 && (
+                  <select
+                    value={filtroProva}
+                    onChange={(e) => setFiltroProva(e.target.value)}
+                    className="rounded-[10px] border border-navy-dark/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+                  >
+                    <option value="Todas">Todas as provas</option>
+                    {provas.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+                {anos.length > 0 && (
+                  <select
+                    value={filtroAno}
+                    onChange={(e) => setFiltroAno(e.target.value)}
+                    className="rounded-[10px] border border-navy-dark/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+                  >
+                    <option value="Todos">Todos os anos</option>
+                    {anos.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+                {assuntos.length > 0 && (
+                  <select
+                    value={filtroAssunto}
+                    onChange={(e) => setFiltroAssunto(e.target.value)}
+                    className="rounded-[10px] border border-navy-dark/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+                  >
+                    <option value="Todos">Todos os assuntos</option>
+                    {assuntos.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+                <span className="text-xs font-semibold text-navy-dark/50">
+                  {lista.length} de {questoes.length}
+                </span>
+                {temFiltro && (
+                  <button
+                    type="button"
+                    onClick={() => { setBusca(""); setFiltro("Todas"); setFiltroProva("Todas"); setFiltroAno("Todos"); setFiltroAssunto("Todos"); }}
+                    className="text-xs font-semibold text-navy-dark/50 underline"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               {lista.map((q) => (
                 <div key={q.id} className={`rounded-xl border p-3 ${editId === q.id ? "border-orange bg-orange/5" : "border-navy-dark/10 bg-white"}`}>
@@ -271,6 +364,20 @@ export function QuestoesManager({
                     <span className="rounded-full bg-orange/10 px-2.5 py-1 text-[10px] font-extrabold text-orange">
                       {DIFICULDADE_LABEL[q.dificuldade] ?? q.dificuldade} · Gabarito {q.resposta_correta.toUpperCase()}
                     </span>
+                    {/* Prova de origem no mesmo padrão visual das outras
+                        etiquetas — é o que permite bater o olho e saber de
+                        onde a questão veio, sem abrir a edição. */}
+                    {(q.prova_nome || q.ano) && (
+                      <span className="rounded-full bg-navy/10 px-2.5 py-1 text-[10px] font-extrabold text-navy">
+                        {[q.prova_nome, q.ano ? `${q.ano}${q.semestre ? `.${q.semestre}` : ""}` : null, q.modalidade]
+                          .filter(Boolean)
+                          .join(" ")}
+                        {q.numero_questao != null ? ` · Q${q.numero_questao}` : ""}
+                      </span>
+                    )}
+                    {q.anulada && (
+                      <span className="rounded-full bg-red/10 px-2.5 py-1 text-[10px] font-extrabold text-red">Anulada</span>
+                    )}
                     {!(listaLocal[q.id] ?? q.ativo) && (
                       <span className="rounded-full bg-red/10 px-2.5 py-1 text-[10px] font-extrabold text-red">Inativa</span>
                     )}
@@ -321,8 +428,21 @@ export function QuestoesManager({
           <TextInput value={draft.materia} onChange={(e) => setDraft({ ...draft, materia: e.target.value })} placeholder="Biologia" />
           <FieldLabel>{`Assunto (matriz do ${nomeVestibular})`}</FieldLabel>
           <TextInput value={draft.assunto} onChange={(e) => setDraft({ ...draft, assunto: e.target.value })} placeholder="Ex.: Sistema Digestório" />
-          <FieldLabel>Origem (ano e prova, opcional)</FieldLabel>
+          <FieldLabel>Origem (texto livre, opcional)</FieldLabel>
           <TextInput value={draft.fonte ?? ""} onChange={(e) => setDraft({ ...draft, fonte: e.target.value })} placeholder={`Ex.: ${nomeVestibular} 2024 · 1ª fase`} />
+
+          <FieldLabel>Prova de origem</FieldLabel>
+          <div className="grid grid-cols-2 gap-2">
+            <TextInput value={draft.provaNome ?? ""} onChange={(e) => setDraft({ ...draft, provaNome: e.target.value })} placeholder={`Prova (ex.: ${nomeVestibular})`} />
+            <TextInput value={draft.modalidade ?? ""} onChange={(e) => setDraft({ ...draft, modalidade: e.target.value })} placeholder="Modalidade (Ampla, Cotas...)" />
+            <TextInput type="number" value={draft.ano ?? ""} onChange={(e) => setDraft({ ...draft, ano: e.target.value })} placeholder="Ano (2025)" />
+            <TextInput value={draft.semestre ?? ""} onChange={(e) => setDraft({ ...draft, semestre: e.target.value })} placeholder="Semestre (1 ou 2)" />
+            <TextInput type="number" value={draft.numeroQuestao ?? ""} onChange={(e) => setDraft({ ...draft, numeroQuestao: e.target.value })} placeholder="Nº da questão" />
+            <label className="flex items-center gap-2 px-1 text-xs font-semibold text-navy-dark">
+              <input type="checkbox" checked={draft.anulada ?? false} onChange={(e) => setDraft({ ...draft, anulada: e.target.checked })} />
+              Questão anulada
+            </label>
+          </div>
 
           <FieldLabel>Alternativas (deixe em branco as que não for usar)</FieldLabel>
           <div className="space-y-1.5">
