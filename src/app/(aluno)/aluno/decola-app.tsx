@@ -3,6 +3,7 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { enviarRelatoErro } from "./relato-actions";
+import { nomeDaTela } from "@/lib/site/telas";
 import { registrarResposta } from "./questoes/actions";
 import { registrarRevisao } from "./flashcards/actions";
 import { submeterSimulado, buscarGabaritoTentativa, type ResultadoSimulado, type ItemGabarito } from "./simulados/[id]/actions";
@@ -4427,7 +4428,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const auto = [
       ["Aluno", (this.props.nome || "Aluno Decola") + " · " + (this.props.email || "—")],
       ["Data e hora", new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })],
-      ["Página", S.screen],
+      ["Página", nomeDaTela(S.screen) ?? S.screen],
       q ? ["Questão", q.code + " · " + q.tema] : null,
       ["Dispositivo", "Navegador · Decola Med Web"]
     ].filter(Boolean) as string[][];
@@ -4478,16 +4479,26 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   if (!S.errText.trim()) return;
                   const texto = S.errText;
                   const cat = S.errCat;
+                  const tela = S.screen;
                   this.setState({ errSent: true });
-                  // Envia de verdade em segundo plano — a tela já mostra
-                  // "enviado" otimisticamente (a UX do protótipo original),
-                  // e loga no console se falhar (não trava a experiência).
                   // No modo demonstração não existe relato de verdade pra
                   // registrar (quem está vendo não é um aluno de verdade).
                   if (!this.props.demoMode) {
-                    enviarRelatoErro(texto, cat).then((res) => {
-                      if (!res.ok) console.error("Falha ao enviar relato de erro");
-                    });
+                    // A tela mostra "enviado" antes da resposta (a UX do
+                    // protótipo original), mas se a gravação falhar o aluno
+                    // PRECISA saber: antes o erro só ia para o console e o
+                    // relato se perdia com o aluno achando que tinha enviado.
+                    enviarRelatoErro(texto, cat, tela)
+                      .then((res) => {
+                        if (!res.ok) {
+                          this.setState({ errSent: false });
+                          this.avisar("Não foi possível enviar seu relato. Tente de novo.");
+                        }
+                      })
+                      .catch(() => {
+                        this.setState({ errSent: false });
+                        this.avisar("Não foi possível enviar seu relato. Tente de novo.");
+                      });
                   }
                 },
                 { marginTop: 14, opacity: S.errText.trim() ? 1 : 0.45 }
