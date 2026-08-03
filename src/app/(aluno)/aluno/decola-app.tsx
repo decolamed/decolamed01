@@ -956,6 +956,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // persistida no banco via marcarMissaoConcluida().
   missoesHoje(): AlunoMissao[] {
     const hojeStr = this.props.dados.hojeStr;
+    // Se hoje é o dia da prova, não há missão — vale para todas as telas que
+    // partem daqui (sequência de hoje, cronograma, painel).
+    if (this.dataDaProva() === hojeStr) return [];
     return (this.state.missoesLocal as AlunoMissao[]).filter((m) => m.data === hojeStr).sort((a, b) => b.prioridade - a.prioridade);
   }
   iconeMissao(tipo: string) {
@@ -1083,6 +1086,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // scrPlano() e /aluno/cronograma: nenhuma das duas fontes exclui a outra.
   todaySeq() {
     const list: any[] = [];
+    // Se hoje é o dia da prova, não há sequência de estudo — a tela mostra o
+    // cartão do vestibular no lugar.
+    if (this.dataDaProva() === this.props.dados.hojeStr) return list;
     const dia = this.props.dados.trilhaHoje;
     (dia?.itens || []).forEach((item, i) => {
       const chave = this.chaveDeItemTrilha(dia!.dia_numero, i, item);
@@ -1097,18 +1103,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
-    this.missoesHoje().forEach((m) => {
-      list.push({
-        id: m.id,
-        ic: this.iconeMissao(m.tipo),
-        t: m.titulo,
-        d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
-        ia: m.origem === "copiloto",
-        done: m.concluida,
-        act: () => this.navMissao(m),
-        toggle: () => this.toggleMissao(m.id)
-      });
-    });
+    this.missoesHoje().forEach((m) => list.push(this.itemDeMissao(m)));
     const pr0 = this.priorities();
     if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview(), toggle: null });
     return list;
@@ -1899,8 +1894,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pro = this.plan() === "voo-guiado";
     const wk = this.weakest();
     const hojeStr = this.props.dados.hojeStr;
+    const dataProvaPainel = this.dataDaProva();
     const upcoming = (this.state.missoesLocal as AlunoMissao[])
-      .filter((m) => m.data > hojeStr)
+      .filter((m) => m.data > hojeStr && !(dataProvaPainel && m.data === dataProvaPainel))
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade)
       .slice(0, 5)
       .map((m) => [m.titulo, new Date(m.data + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })]);
@@ -2257,19 +2253,59 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   scrMissoes() {
     const { C, h, I, card, chip } = this.ui();
     const t = this.state.missTab;
+    const hojeStr = this.props.dados.hojeStr;
 
-    const hoje = { rotulo: "Hoje", itens: this.todaySeq() };
-    const proximos = (this.props.dados.trilhaProximos || []).map((dia) => ({
-      rotulo: dia.titulo || `Dia ${dia.dia_numero}`,
-      itens: this.sequenciaDoDia(dia)
-    }));
+    // Grupos por dia. Começa pelo cronograma e, no fim, acrescenta as datas
+    // que só têm missão — o cronograma tem um número fixo de dias, e o
+    // Copiloto pode agendar missão para depois do último deles. Sem essa
+    // união, essas missões sumiriam da tela (era o que acontecia enquanto
+    // esta tela lia apenas os dias do cronograma).
+    const grupos: { rotulo: string; data: string | null; itens: any[] }[] = [
+      { rotulo: "Hoje", data: hojeStr, itens: this.todaySeq() }
+    ];
+    const datasCobertas = new Set<string>([hojeStr]);
 
-    let grupos: { rotulo: string; itens: any[] }[];
-    if (t === "diarias") grupos = [hoje];
-    else if (t === "semanais") grupos = [hoje, ...proximos.slice(0, 7)];
-    else grupos = [hoje, ...proximos].map((g) => ({ rotulo: g.rotulo, itens: g.itens.filter((x: any) => x.ia) }));
+    (this.props.dados.trilhaProximos || []).forEach((dia) => {
+      const iso = this.dataDoDia(dia.dia_numero);
+      if (iso) datasCobertas.add(iso);
+      const base = dia.titulo || `Dia ${dia.dia_numero}`;
+      grupos.push({
+        rotulo: iso ? `${base} · ${dataBR(iso)}` : base,
+        data: iso,
+        itens: this.sequenciaDoDia(dia)
+      });
+    });
 
-    const comItens = grupos.filter((g) => g.itens.length > 0);
+    // O dia da prova não recebe missão nem quando cai fora do cronograma —
+    // senão a regra "nada de estudo no dia do exame" valeria só dentro dos
+    // dias cadastrados.
+    const dataProva = this.dataDaProva();
+    const soltas = new Map<string, AlunoMissao[]>();
+    (this.state.missoesLocal as AlunoMissao[]).forEach((m) => {
+      if (m.data <= hojeStr || datasCobertas.has(m.data)) return;
+      if (dataProva && m.data === dataProva) return;
+      if (!soltas.has(m.data)) soltas.set(m.data, []);
+      soltas.get(m.data)!.push(m);
+    });
+    Array.from(soltas.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([data, ms]) => {
+        grupos.push({
+          rotulo: `${nomeDoDiaDaSemana(data)} · ${dataBR(data)}`,
+          data,
+          itens: ms.map((m) => this.itemDeMissao(m))
+        });
+      });
+
+    // Ordem cronológica, com "Hoje" sempre à frente.
+    grupos.sort((a, b) => (a.data ?? "9999").localeCompare(b.data ?? "9999"));
+
+    let visiveis: { rotulo: string; itens: any[] }[];
+    if (t === "diarias") visiveis = grupos.filter((g) => g.data === hojeStr);
+    else if (t === "semanais") visiveis = grupos.slice(0, 8);
+    else visiveis = grupos.map((g) => ({ rotulo: g.rotulo, itens: g.itens.filter((x: any) => x.ia) }));
+
+    const comItens = visiveis.filter((g) => g.itens.length > 0);
 
     return this.screenWrap([
       this.head("Centro de Missões", { back: "mapa" }),
@@ -2381,6 +2417,22 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return this.dataDoDia(diaNumero) === prova;
   }
 
+  // Missão (aluno_missoes) no formato da sequência unificada. Extraído
+  // porque três telas montavam esta mesma linha à mão — e divergir aqui é
+  // exatamente o que fazia Cronograma e Centro de Missões discordarem.
+  itemDeMissao(m: AlunoMissao) {
+    return {
+      id: m.id,
+      ic: this.iconeMissao(m.tipo),
+      t: m.titulo,
+      d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
+      ia: m.origem === "copiloto",
+      done: m.concluida,
+      act: () => this.navMissao(m),
+      toggle: () => this.toggleMissao(m.id)
+    };
+  }
+
   // Mesma montagem de todaySeq(), para um dia qualquer do cronograma.
   sequenciaDoDia(dia: TrilhaDia) {
     // Dia da prova não recebe missão nenhuma.
@@ -2402,18 +2454,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const isoDoDia = this.dataDoDia(dia.dia_numero);
     (this.state.missoesLocal as AlunoMissao[])
       .filter((m) => isoDoDia !== null && m.data === isoDoDia)
-      .forEach((m) => {
-        list.push({
-          id: m.id,
-          ic: this.iconeMissao(m.tipo),
-          t: m.titulo,
-          d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
-          ia: m.origem === "copiloto",
-          done: m.concluida,
-          act: () => this.navMissao(m),
-          toggle: () => this.toggleMissao(m.id)
-        });
-      });
+      .forEach((m) => list.push(this.itemDeMissao(m)));
     return list;
   }
 
@@ -4047,8 +4088,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pr = this.priorities();
     const hoje = this.missoesHoje();
     const hojeStr = this.props.dados.hojeStr;
+    // Mesma regra do Centro de Missões: nada de missão no dia da prova. Se
+    // as duas telas divergissem aqui, voltaria a valer a queixa de que
+    // cronograma e missões mostram coisas diferentes.
+    const dataProvaPlano = this.dataDaProva();
     const proximas = (this.state.missoesLocal as AlunoMissao[])
-      .filter((m) => m.data > hojeStr)
+      .filter((m) => m.data > hojeStr && !(dataProvaPlano && m.data === dataProvaPlano))
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
     const porDia = new Map<string, AlunoMissao[]>();
     proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
