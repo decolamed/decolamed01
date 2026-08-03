@@ -8,6 +8,7 @@ import {
   type Pendencia, type DiaAlvo
 } from "@/lib/copiloto/pendencias";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
 import type { TrilhaItem } from "@/types/database";
 
 // ============================================================================
@@ -194,7 +195,11 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   const b = briefingR.data;
   const briefing = b ? {
     dataProva: b.data_prova ?? null,
-    sentimentos: b.sentimentos ?? {},
+    // Re-indexado pela chave canônica: briefings antigos gravaram
+    // "Português" e o motor procura por "Linguagens" — sem isto a
+    // autoavaliação do aluno era descartada em silêncio e todo mundo virava
+    // "Atenção".
+    sentimentos: reindexarSentimentos(b.sentimentos),
     diasEstuda: b.dias_estuda ?? [],
     horasPorDia: Number(b.horas_por_dia_semana) || 2,
   } : null;
@@ -254,6 +259,17 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   };
 }
 
+// Sentimentos do briefing indexados pela chave canônica da matéria, para a
+// busca funcionar independente do nome que o aluno respondeu na época.
+function reindexarSentimentos(bruto: unknown): Record<string, string> {
+  const saida: Record<string, string> = {};
+  Object.entries((bruto ?? {}) as Record<string, string>).forEach(([materia, valor]) => {
+    const k = chaveMateria(materia);
+    if (k) saida[k] = valor;
+  });
+  return saida;
+}
+
 // Conta o conteúdo ativo por matéria. É a checagem que faltava antes de
 // prometer uma missão ao aluno: só se cria missão de um tipo que realmente
 // tem conteúdo disponível para aquela matéria.
@@ -263,9 +279,11 @@ async function carregarInventario(): Promise<Map<string, { questoes: number; fla
     supabase.from("questoes").select("materia").eq("ativo", true),
     supabase.from("flashcards").select("materia").eq("ativo", true),
   ]);
+  // Indexado pela chave canônica: uma missão de "Linguagens" precisa achar
+  // as questões mesmo se alguma linha antiga tiver ficado como "Português".
   const mapa = new Map<string, { questoes: number; flashcards: number }>();
   const somar = (materia: string | null, campo: "questoes" | "flashcards") => {
-    const m = (materia ?? "").trim();
+    const m = chaveMateria(materia);
     if (!m) return;
     const atual = mapa.get(m) ?? { questoes: 0, flashcards: 0 };
     atual[campo] += 1;
@@ -297,7 +315,7 @@ function tipoComConteudo(
   materia: string,
   preferido: "questoes" | "flashcards" | "aula" | "revisao"
 ): "questoes" | "flashcards" | null {
-  const inv = dados.inventario.get(materia) ?? { questoes: 0, flashcards: 0 };
+  const inv = dados.inventario.get(chaveMateria(materia)) ?? { questoes: 0, flashcards: 0 };
   if ((preferido === "flashcards" || preferido === "revisao") && inv.flashcards > 0) return "flashcards";
   if (inv.questoes > 0) return "questoes";
   if (inv.flashcards > 0) return "flashcards";
@@ -362,11 +380,11 @@ function genMateria(materia: string, dados: DadosAluno): number {
   const m = dados.materias.get(materia);
   if (!m) return 0;
   let a = 0, e = 0, t = 0;
-  dados.respostas.filter((r) => r.materia === materia).forEach((r) => {
+  dados.respostas.filter((r) => mesmaMateria(r.materia, materia)).forEach((r) => {
     t++; if (r.correta) a++; else e++;
   });
   const precisao = t > 0 ? (a / t) * 100 : 50;
-  const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+  const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
   return calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: e, diasRestantes: dados.diasRestantes, sentimento });
 }
 
@@ -423,7 +441,7 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   }
 
   // Intercalar
-  const buckets = scores.map(({ mat }) => sequencia.filter((s) => s.materia === mat));
+  const buckets = scores.map(({ mat }) => sequencia.filter((s) => mesmaMateria(s.materia, mat)));
   const intercalada: typeof sequencia = [];
   let rodada = 0;
   while (intercalada.length < sequencia.length) {
@@ -490,7 +508,7 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     const minExtra = DURACAO_TIPO.questoes;
     const tipoExtra = tipoComConteudo(dados, maisUrgente.mat, "questoes");
     if (tipoExtra && minUsados + minExtra <= maxMinPorDia) {
-      const jaTemMateria = missoesDoDia.some((m) => m.materia === maisUrgente.mat);
+      const jaTemMateria = missoesDoDia.some((m) => mesmaMateria(m.materia, maisUrgente.mat));
       if (!jaTemMateria) {
         await supabase.from("aluno_missoes").insert({
           aluno_id: dados.alunoId, data,
@@ -914,9 +932,9 @@ async function gerarCheckinsContextuais(dados: DadosAluno): Promise<void> {
   // --- PERGUNTA 3: focar em matéria de turbulência com baixa precisão ---
   const materiasCriticas = [...dados.materias.entries()]
     .map(([mat, m]) => {
-      const sentimento = briefing?.sentimentos[mat] ?? "Atenção";
+      const sentimento = briefing?.sentimentos[chaveMateria(mat)] ?? "Atenção";
       if (sentimento !== "Turbulência") return null;
-      const d = dados.respostas.filter((r) => r.materia === mat);
+      const d = dados.respostas.filter((r) => mesmaMateria(r.materia, mat));
       if (d.length < 5) return null;
       const precisao = d.filter((r) => r.correta).length / d.length * 100;
       if (precisao >= 50) return null;
@@ -947,9 +965,9 @@ async function gerarCheckinsContextuais(dados: DadosAluno): Promise<void> {
     !(await jaFezPerguntaRecentemente(alunoId, "trocar_dominio", 14))
   ) {
     const materiaDominada = [...dados.materias.entries()].find(([mat]) => {
-      const s = briefing?.sentimentos[mat] ?? "Atenção";
+      const s = briefing?.sentimentos[chaveMateria(mat)] ?? "Atenção";
       if (s !== "Domínio") return false;
-      const d = dados.respostas.filter((r) => r.materia === mat);
+      const d = dados.respostas.filter((r) => mesmaMateria(r.materia, mat));
       if (d.length < 5) return false;
       return d.filter((r) => r.correta).length / d.length >= 0.75;
     });
@@ -1032,7 +1050,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         for (let d = 1; d <= Math.min(dias, dados.diasRestantes ?? dias) && adicionados < 5; d++) {
           const iso = somarDias(hojeISO(), d);
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
-          const jaTemMateria = missoesNoDia.some((m) => m.materia === mat);
+          const jaTemMateria = missoesNoDia.some((m) => mesmaMateria(m.materia, mat));
           if (jaTemMateria) continue;
           const tipoFoco = tipoComConteudo(dados, mat, "questoes");
           if (!tipoFoco) break; // matéria pedida no check-in não tem conteúdo
@@ -1058,7 +1076,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         const para = acao_payload.para as string;
         // Encontrar 2-3 missões futuras de 'de' e substituir por missões de 'para'
         const missoesParaSubstituir = dados.missoesAgendadas
-          .filter((m) => m.materia === de && m.origem === "admin" && !m.concluida)
+          .filter((m) => mesmaMateria(m.materia, de) && m.origem === "admin" && !m.concluida)
           .slice(0, 3);
         // Redistribuir apaga missões existentes: se a matéria de destino não
         // tem conteúdo, o aluno terminaria com menos missões válidas do que
@@ -1128,7 +1146,7 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const [materia, assunto] = k.split("||");
     const m = dados.materias.get(materia); if (!m) continue;
     const precisao = (d.a / d.t) * 100;
-    const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+    const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento });
     if (gen < cfg.genMin) continue;
     // `flashPorMat` conta REVISÕES JÁ FEITAS, não flashcards existentes —
@@ -1155,7 +1173,7 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const m = dados.materias.get(materia); if (!m) continue;
     const precisao = (d.a / d.t) * 100;
     if (precisao >= 65) continue;
-    const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+    const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento }) * 0.7;
     if (gen < cfg.genMin) continue;
     const tipoMat = tipoComConteudo(dados, materia, "questoes");

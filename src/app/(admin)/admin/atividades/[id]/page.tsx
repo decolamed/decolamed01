@@ -8,6 +8,7 @@ import { getNomeVestibular, rotuloNotaPonderada } from "@/lib/site/marca";
 import { MetadadosForm } from "./metadados-form";
 import { SeletorQuestoes } from "@/components/admin/seletor-questoes";
 import { carregarUsoDasQuestoes } from "@/lib/site/uso-questoes";
+import { mesmaMateria, materiasUnicas } from "@/lib/site/materia-canonica";
 import type { Questao, Atividade } from "@/types/database";
 
 async function salvarQuestoesDaAtividade(id: string, formData: FormData) {
@@ -16,6 +17,39 @@ async function salvarQuestoesDaAtividade(id: string, formData: FormData) {
   const supabase = createAdminClient();
 
   const idsEscolhidos = formData.getAll("questao_id").map(String);
+
+  // A atividade só pode conter questões da disciplina dela. Sem esta
+  // checagem dava pra salvar uma atividade "Praticar · Química" cheia de
+  // questão de Linguagens — o título prometia uma coisa e o aluno recebia
+  // outra. A comparação é canônica (ver materia-canonica.ts) pra não
+  // rejeitar por diferença só de nome.
+  const { data: atividadeAtual } = await supabase
+    .from("atividades")
+    .select("materia")
+    .eq("id", id)
+    .maybeSingle();
+  const materiaDaAtividade = (atividadeAtual as { materia: string | null } | null)?.materia ?? null;
+
+  if (materiaDaAtividade && idsEscolhidos.length > 0) {
+    const { data: escolhidas } = await supabase
+      .from("questoes")
+      .select("id, materia")
+      .in("id", idsEscolhidos);
+
+    const foraDaMateria = (escolhidas ?? []).filter(
+      (q: { materia: string | null }) => !mesmaMateria(q.materia, materiaDaAtividade)
+    );
+
+    if (foraDaMateria.length > 0) {
+      const outras = materiasUnicas(foraDaMateria.map((q: { materia: string | null }) => q.materia)).join(", ");
+      redirect(
+        `/admin/atividades/${id}?erro=${encodeURIComponent(
+          `${foraDaMateria.length} questão(ões) não são de ${materiaDaAtividade} (${outras}). ` +
+            `Remova essas questões ou altere a disciplina da atividade antes de salvar.`
+        )}`
+      );
+    }
+  }
 
   const { error: delError } = await supabase.from("atividade_questoes").delete().eq("atividade_id", id);
   if (delError) {
@@ -50,7 +84,12 @@ export default async function EditarAtividadePage({
   const a = atividade as Atividade;
 
   const { data: todasQuestoes } = await supabase.from("questoes").select("*").eq("ativo", true).order("materia");
-  const questoes = (todasQuestoes as Questao[]) ?? [];
+  // Quando a atividade tem disciplina definida, o seletor só oferece
+  // questões dela — não adianta validar no salvar se a tela deixa o admin
+  // marcar questão de outra matéria e só reclamar no fim.
+  const questoes = ((todasQuestoes as Questao[]) ?? []).filter(
+    (q) => !a.materia || mesmaMateria(q.materia, a.materia)
+  );
 
   const { data: jaSelecionadas } = await supabase.from("atividade_questoes").select("questao_id").eq("atividade_id", params.id);
   const rotuloNota = rotuloNotaPonderada(await getNomeVestibular());
@@ -70,7 +109,9 @@ export default async function EditarAtividadePage({
 
         <div>
           <p className="mb-2 text-sm font-semibold text-navy-dark/70">
-            Marque quais questões do banco fazem parte desta atividade. Só questões ativas aparecem aqui.
+            {a.materia
+              ? `Marque quais questões fazem parte desta atividade. Só aparecem questões ativas de ${a.materia} — a disciplina definida ao lado.`
+              : "Marque quais questões do banco fazem parte desta atividade. Só questões ativas aparecem aqui. Defina uma disciplina ao lado para restringir a lista."}
           </p>
           <form action={salvarComId}>
             {/* Mesmo componente usado em Simulados — a seleção de questões é

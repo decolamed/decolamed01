@@ -17,7 +17,7 @@ const MATERIAS_PALAVRAS: Record<string, string[]> = {
   Química: ["química", "estequiometria", "átomo", "molécula", "reação química", "tabela periódica", "ph"],
   Física: ["física", "cinemática", "termodinâmica", "eletricidade", "óptica", "mecânica", "ondulatória"],
   Matemática: ["matemática", "álgebra", "geometria", "trigonometria", "função", "equação", "logaritmo"],
-  "Português/Literatura": ["português", "gramática", "literatura", "interpretação de texto", "redação", "sintaxe"],
+  "Linguagens": ["português", "gramática", "literatura", "interpretação de texto", "redação", "sintaxe"],
   História: ["história", "revolução", "guerra mundial", "brasil colônia", "idade média", "república"],
   Geografia: ["geografia", "clima", "relevo", "geopolítica", "urbanização", "cartografia"]
 };

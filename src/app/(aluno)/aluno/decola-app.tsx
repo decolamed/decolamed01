@@ -16,6 +16,7 @@ import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
+import { mesmaMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -956,7 +957,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     if (m.tipo === "questoes") this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
     else if (m.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
-      if (m.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === m.materia)), false);
+      if (m.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, m.materia))), false);
       else this.nav("flashcards-select");
     } else if (m.tipo === "simulado") this.nav("simulados");
     else if (m.tipo === "revisao" && m.materia) this.montarRevisao(m.materia, m.assunto || m.materia);
@@ -995,8 +996,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const qs = this.data().questions;
     const m = this.state.qMateria;
     if (!m) return qs;
-    const f = qs.filter((q) => q.materia === m);
-    return f.length ? f : qs;
+    // Sem fallback: antes, quando a matéria escolhida não tinha questão
+    // nenhuma, isto devolvia o banco inteiro — e o aluno via o título
+    // "Praticar · Química" em cima de uma questão de Linguagens. Lista vazia
+    // cai no estado vazio logo abaixo, que é a resposta honesta.
+    return qs.filter((q) => mesmaMateria(q.materia, m));
   }
   startReview() {
     const pr = this.priorities();
@@ -1145,7 +1149,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
-      if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === item.materia)), false);
+      if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, item.materia))), false);
       else this.nav("flashcards-select");
     } else if (item.tipo === "simulado" && !item.ref_id) {
       this.nav("simulados");
@@ -2568,7 +2572,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   montarRevisao(materia: string, tema: string) {
     const pool = this.props.dados.questoes.map((q) => this.mapQuestao(q));
     const mesmoAssunto = pool.filter((q) => q.tema === tema);
-    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => q.materia === materia);
+    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => mesmaMateria(q.materia, materia));
     const embaralhado = [...base].sort(() => Math.random() - 0.5).slice(0, 5);
     this.setState({ reviewMode: true, revPool: embaralhado, revIdx: 0, revPicked: null, revDone: false, revResult: null, revScore: 0, revFinished: false });
   }
@@ -4394,7 +4398,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         ? h(
             "div",
             { key: "materias", style: { margin: "14px 18px 0", display: "flex", flexWrap: "wrap", gap: 8 } },
-            materias.map((m) => chip(m, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => c.materia === m)), false)))
+            materias.map((m) => chip(m, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => mesmaMateria(c.materia, m))), false)))
           )
         : null,
       S.fcModoAberto === "assunto"
