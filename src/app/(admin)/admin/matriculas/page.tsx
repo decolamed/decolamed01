@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -63,43 +64,37 @@ export default async function AdminMatriculasPage({
         </Link>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Aluno</th>
-              <th className="p-3">Plano</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((m: any) => (
-              <tr key={m.id} className="border-t">
-                <td className="p-3">
+      <div className="mt-6">
+        <TabelaResponsiva
+          linhas={lista as any[]}
+          chave={(m) => m.id}
+          vazio="Nenhuma matrícula ainda."
+          colunas={[
+            {
+              titulo: "Aluno",
+              principal: true,
+              celula: (m) => (
+                <div>
                   <p>{m.profiles?.nome ?? "—"}</p>
-                  <p className="text-xs text-navy-dark/50">{m.profiles?.email}</p>
+                  <p className="break-all text-xs text-navy-dark/50">{m.profiles?.email}</p>
                   <div className="mt-1">
                     <WhatsappButton telefone={m.profiles?.telefone ?? null} nome={m.profiles?.nome ?? "Aluno"} />
                   </div>
-                </td>
-                <td className="p-3">{m.planos?.nome}</td>
-                <td className="p-3 capitalize">{m.status}</td>
-                <td className="p-3">
-                  <form action={alterarStatus} className="flex gap-2">
-                    <input type="hidden" name="id" value={m.id} />
-                    <SubmitButton name="status" value="ativa" pendingText="..." className="text-green-700 hover:underline">Liberar</SubmitButton>
-                    <SubmitButton name="status" value="bloqueada" pendingText="..." className="text-red-600 hover:underline">Bloquear</SubmitButton>
-                    <SubmitButton name="status" value="cancelada" pendingText="..." className="text-navy-dark/60 hover:underline">Cancelar</SubmitButton>
-                  </form>
-                </td>
-              </tr>
-            ))}
-            {lista.length === 0 && (
-              <tr><td colSpan={4} className="p-6 text-center text-navy-dark/50">Nenhuma matrícula ainda.</td></tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              )
+            },
+            { titulo: "Plano", celula: (m) => m.planos?.nome },
+            { titulo: "Status", celula: (m) => <span className="capitalize">{m.status}</span> }
+          ]}
+          acoes={(m) => (
+            <form action={alterarStatus} className="flex flex-wrap gap-3">
+              <input type="hidden" name="id" value={m.id} />
+              <SubmitButton name="status" value="ativa" pendingText="..." className="text-green-700 hover:underline">Liberar</SubmitButton>
+              <SubmitButton name="status" value="bloqueada" pendingText="..." className="text-red-600 hover:underline">Bloquear</SubmitButton>
+              <SubmitButton name="status" value="cancelada" pendingText="..." className="text-navy-dark/60 hover:underline">Cancelar</SubmitButton>
+            </form>
+          )}
+        />
       </div>
     </div>
   );

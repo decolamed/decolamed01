@@ -7,6 +7,7 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { mesmaMateria, materiasUnicas } from "@/lib/site/materia-canonica";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 
 const PATH = "/admin/copiloto/pesos";
 
@@ -142,59 +143,54 @@ export default async function AdminPesosPage({
       </Card>
 
       {/* Tabela atual */}
-      <div className="mb-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-sm">
-          <thead className="bg-navy/5">
-            <tr>
-              <th className="p-3 text-left text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Matéria</th>
-              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Peso</th>
-              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Qtd. Questões</th>
-              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Pontos Potenciais</th>
-              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Relevância %</th>
-              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Pontuação máx.</th>
-              <th className="p-3 text-left text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Observação</th>
-              <th className="p-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((p: any) => {
-              const pontos = p.peso * p.qtd_questoes;
-              const relevancia = totalPontos > 0 ? ((pontos / totalPontos) * 100).toFixed(1) : "0.0";
-              return (
-                <tr key={p.materia} className="border-t">
-                  <td className="p-3 font-bold text-navy-dark">{p.materia}</td>
-                  <td className="p-3 text-center text-navy-dark">{p.peso}</td>
-                  <td className="p-3 text-center text-navy-dark">{p.qtd_questoes}</td>
-                  <td className="p-3 text-center font-bold text-navy-dark">{pontos}</td>
-                  <td className="p-3 text-center">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-extrabold ${
-                      Number(relevancia) >= 25 ? "bg-red/10 text-red" :
-                      Number(relevancia) >= 15 ? "bg-orange/10 text-orange-dark" :
-                      "bg-navy/5 text-navy-dark/60"
-                    }`}>
-                      {relevancia}%
-                    </span>
-                  </td>
-                  <td className="p-3 text-center text-navy-dark">
-                    {p.pontuacao_maxima != null ? Number(p.pontuacao_maxima) : <span className="text-navy-dark/35">rateio</span>}
-                  </td>
-                  <td className="p-3 text-xs text-navy-dark/50">{p.observacao ?? "—"}</td>
-                  <td className="p-3">
-                    <form action={excluirPeso}>
-                      <input type="hidden" name="materia" value={p.materia} />
-                      <SubmitButton pendingText="..." className="text-xs text-red hover:underline">
-                        Excluir
-                      </SubmitButton>
-                    </form>
-                  </td>
-                </tr>
-              );
-            })}
-            {lista.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-sm text-navy-dark/50">Nenhuma matéria cadastrada.</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mb-6">
+        <TabelaResponsiva
+          linhas={lista as any[]}
+          chave={(p) => p.materia}
+          vazio="Nenhuma matéria cadastrada."
+          colunas={[
+            { titulo: "Matéria", principal: true, celula: (p) => p.materia },
+            { titulo: "Peso", celula: (p) => p.peso, className: "text-center" },
+            { titulo: "Qtd. Questões", celula: (p) => p.qtd_questoes, className: "text-center" },
+            { titulo: "Pontos Potenciais", celula: (p) => p.peso * p.qtd_questoes, className: "text-center font-bold" },
+            {
+              titulo: "Relevância %",
+              className: "text-center",
+              celula: (p) => {
+                const pontos = p.peso * p.qtd_questoes;
+                const relevancia = totalPontos > 0 ? ((pontos / totalPontos) * 100).toFixed(1) : "0.0";
+                return (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-extrabold ${
+                      Number(relevancia) >= 25
+                        ? "bg-red/10 text-red"
+                        : Number(relevancia) >= 15
+                        ? "bg-orange/10 text-orange-dark"
+                        : "bg-navy/5 text-navy-dark/60"
+                    }`}
+                  >
+                    {relevancia}%
+                  </span>
+                );
+              }
+            },
+            {
+              titulo: "Pontuação máx.",
+              className: "text-center",
+              celula: (p) =>
+                p.pontuacao_maxima != null ? Number(p.pontuacao_maxima) : <span className="text-navy-dark/35">rateio</span>
+            },
+            { titulo: "Observação", celula: (p) => <span className="text-xs text-navy-dark/50">{p.observacao ?? "—"}</span> }
+          ]}
+          acoes={(p) => (
+            <form action={excluirPeso}>
+              <input type="hidden" name="materia" value={p.materia} />
+              <SubmitButton pendingText="..." className="text-xs text-red hover:underline">
+                Excluir
+              </SubmitButton>
+            </form>
+          )}
+        />
       </div>
 
       {/* Formulário de adição/atualização */}

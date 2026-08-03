@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { CopiarLinkButton } from "@/components/admin/copiar-link-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
@@ -92,63 +93,47 @@ export default async function AdminPlanosPage({
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Planos</h1>
+      <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Planos</h1>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <div className="mt-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Nome</th>
-              <th className="p-3">Preço</th>
-              <th className="p-3">Duração</th>
-              <th className="p-3">Link público</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((plano) => (
-              <tr key={plano.id} className="border-t">
-                <td className="p-3">{plano.nome}</td>
-                <td className="p-3">
-                  {(plano.preco_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </td>
-                <td className="p-3">{plano.duracao_meses ? `${plano.duracao_meses} meses` : "Ilimitado"}</td>
-                <td className="p-3">
-                  <CopiarLinkButton path={`/inscricao/${plano.slug}`} />
-                </td>
-                <td className="p-3">{plano.ativo ? "Ativo" : "Inativo"}</td>
-                <td className="p-3">
-                  <div className="flex flex-wrap gap-3">
-                    <Link href={`/admin/planos/${plano.id}/editar`} className="text-navy hover:underline">
-                      Editar
-                    </Link>
-                    <Link href={`/admin/matriculas?planoId=${plano.id}`} className="text-navy hover:underline">
-                      Ver inscritos
-                    </Link>
-                    <form action={alternarAtivo}>
-                      <input type="hidden" name="id" value={plano.id} />
-                      <input type="hidden" name="ativo" value={String(plano.ativo)} />
-                      <button className="text-orange-dark hover:underline">
-                        {plano.ativo ? "Desativar" : "Ativar"}
-                      </button>
-                    </form>
-                    <form action={excluirPlano}>
-                      <input type="hidden" name="id" value={plano.id} />
-                      <button className="text-red-600 hover:underline">Excluir</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {lista.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-navy-dark/50">Nenhum plano cadastrado.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-6">
+        <TabelaResponsiva
+          linhas={lista}
+          chave={(plano) => plano.id}
+          vazio="Nenhum plano cadastrado."
+          colunas={[
+            { titulo: "Nome", principal: true, celula: (plano) => plano.nome },
+            {
+              titulo: "Preço",
+              celula: (plano) =>
+                (plano.preco_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+            },
+            { titulo: "Duração", celula: (plano) => (plano.duracao_meses ? `${plano.duracao_meses} meses` : "Ilimitado") },
+            { titulo: "Link público", celula: (plano) => <CopiarLinkButton path={`/inscricao/${plano.slug}`} /> },
+            { titulo: "Status", celula: (plano) => (plano.ativo ? "Ativo" : "Inativo") }
+          ]}
+          acoes={(plano) => (
+            <>
+              <Link href={`/admin/planos/${plano.id}/editar`} className="text-navy hover:underline">
+                Editar
+              </Link>
+              <Link href={`/admin/matriculas?planoId=${plano.id}`} className="text-navy hover:underline">
+                Ver inscritos
+              </Link>
+              <form action={alternarAtivo}>
+                <input type="hidden" name="id" value={plano.id} />
+                <input type="hidden" name="ativo" value={String(plano.ativo)} />
+                <button className="text-orange-dark hover:underline">
+                  {plano.ativo ? "Desativar" : "Ativar"}
+                </button>
+              </form>
+              <form action={excluirPlano}>
+                <input type="hidden" name="id" value={plano.id} />
+                <button className="text-red-600 hover:underline">Excluir</button>
+              </form>
+            </>
+          )}
+        />
       </div>
 
       <div className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">

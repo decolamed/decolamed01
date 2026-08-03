@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
-import { PageHeader, Card, Th, Td } from "@/components/admin/card";
+import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 
 const PATH = "/admin/notificacoes";
 
@@ -130,51 +131,33 @@ export default async function AdminNotificacoesPage({
       </Card>
 
       <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">Histórico de envios</h2>
-      <Card className="mt-3 !p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr>
-                <Th>Título</Th>
-                <Th>Mensagem</Th>
-                <Th>Enviado em</Th>
-                <Th>Destinatários</Th>
-                <Th>Lidas</Th>
-                <Th>Ações</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {historico.map((c, i) => (
-                <tr key={i} className="border-t border-navy-dark/10">
-                  <Td className="font-bold text-navy-dark">{c.titulo}</Td>
-                  <Td className="max-w-xs truncate text-navy-dark/70">{c.mensagem}</Td>
-                  <Td>{new Date(c.created_at).toLocaleString("pt-BR")}</Td>
-                  <Td>{c.total}</Td>
-                  <Td>{c.lidas} / {c.total}</Td>
-                  <Td>
-                    <form action={excluirNotificacao}>
-                      <input type="hidden" name="titulo" value={c.titulo} />
-                      <input type="hidden" name="created_at" value={c.created_at} />
-                      <SubmitButton
-                        pendingText="..."
-                        className="rounded-lg bg-red/10 px-3 py-1.5 text-xs font-semibold text-red"
-                        confirmar={`Tem certeza que deseja excluir esta notificação? Essa ação removerá a notificação para todos os ${c.total} aluno(s).`}
-                      >
-                        Excluir
-                      </SubmitButton>
-                    </form>
-                  </Td>
-                </tr>
-              ))}
-              {historico.length === 0 && (
-                <tr>
-                  <Td className="text-navy-dark/50">Nenhuma notificação enviada ainda.</Td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <div className="mt-3">
+        <TabelaResponsiva
+          linhas={historico}
+          chave={(c) => `${c.titulo}-${c.created_at}`}
+          vazio="Nenhuma notificação enviada ainda."
+          colunas={[
+            { titulo: "Título", principal: true, celula: (c) => c.titulo },
+            { titulo: "Mensagem", celula: (c) => <span className="text-navy-dark/70">{c.mensagem}</span> },
+            { titulo: "Enviado em", celula: (c) => new Date(c.created_at).toLocaleString("pt-BR") },
+            { titulo: "Destinatários", celula: (c) => c.total },
+            { titulo: "Lidas", celula: (c) => `${c.lidas} / ${c.total}` }
+          ]}
+          acoes={(c) => (
+            <form action={excluirNotificacao}>
+              <input type="hidden" name="titulo" value={c.titulo} />
+              <input type="hidden" name="created_at" value={c.created_at} />
+              <SubmitButton
+                pendingText="..."
+                className="rounded-lg bg-red/10 px-3 py-1.5 text-xs font-semibold text-red"
+                confirmar={`Tem certeza que deseja excluir esta notificação? Essa ação removerá a notificação para todos os ${c.total} aluno(s).`}
+              >
+                Excluir
+              </SubmitButton>
+            </form>
+          )}
+        />
+      </div>
     </div>
   );
 }
