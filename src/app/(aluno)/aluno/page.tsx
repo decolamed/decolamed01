@@ -224,6 +224,9 @@ export default async function AlunoHomePage() {
         trilhaHoje,
         trilhaProximos,
         trilhaAnteriores,
+        // dia_numero de hoje: é o que permite converter a régua relativa do
+        // cronograma ("Dia 1", "Dia 2") em datas de calendário na tela.
+        diaTrilhaHoje,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;

@@ -418,15 +418,44 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
 
   if (diasLivresOrdenados.length === 0) return 0;
 
+  // Capacidade real de cada dia livre. Antes o Copiloto colocava UMA missão
+  // por dia e pulava pro dia seguinte — terça questões, quarta flashcards,
+  // quinta revisão — mesmo sobrando horas em cada um deles. Agora ele enche
+  // o dia até o limite de estudo do aluno antes de abrir o próximo.
+  const maxMinPorDia = (dados.briefing?.horasPorDia ?? 2) * 60;
+  const { data: diasFuturosTrilha } = await supabase
+    .from("trilha_dias")
+    .select("dia_numero, itens")
+    .gte("dia_numero", dados.diaTrilhaHoje ?? 0);
+  const cargaTrilha = new Map<number, number>();
+  ((diasFuturosTrilha ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((d) => {
+    cargaTrilha.set(d.dia_numero, (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0));
+  });
+
+  // O dia do cronograma já ocupa parte do tempo, mesmo num dia "livre" de
+  // missões — desconta, senão o Copiloto estoura a rotina do aluno.
+  const capacidade = diasLivresOrdenados.map((data) => {
+    const offset = diffDias(hojeISO(), data);
+    const doCronograma = cargaTrilha.get((dados.diaTrilhaHoje ?? 0) + offset) ?? 0;
+    return { data, livre: Math.max(0, maxMinPorDia - doCronograma) };
+  });
+  const minutosDisponiveis = capacidade.reduce((s, d) => s + d.livre, 0);
+  if (minutosDisponiveis <= 0) return 0;
+
+  // Quantas missões cabem no tempo total (não mais "uma por dia").
+  const duracaoMedia =
+    TIPOS_CICLO[dados.modo].reduce((s, t) => s + (DURACAO_TIPO[t] ?? 40), 0) / TIPOS_CICLO[dados.modo].length;
+  const totalMissoes = Math.max(1, Math.floor(minutosDisponiveis / duracaoMedia));
+
   const totalGen = scores.reduce((s, x) => s + Math.max(x.gen, 0.1), 0);
   const slots: Record<string, number> = {};
   scores.forEach(({ mat, gen }) => {
-    slots[mat] = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * diasLivresOrdenados.length));
+    slots[mat] = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * totalMissoes));
   });
   let soma = Object.values(slots).reduce((s, n) => s + n, 0);
-  for (let i = scores.length - 1; i >= 0 && soma > diasLivresOrdenados.length; i--) {
+  for (let i = scores.length - 1; i >= 0 && soma > totalMissoes; i--) {
     const m = scores[i].mat;
-    const red = Math.min(soma - diasLivresOrdenados.length, Math.max(0, slots[m] - 1));
+    const red = Math.min(soma - totalMissoes, Math.max(0, slots[m] - 1));
     slots[m] -= red; soma -= red;
   }
 
@@ -449,22 +478,30 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     rodada++;
   }
 
-  const missoes = intercalada.slice(0, diasLivresOrdenados.length).map((item, i) => {
-    const sc = scores.find((x) => x.mat === item.materia)!;
-    return {
+  // Empacota na ordem: enche o primeiro dia até o limite, depois o segundo.
+  // Só abre um dia novo quando a missão realmente não cabe no atual.
+  const restante = capacidade.map((d) => ({ ...d }));
+  const missoes: Record<string, unknown>[] = [];
+  for (const item of intercalada) {
+    const min = DURACAO_TIPO[item.tipo] ?? 40;
+    const dia = restante.find((d) => d.livre >= min);
+    if (!dia) break; // acabou a capacidade da janela até a prova
+    dia.livre -= min;
+    const sc = scores.find((x) => mesmaMateria(x.mat, item.materia))!;
+    missoes.push({
       aluno_id: dados.alunoId,
-      data: diasLivresOrdenados[i],
+      data: dia.data,
       titulo: `${item.tipo === "questoes" ? "Questões" : item.tipo === "flashcards" ? "Flashcards" : item.tipo === "revisao" ? "Revisão" : "Aula"} · ${item.materia} — Copiloto`,
       materia: item.materia,
       assunto: null as string | null,
       tipo: item.tipo,
-      duracao_minutos: DURACAO_TIPO[item.tipo] ?? 40,
-      duracao_estimada_min: DURACAO_TIPO[item.tipo] ?? 40,
+      duracao_minutos: min,
+      duracao_estimada_min: min,
       prioridade: sc.gen > 10 ? 2 : 1,
       origem: "copiloto" as const,
       motivo_copiloto: `[cenário1/${dados.modo}] GEN=${sc.gen.toFixed(1)}`,
-    };
-  });
+    });
+  }
 
   if (missoes.length > 0) await supabase.from("aluno_missoes").insert(missoes);
   return missoes.length;
