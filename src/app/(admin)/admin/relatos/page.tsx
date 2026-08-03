@@ -3,6 +3,13 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { RelatosManager, type RelatoExibicao } from "./relatos-manager";
 import type { StatusRelato } from "@/lib/site/relatos";
 
+// Relato é fila de atendimento: precisa refletir o banco no instante em que
+// o admin abre a tela. Sem isto, uma versão em cache podia esconder um
+// relato recém-enviado, e a impressão era de que a mensagem do aluno nunca
+// chegou — quando na verdade já estava gravada.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminRelatosPage() {
   await requireAdmin();
   const supabase = createAdminClient();

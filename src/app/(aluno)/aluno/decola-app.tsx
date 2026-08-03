@@ -3,6 +3,7 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { enviarRelatoErro } from "./relato-actions";
+import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { nomeDaTela } from "@/lib/site/telas";
 import { formatarNota } from "@/lib/site/nota";
 import { registrarResposta } from "./questoes/actions";
@@ -167,6 +168,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     missTab: "diarias",
     upcomingOpen: false,
     qMateria: null,
+    resetConfirmando: false,
+    resetEmAndamento: false,
     rankTab: "geral",
     achTab: "brasoes",
     notifOpen: false,
@@ -1032,6 +1035,30 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       .catch(() => {
         trocar(!concluida);
         this.avisar("Não foi possível salvar essa missão. Verifique sua conexão e tente de novo.");
+      });
+  }
+  // Redefinir perfil: apaga histórico/progresso e remonta o perfil a partir
+  // do briefing. Confirmação em dois passos porque é irreversível.
+  confirmarRedefinirPerfil() {
+    if (this.state.resetEmAndamento) return;
+    if (this.props.demoMode) {
+      this.setState({ resetConfirmando: false });
+      return this.avisar("No modo demonstração o perfil não é redefinido de verdade.");
+    }
+    this.setState({ resetEmAndamento: true });
+    redefinirPerfilAluno()
+      .then((res) => {
+        if (!res.ok) {
+          this.setState({ resetEmAndamento: false });
+          return this.avisar(res.erro);
+        }
+        // Recarrega para o app voltar com os dados já zerados — manter o
+        // estado antigo em memória mostraria progresso que não existe mais.
+        if (typeof window !== "undefined") window.location.reload();
+      })
+      .catch(() => {
+        this.setState({ resetEmAndamento: false });
+        this.avisar("Não foi possível redefinir seu perfil. Tente de novo.");
       });
   }
   qList() {
@@ -3604,6 +3631,61 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             )
           )
         )
+      ),
+      // Zona de risco: a ação é destrutiva e irreversível, então fica
+      // separada do resto, com confirmação em dois passos.
+      h("div", { key: "lblrz", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Recomeçar do zero"),
+      h(
+        "div",
+        { key: "reset", style: { margin: "0 18px" } },
+        card({ padding: 16 }, [
+          h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 } }, [
+            I("alert", 16, C.orange),
+            "Redefinir perfil"
+          ]),
+          h(
+            "div",
+            { key: "d", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 6, lineHeight: 1.55 } },
+            "Apaga seu histórico, progresso, estatísticas, cronograma personalizado e as adaptações do Copiloto. Seu cadastro, plano e créditos de redação continuam. Seu perfil é montado de novo a partir do briefing."
+          ),
+          this.state.resetConfirmando
+            ? h("div", { key: "c", style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 8 } }, [
+                h(
+                  "div",
+                  { key: "w", style: { fontSize: 11.5, fontWeight: 800, color: C.orange, lineHeight: 1.5 } },
+                  "Tem certeza? Isso não pode ser desfeito."
+                ),
+                h("div", { key: "b", style: { display: "flex", gap: 8 } }, [
+                  h(
+                    "div",
+                    {
+                      key: "sim",
+                      onClick: () => this.confirmarRedefinirPerfil(),
+                      style: { flex: 1, textAlign: "center", padding: "11px 0", borderRadius: 12, background: this.state.resetEmAndamento ? C.chip : C.orange, color: this.state.resetEmAndamento ? C.sub : "#fff", fontSize: 12, fontWeight: 900, cursor: this.state.resetEmAndamento ? "default" : "pointer" }
+                    },
+                    this.state.resetEmAndamento ? "REDEFININDO..." : "SIM, REDEFINIR"
+                  ),
+                  h(
+                    "div",
+                    {
+                      key: "nao",
+                      onClick: () => { if (!this.state.resetEmAndamento) this.setState({ resetConfirmando: false }); },
+                      style: { flex: 1, textAlign: "center", padding: "11px 0", borderRadius: 12, background: C.chip, color: C.txt, fontSize: 12, fontWeight: 900, cursor: "pointer" }
+                    },
+                    "CANCELAR"
+                  )
+                ])
+              ])
+            : h(
+                "div",
+                {
+                  key: "b",
+                  onClick: () => this.setState({ resetConfirmando: true }),
+                  style: { marginTop: 12, textAlign: "center", padding: "11px 0", borderRadius: 12, border: "1.5px solid " + C.orange, color: C.orange, fontSize: 12, fontWeight: 900, cursor: "pointer" }
+                },
+                "REDEFINIR PERFIL"
+              )
+        ])
       ),
       h("div", { key: "lbl3", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Como usar a plataforma"),
       h(
