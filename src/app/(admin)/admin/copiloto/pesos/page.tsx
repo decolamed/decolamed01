@@ -6,6 +6,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { getNomeVestibular } from "@/lib/site/marca";
+import { mesmaMateria, materiasUnicas } from "@/lib/site/materia-canonica";
 
 const PATH = "/admin/copiloto/pesos";
 
@@ -54,12 +55,13 @@ export default async function AdminPesosPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const [{ data }, nomeVestibular, { data: materiasQuestoes }, { data: materiasFlashcards }] = await Promise.all([
-    supabase.from("materias_peso").select("*").order("pontos_potenciais", { ascending: false }).order("materia"),
-    getNomeVestibular(),
-    supabase.from("questoes").select("materia").eq("ativo", true),
-    supabase.from("flashcards").select("materia").eq("ativo", true)
-  ]);
+  const [{ data, error: erroLeitura }, nomeVestibular, { data: materiasQuestoes }, { data: materiasFlashcards }] =
+    await Promise.all([
+      supabase.from("materias_peso").select("*").order("pontos_potenciais", { ascending: false }).order("materia"),
+      getNomeVestibular(),
+      supabase.from("questoes").select("materia").eq("ativo", true),
+      supabase.from("flashcards").select("materia").eq("ativo", true)
+    ]);
 
   // Calcula relevância pra exibir na tabela
   const lista = data ?? [];
@@ -70,16 +72,18 @@ export default async function AdminPesosPage({
   // agrupado como "Inglês/Espanhol" nunca casa com questões marcadas como
   // "Inglês" ou "Espanhol": elas caem no peso 1 padrão e mexer aqui não tem
   // efeito nenhum. Como a falha é silenciosa, ela precisa ficar visível.
-  const materiasDoConteudo = new Set<string>();
-  [materiasQuestoes, materiasFlashcards].forEach((linhas) =>
-    (linhas ?? []).forEach((l: { materia: string | null }) => {
-      const m = (l.materia ?? "").trim();
-      if (m) materiasDoConteudo.add(m);
-    })
+  // Comparação canônica: "Português" e "Linguagens" são a mesma matéria, e
+  // acusar divergência entre elas seria alarme falso (ver materia-canonica).
+  const materiasDoConteudo = materiasUnicas(
+    [materiasQuestoes, materiasFlashcards].flatMap((linhas) =>
+      (linhas ?? []).map((l: { materia: string | null }) => l.materia)
+    )
   );
-  const pesosSemConteudo = lista.map((p: any) => p.materia).filter((m: string) => !materiasDoConteudo.has(m));
-  const conteudoSemPeso = Array.from(materiasDoConteudo).filter(
-    (m) => !lista.some((p: any) => p.materia === m)
+  const pesosSemConteudo = lista
+    .map((p: any) => p.materia as string)
+    .filter((m: string) => !materiasDoConteudo.some((c) => mesmaMateria(c, m)));
+  const conteudoSemPeso = materiasDoConteudo.filter(
+    (m) => !lista.some((p: any) => mesmaMateria(p.materia, m))
   );
 
   return (
@@ -89,6 +93,16 @@ export default async function AdminPesosPage({
         subtitle="Edite o peso e a quantidade de questões de cada matéria. O algoritmo do Copiloto recalcula a relevância automaticamente."
       />
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+
+      {erroLeitura && (
+        <Card className="mb-4 border-l-4 border-red-500">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red-700">Não foi possível ler os pesos</p>
+          <p className="mt-1 text-sm text-navy-dark/70">
+            A lista abaixo pode estar incompleta. Isto é uma falha de leitura, não de salvamento — o que você
+            salvou continua no banco.
+          </p>
+        </Card>
+      )}
 
       {(pesosSemConteudo.length > 0 || conteudoSemPeso.length > 0) && (
         <Card className="mb-4 border-l-4 border-red-500">
@@ -122,8 +136,8 @@ export default async function AdminPesosPage({
           relevância = (peso × qtd. questões) ÷ soma de todos os (peso × qtd. questões)
         </p>
         <p className="mt-1 text-xs text-navy-dark/60">
-          Exemplo: Português (peso 2 × 10 questões = 20 pts) e Física (peso 2 × 5 questões = 10 pts) — mesmo peso,
-          mas Português tem o dobro de relevância na prova. O algoritmo prioriza corretamente.
+          Exemplo: Linguagens (peso 2 × 10 questões = 20 pts) e Física (peso 2 × 5 questões = 10 pts) — mesmo peso,
+          mas Linguagens tem o dobro de relevância na prova. O algoritmo prioriza corretamente.
         </p>
       </Card>
 

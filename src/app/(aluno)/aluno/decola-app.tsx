@@ -81,6 +81,9 @@ interface DecolaAppDados {
   conteudosTrilha: { tipo: "aula" | "pdf" | "link"; ref_id: string | null; url: string; titulo: string; materia: string | null }[];
   estudosBotoes: EstudosBotao[];
   baseTemasUrl: string | null;
+  // Destino do botão "Termos de Uso" nas configurações do aluno. Vazio =
+  // botão escondido, em vez de apontar pra um endereço inventado.
+  termosUsoUrl: string | null;
   // Nome do vestibular/instituição vindo de /admin/configuracoes (ver
   // lib/site/marca.ts) — nada de instituição escrita no código, pra
   // plataforma poder atender outros processos seletivos.
@@ -3578,18 +3581,24 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "ac", style: { margin: "0 18px" } },
         card(
           { padding: "6px 16px" },
-          [
-            ["user", "Editar perfil"],
-            ["lock", "Alterar senha"],
-            ["calendar", "Recalibrar plano de voo"],
-            ["file", "Termos e privacidade"]
-          ].map((r, i) =>
+          // "Termos de Uso" só entra na lista quando o admin cadastrou o
+          // endereço em Configurações. Antes o item apontava para um
+          // "decolamed.com.br/termos" escrito no código, que não existia e
+          // não tinha onde ser configurado.
+          ([
+            ["user", "Editar perfil", () => this.nav("perfil")],
+            ["lock", "Alterar senha", () => this.nav("senha")],
+            ["calendar", "Recalibrar plano de voo", () => this.nav("briefing")],
+            ...(this.props.dados.termosUsoUrl
+              ? [["file", "Termos de Uso", () => this.openBrowser("Termos de Uso", this.props.dados.termosUsoUrl as string, "config")] as [string, string, () => void]]
+              : [])
+          ] as [string, string, () => void][]).map((r, i, arr) =>
             h(
               "div",
               {
                 key: i,
-                onClick: [() => this.nav("perfil"), () => this.nav("senha"), () => this.nav("briefing"), () => this.openBrowser("Termos e Privacidade", "decolamed.com.br/termos", "config")][i],
-                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 3 ? "1px solid " + C.line : "none", cursor: "pointer" }
+                onClick: r[2],
+                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
               [I(r[0], 18, C.sub), h("span", { key: "t", style: { flex: 1, fontSize: 13, fontWeight: 700 } }, r[1]), I("chevR", 15, C.faint)]
             )

@@ -87,6 +87,7 @@ export default async function PreviewAlunoPage() {
         conteudosTrilha: [],
         estudosBotoes: [],
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
+        termosUsoUrl: null,
         nomeVestibular,
         materias,
         hojeStr: hojeISO()

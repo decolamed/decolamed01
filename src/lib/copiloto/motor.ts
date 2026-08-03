@@ -9,6 +9,7 @@ import {
 } from "@/lib/copiloto/pendencias";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
+import { carregarConfigCopiloto, type ConfigCopiloto } from "@/lib/copiloto/configuracao";
 import type { TrilhaItem } from "@/types/database";
 
 // ============================================================================
@@ -112,6 +113,8 @@ interface DadosAluno {
   // data de liberação). É o que separa o passado — onde moram as pendências
   // — do futuro, onde elas podem ser reagendadas.
   diaTrilhaHoje: number | null;
+  // Parâmetros do algoritmo vindos de `configuracoes` (ver configuracao.ts).
+  config: ConfigCopiloto;
 }
 
 // ---- Configurações por modo ------------------------------------------------
@@ -128,6 +131,8 @@ const TIPOS_CICLO: Record<ModoAdaptativo, string[]> = {
   cirurgico:   ["questoes", "questoes", "questoes"],
 };
 
+// Padrão de duração por tipo. O valor efetivo vem de dados.config
+// (configuracoes → copiloto.duracao.*); isto aqui é só o fallback.
 const DURACAO_TIPO: Record<string, number> = { questoes:40, flashcards:25, revisao:30, aula:45, simulado:90 };
 
 // ============================================================================
@@ -243,7 +248,8 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     }
   }
 
-  const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao);
+  const config = await carregarConfigCopiloto();
+  const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao, config);
   const checkinsNaoAplicados = (checkinsR.data ?? []).map((c: any) => ({
     id: c.id,
     resposta_valor: c.resposta_valor as string,
@@ -256,6 +262,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
     diaTrilhaHoje: await carregarDiaTrilhaHoje(ctx.alunoId),
+    config,
   };
 }
 
@@ -328,11 +335,12 @@ function detectarModo(
   diasRestantes: number | null,
   diasLivres: number,
   diasOcupados: number,
-  totalMissoesPadrao: number
+  totalMissoesPadrao: number,
+  config: ConfigCopiloto
 ): ModoAdaptativo {
   if (diasRestantes === null) return "equilibrado";
   // Prova iminente ou missões sobrando muito além dos dias disponíveis
-  if (diasRestantes <= 14 || diasLivres < 3) {
+  if (diasRestantes <= config.diasParaModoCirurgico || diasLivres < config.diasLivresMinimos) {
     // Cenário 3: cronograma maior que dias restantes
     if (totalMissoesPadrao > diasRestantes * 1.2) return "cirurgico";
     return "cirurgico";
@@ -444,7 +452,7 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
 
   // Quantas missões cabem no tempo total (não mais "uma por dia").
   const duracaoMedia =
-    TIPOS_CICLO[dados.modo].reduce((s, t) => s + (DURACAO_TIPO[t] ?? 40), 0) / TIPOS_CICLO[dados.modo].length;
+    TIPOS_CICLO[dados.modo].reduce((s, t) => s + (dados.config.duracaoPorTipo[t] ?? DURACAO_TIPO[t] ?? 40), 0) / TIPOS_CICLO[dados.modo].length;
   const totalMissoes = Math.max(1, Math.floor(minutosDisponiveis / duracaoMedia));
 
   const totalGen = scores.reduce((s, x) => s + Math.max(x.gen, 0.1), 0);
@@ -483,7 +491,7 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   const restante = capacidade.map((d) => ({ ...d }));
   const missoes: Record<string, unknown>[] = [];
   for (const item of intercalada) {
-    const min = DURACAO_TIPO[item.tipo] ?? 40;
+    const min = dados.config.duracaoPorTipo[item.tipo] ?? DURACAO_TIPO[item.tipo] ?? 40;
     const dia = restante.find((d) => d.livre >= min);
     if (!dia) break; // acabou a capacidade da janela até a prova
     dia.livre -= min;
@@ -537,12 +545,12 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
   if (!maisUrgente || maisUrgente.gen < CFG[dados.modo].genMin) return 0;
 
   for (const [data, missoesDoDia] of porData) {
-    if (acoes >= 3) break; // no máximo 3 dias modificados por execução
+    if (acoes >= dados.config.maxDiasModificadosPorExecucao) break; // limite configurável no admin
 
     const minUsados = missoesDoDia.reduce((s, m) => s + (m.duracao_estimada_min || m.duracao_minutos), 0);
 
     // --- OPÇÃO A: adicionar missão extra se couber no tempo disponível ---
-    const minExtra = DURACAO_TIPO.questoes;
+    const minExtra = dados.config.duracaoPorTipo.questoes ?? DURACAO_TIPO.questoes;
     const tipoExtra = tipoComConteudo(dados, maisUrgente.mat, "questoes");
     if (tipoExtra && minUsados + minExtra <= maxMinPorDia) {
       const jaTemMateria = missoesDoDia.some((m) => mesmaMateria(m.materia, maisUrgente.mat));
@@ -1235,7 +1243,8 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
   const cfg = CFG[dados.modo];
   const supabase = createAdminClient();
   const { count } = await supabase.from("copiloto_recomendacoes").select("id", { count: "exact", head: true }).eq("aluno_id", dados.alunoId).eq("status", "pendente");
-  const vagas = cfg.maxRec - (count ?? 0);
+  // maxRec vem do admin (configuracoes → copiloto.max_recomendacoes.*).
+  const vagas = dados.config.maxRecomendacoes[dados.modo] - (count ?? 0);
   if (vagas <= 0) return;
   let criadas = 0;
   for (const iv of intervencoes) {

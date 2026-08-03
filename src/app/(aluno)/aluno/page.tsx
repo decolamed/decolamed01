@@ -75,6 +75,7 @@ export default async function AlunoHomePage() {
     { data: conteudosData },
     { data: linksData },
     { data: baseTemasData },
+    { data: termosData },
     { data: ajustesCreditosData },
     { data: estudosBotoesData }
   ] = await Promise.all([
@@ -135,6 +136,7 @@ export default async function AlunoHomePage() {
     supabase.from("conteudos_biblioteca").select("*").eq("ativo", true).order("created_at", { ascending: false }),
     supabase.from("links_externos").select("*").eq("ativo", true).order("ordem"),
     supabase.from("configuracoes").select("valor").eq("chave", "redacao.base_temas_url").maybeSingle(),
+    supabase.from("configuracoes").select("valor").eq("chave", "site.termos_uso_url").maybeSingle(),
     supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", profile.id),
     supabase.from("estudos_botoes").select("*").eq("ativo", true).order("ordem")
   ]);
@@ -246,6 +248,7 @@ export default async function AlunoHomePage() {
         conteudosTrilha,
         estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
+        termosUsoUrl: textoConfig(termosData?.valor) || null,
         nomeVestibular,
         materias,
         hojeStr
