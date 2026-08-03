@@ -4,7 +4,57 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { SeletorQuestoes } from "@/components/admin/seletor-questoes";
+import { carregarUsoDasQuestoes } from "@/lib/site/uso-questoes";
 import type { Questao, Simulado } from "@/types/database";
+
+// Título, descrição e tempo do simulado. Só podiam ser definidos na
+// criação — que usa "Novo simulado"/60min fixos — e não havia nenhuma tela
+// para mudá-los depois: corrigir o nome obrigava a excluir o simulado, e
+// junto iriam as questões já montadas.
+async function salvarMetadadosSimulado(id: string, formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descricao = String(formData.get("descricao") ?? "").trim();
+  const tempo = Number(formData.get("tempo_minutos") ?? 60);
+  // Configurações que antes só existiam em Atividades (Alteração 4.4).
+  const gabaritoModo = String(formData.get("gabarito_modo") ?? "ao_final");
+  const valorTotal = Number(formData.get("valor_total") ?? 1000);
+  const usarPesos = formData.get("usar_pesos") === "on";
+
+  if (!titulo) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("Informe um título para o simulado.")}`);
+  }
+  if (!Number.isFinite(tempo) || tempo <= 0) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("O tempo precisa ser maior que zero.")}`);
+  }
+  if (!Number.isFinite(valorTotal) || valorTotal <= 0) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("O valor total precisa ser maior que zero.")}`);
+  }
+
+  const { error } = await supabase
+    .from("simulados")
+    .update({
+      titulo,
+      descricao: descricao || null,
+      tempo_minutos: tempo,
+      gabarito_modo: gabaritoModo === "imediato" ? "imediato" : "ao_final",
+      valor_total: valorTotal,
+      usar_pesos: usarPesos
+    })
+    .eq("id", id);
+
+  revalidatePath(`/admin/simulados/${id}`);
+  revalidatePath("/admin/simulados");
+  revalidatePath("/aluno");
+  if (error) {
+    redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("Não foi possível salvar os dados do simulado.")}`);
+  }
+  redirect(`/admin/simulados/${id}?sucesso=${encodeURIComponent("Dados do simulado atualizados.")}`);
+}
 
 async function salvarQuestoesDoSimulado(id: string, formData: FormData) {
   "use server";
@@ -56,17 +106,9 @@ export default async function EscolherQuestoesSimuladoPage({
 
   const { data: jaSelecionadas } = await supabase.from("simulado_questoes").select("questao_id").eq("simulado_id", params.id);
   const idsJaSelecionados = new Set((jaSelecionadas ?? []).map((q: any) => q.questao_id));
+  const uso = await carregarUsoDasQuestoes();
 
   const salvarComId = salvarQuestoesDoSimulado.bind(null, params.id);
-
-  // Agrupadas por matéria — organiza a montagem do simulado em vez de uma
-  // lista corrida (a query já ordena por matéria, isso só quebra em seções).
-  const porMateria = new Map<string, Questao[]>();
-  questoes.forEach((q) => {
-    const lista = porMateria.get(q.materia) ?? [];
-    lista.push(q);
-    porMateria.set(q.materia, lista);
-  });
 
   return (
     <div>
@@ -77,29 +119,56 @@ export default async function EscolherQuestoesSimuladoPage({
       </p>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
+      <form action={salvarMetadadosSimulado.bind(null, params.id)} className="mt-6 rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Dados do simulado</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[2fr_1fr]">
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="titulo">Título</label>
+            <input id="titulo" name="titulo" defaultValue={s.titulo} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="tempo_minutos">Tempo (minutos)</label>
+            <input id="tempo_minutos" name="tempo_minutos" type="number" min={1} defaultValue={s.tempo_minutos} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+          </div>
+        </div>
+        <label className="mt-3 block text-xs font-semibold text-navy-dark/60" htmlFor="descricao">Descrição (opcional)</label>
+        <input id="descricao" name="descricao" defaultValue={s.descricao ?? ""} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+
+        {/* Mesmas configurações que o módulo de Atividades já tinha. */}
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="gabarito_modo">Gabarito</label>
+            <select id="gabarito_modo" name="gabarito_modo" defaultValue={s.gabarito_modo ?? "ao_final"} className="mt-1 w-full rounded-lg border p-2 text-sm">
+              <option value="ao_final">Liberar somente ao final</option>
+              <option value="imediato">Liberar imediatamente a cada questão</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-navy-dark/60" htmlFor="valor_total">Valor total do simulado</label>
+            <input id="valor_total" name="valor_total" type="number" min={1} step="any" defaultValue={s.valor_total ?? 1000} className="mt-1 w-full rounded-lg border p-2 text-sm" />
+          </div>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-navy-dark">
+          <input type="checkbox" name="usar_pesos" defaultChecked={s.usar_pesos ?? false} />
+          Calcular a nota pelos pesos das disciplinas
+        </label>
+        <p className="mt-1 text-[11px] font-semibold text-navy-dark/45">
+          Com os pesos ativos, o aluno vê a nota ponderada (ex.: 720 / 1000) em vez de só o percentual de acertos. Os
+          pesos vêm de Configurações → Pesos das disciplinas.
+        </p>
+        <SubmitButton pendingText="Salvando..." className="mt-4 rounded-lg bg-navy px-5 py-2 text-sm font-semibold text-white">
+          Salvar dados
+        </SubmitButton>
+      </form>
+
       <form action={salvarComId} className="mt-6">
-        <div className="max-h-[60vh] overflow-y-auto rounded-2xl bg-white shadow">
-          {Array.from(porMateria.entries()).map(([materia, itens]) => (
-            <div key={materia}>
-              <p className="sticky top-0 bg-navy-dark/5 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-navy-dark/60">
-                {materia} · {itens.length} questõe{itens.length !== 1 ? "s" : ""}
-              </p>
-              {itens.map((q) => (
-                <label key={q.id} className="flex cursor-pointer items-start gap-3 border-b p-4 last:border-0 hover:bg-navy/5">
-                  <input type="checkbox" name="questao_id" value={q.id} defaultChecked={idsJaSelecionados.has(q.id)} className="mt-1" />
-                  <div>
-                    <p className="text-xs font-semibold text-navy-dark/50">{q.assunto ?? materia}{q.fonte ? ` · ${q.fonte}` : ""}</p>
-                    <p className="text-sm text-navy-dark">{q.enunciado}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          ))}
-          {questoes.length === 0 && (
-            <p className="p-6 text-center text-sm text-navy-dark/50">
-              Nenhuma questão ativa no banco ainda — cadastre em /admin/questoes primeiro.
-            </p>
-          )}
+        <div className="overflow-hidden rounded-2xl shadow">
+          <SeletorQuestoes
+            questoes={questoes}
+            jaSelecionadas={idsJaSelecionados}
+            uso={uso}
+            contextoAtual={s.titulo}
+          />
         </div>
 
         {questoes.length > 0 && (

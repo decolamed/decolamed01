@@ -2,8 +2,8 @@
 import { useState, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
-import { Toggle, Toast, useToast, PrimaryButton, TextInput, FieldLabel } from "@/components/admin/interactive";
-import { criarBotaoEstudos, alternarAtivoBotaoEstudos, excluirBotaoEstudos } from "./actions";
+import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextInput, FieldLabel } from "@/components/admin/interactive";
+import { criarBotaoEstudos, atualizarBotaoEstudos, alternarAtivoBotaoEstudos, excluirBotaoEstudos } from "./actions";
 import type { EstudosBotao, EstudosBotaoTipo } from "@/types/database";
 
 const ICONES = ["book", "video", "file", "link2", "cards", "target", "note", "pencil", "flag", "bag", "bell", "trophy", "gift", "layers", "calendar", "gear"];
@@ -23,19 +23,42 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
   const [icone, setIcone] = useState("book");
   const [tipo, setTipo] = useState<EstudosBotaoTipo>("link");
   const [link, setLink] = useState("");
+  // Preenchido = o cartão da esquerda vira "editar", mesmo padrão das
+  // outras telas de conteúdo.
+  const [editId, setEditId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
 
-  function adicionar() {
+  function limpar() {
+    setEditId(null);
+    setTitulo("");
+    setLink("");
+    setIcone("book");
+    setTipo("link");
+  }
+
+  function editar(b: EstudosBotao) {
+    setEditId(b.id);
+    setTitulo(b.titulo);
+    setIcone(b.icone);
+    setTipo(b.tipo);
+    setLink(b.link);
+  }
+
+  function salvar() {
     startTransition(async () => {
-      const res = await criarBotaoEstudos(titulo, icone, tipo, link);
-      if (!res.ok) {
-        show(res.erro ?? "Erro.");
+      if (editId) {
+        const res = await atualizarBotaoEstudos(editId, titulo, icone, tipo, link).catch(() => ({ ok: false, erro: undefined }));
+        if (!res.ok) { show(res.erro ?? "Não foi possível salvar."); return; }
+        setBotoes((a) => a.map((x) => (x.id === editId ? { ...x, titulo, icone, tipo, link } : x)));
+        limpar();
+        show("Botão atualizado.");
         return;
       }
+      const res = await criarBotaoEstudos(titulo, icone, tipo, link).catch(() => ({ ok: false, erro: undefined }));
+      if (!res.ok) { show(res.erro ?? "Erro."); return; }
       setBotoes((a) => [{ id: crypto.randomUUID(), titulo, icone, tipo, link, ordem: 0, ativo: true, criado_por: null, created_at: "", updated_at: "" }, ...a]);
-      setTitulo("");
-      setLink("");
+      limpar();
       show("Botão adicionado.");
     });
   }
@@ -47,7 +70,10 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
     const trocar = (valor: boolean) => setBotoes((a) => a.map((x) => (x.id === id ? { ...x, ativo: valor } : x)));
     trocar(!ativo);
     startTransition(async () => {
-      const res = await alternarAtivoBotaoEstudos(id, ativo);
+      // .catch aqui não é decoração: uma Server Action que rejeita (rede fora,
+      // servidor reiniciando) vira exceção não tratada e derruba a tela inteira,
+      // em vez de só falhar o botão. Verificado no navegador.
+      const res = await alternarAtivoBotaoEstudos(id, ativo).catch(() => ({ ok: false }));
       if (!res.ok) {
         trocar(ativo);
         show("Não foi possível atualizar o botão. Tente de novo.");
@@ -70,7 +96,7 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
       <PageHeader title="Botões da aba Estudos" subtitle="Atalhos personalizados que aparecem pro aluno em Estudos, sem precisar alterar código" />
       <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
         <Card>
-          <h2 className="text-sm font-extrabold text-navy-dark">Adicionar botão</h2>
+          <h2 className="text-sm font-extrabold text-navy-dark">{editId ? "Editar botão" : "Adicionar botão"}</h2>
           <FieldLabel>Nome</FieldLabel>
           <TextInput value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Bagagem Essencial" />
           <FieldLabel>Ícone</FieldLabel>
@@ -119,8 +145,11 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
           ) : (
             <TextInput value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
           )}
-          <PrimaryButton onClick={adicionar} className="mt-4">
-            ADICIONAR BOTÃO
+          {editId && (
+            <GhostButton onClick={limpar} className="mt-4 mr-2">Cancelar</GhostButton>
+          )}
+          <PrimaryButton onClick={salvar} className="mt-4">
+            {editId ? "SALVAR ALTERAÇÕES" : "ADICIONAR BOTÃO"}
           </PrimaryButton>
         </Card>
         <Card className="!p-0 sm:!px-[18px]">
@@ -136,6 +165,9 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
                 </p>
               </div>
               <Toggle on={b.ativo} onClick={() => alternar(b.id, b.ativo)} />
+              <button type="button" onClick={() => editar(b)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-navy-dark/5 text-navy-dark/60" title="Editar">
+                <Icon name="pencil" size={14} />
+              </button>
               <button type="button" onClick={() => excluir(b.id)} className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-red/10 text-red" title="Excluir">
                 <Icon name="trash" size={14} />
               </button>

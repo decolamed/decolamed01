@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+import { MarcaCarregando, AZUL_MARCA } from "./marca-carregando";
 
 // Tela de abertura exibida a cada carregamento novo do app (não usa
 // localStorage de propósito — o pedido foi "sempre que o app for
@@ -13,6 +13,28 @@ import Image from "next/image";
 // um fade dependente de JS prenderia o usuário numa tela azul inerte caso
 // a hidratação falhasse. Aqui o React só remove o nó depois que a animação
 // já terminou.
+//
+// ---------------------------------------------------------------------------
+// POR QUE O FUNDO É CHAPADO, E NÃO UM GRADIENTE
+//
+// Instalado como PWA, o app abre em duas etapas que o usuário enxergava como
+// duas telas de carregamento seguidas:
+//
+//   1. Android/iOS desenham um splash próprio, a partir do `background_color`
+//      e do ícone do manifesto. Isso acontece ANTES de qualquer código nosso
+//      rodar e NÃO pode ser desativado num app standalone.
+//   2. Só então o app carrega e esta splash aparece.
+//
+// Como a etapa 1 é um azul chapado (#01395E) e esta tela usava um gradiente
+// (#0d4a79 → #01395E), a troca entre as duas era visível — daí a impressão de
+// "tela azul padrão, depois a splash By Decola". Usando exatamente a mesma cor
+// do manifesto, a passagem de uma para a outra fica imperceptível e o usuário
+// vê uma única tela.
+//
+// Ou seja: a cor aqui está amarrada ao manifesto. Trocar uma sem a outra faz
+// o problema voltar.
+// ---------------------------------------------------------------------------
+
 const DURACAO_VISIVEL_MS = 900;
 const DURACAO_FADE_MS = 400;
 
@@ -38,16 +60,11 @@ export function SplashScreen() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(160deg,#0d4a79,#01395E)",
+        background: AZUL_MARCA,
         pointerEvents: "none"
       }}
     >
-      <div style={{ width: 220, maxWidth: "60vw" }}>
-        <Image src="/assets/logo-decola-med.png" alt="Decola Med" width={2000} height={2000} priority style={{ width: "100%", height: "auto" }} />
-      </div>
-      <div style={{ width: 110, maxWidth: "30vw", marginTop: 18 }}>
-        <Image src="/assets/logo-by-decola.png" alt="By Decola" width={3000} height={2120} priority style={{ width: "100%", height: "auto" }} />
-      </div>
+      <MarcaCarregando />
     </div>
   );
 }

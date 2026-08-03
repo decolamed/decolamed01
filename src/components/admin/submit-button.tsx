@@ -12,8 +12,18 @@ export function SubmitButton({
   children,
   pendingText,
   className,
+  confirmar,
+  onClick,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { pendingText?: string }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  pendingText?: string;
+  /**
+   * Texto do confirm() exibido antes de enviar o formulário. Serve para as
+   * ações destrutivas do painel — exclusões precisam de confirmação, e sem
+   * isso cada tela teria que montar a sua.
+   */
+  confirmar?: string;
+}) {
   const { pending } = useFormStatus();
 
   return (
@@ -21,6 +31,13 @@ export function SubmitButton({
       type="submit"
       disabled={pending}
       className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
+      onClick={(e) => {
+        if (confirmar && !window.confirm(confirmar)) {
+          e.preventDefault();
+          return;
+        }
+        onClick?.(e);
+      }}
       {...props}
     >
       {pending ? pendingText ?? "Salvando..." : children}

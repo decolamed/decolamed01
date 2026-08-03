@@ -18,6 +18,37 @@ export interface QuestaoForm {
   comentario: string;
   fonte?: string;
   alternativas: Record<string, string>; // { a: "texto", b: "texto", ... }
+  // Imagens da questão (gráficos, mapas, trechos de prova). Antes o
+  // formulário simplesmente não tinha esse campo: dava para editar
+  // enunciado e alternativas, mas a imagem ficava intocável — não havia
+  // como trocar, remover nem acrescentar uma pelo painel, só direto no
+  // banco. As 92 questões que já têm imagem dependem disso.
+  imagens?: { url: string; legenda: string | null }[];
+  // Identificação da prova de origem. As colunas já existiam no banco desde
+  // a importação inicial, mas nenhuma era editável nem exibida — não dava
+  // para corrigir o ano de uma questão nem localizar "as questões da FACAPE
+  // 2025.1" no painel.
+  provaNome?: string;
+  ano?: string;
+  semestre?: string;
+  modalidade?: string;
+  numeroQuestao?: string;
+  anulada?: boolean;
+}
+
+// Tira/devolve a questão de circulação sem apagá-la. A lista já mostrava o
+// selo "Inativa", mas não havia como chegar nesse estado nem sair dele: para
+// tirar uma questão errada do ar, a única saída era excluir de vez — o que é
+// irreversível e ainda é bloqueado quando ela já está em algum simulado ou
+// atividade. Todo o resto do conteúdo (aulas, PDFs, links, banners) já tinha
+// esse liga/desliga.
+export async function alternarAtivoQuestao(id: string, ativo: boolean) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("questoes").update({ ativo: !ativo }).eq("id", id);
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
+  return { ok: !error };
 }
 
 export async function salvarQuestao(form: QuestaoForm) {
@@ -42,7 +73,18 @@ export async function salvarQuestao(form: QuestaoForm) {
     resposta_correta: form.gabarito,
     explicacao: form.comentario.trim() || null,
     fonte: form.fonte?.trim() || null,
-    alternativas
+    alternativas,
+    prova_nome: form.provaNome?.trim() || null,
+    ano: form.ano?.trim() ? Number(form.ano) : null,
+    semestre: form.semestre?.trim() ? Number(form.semestre) : null,
+    modalidade: form.modalidade?.trim() || null,
+    numero_questao: form.numeroQuestao?.trim() ? Number(form.numeroQuestao) : null,
+    anulada: form.anulada ?? false,
+    // `ordem` é derivada da posição na lista, então reordenar no formulário
+    // já reordena para o aluno.
+    imagens: (form.imagens ?? [])
+      .map((img, i) => ({ url: img.url.trim(), legenda: img.legenda?.trim() || null, ordem: i }))
+      .filter((img) => img.url.length > 0)
   };
 
   const { error } = form.id

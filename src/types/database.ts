@@ -230,6 +230,13 @@ export interface Simulado {
   titulo: string;
   descricao: string | null;
   tempo_minutos: number;
+  // Mesmas configurações do módulo de Atividades — os dois montam uma lista de
+  // questões e não havia motivo para terem formulários diferentes (Alt. 4.4).
+  gabarito_modo: "ao_final" | "imediato";
+  /** Escala da nota quando `usar_pesos` está ligado (ex.: 1000). */
+  valor_total: number;
+  /** Nota calculada pelos pesos de `materias_peso` em vez de % de acertos. */
+  usar_pesos: boolean;
   ativo: boolean;
   criado_por: string | null;
   created_at: string;
@@ -319,6 +326,8 @@ export type TrilhaItemTipo =
   | "questoes"
   | "flashcards"
   | "simulado"
+  | "atividade"
+  | "pagina"
   | "revisao"
   | "leitura"
   | "redacao"
@@ -330,6 +339,12 @@ export interface TrilhaItem {
   url: string | null;
   materia: string | null;
   titulo: string;
+  // O admin renomeou este item só para exibição (ex.: "Bagagem Essencial —
+  // Livro 1" mostrado como "Resumo do Livro 1"). Sem essa marca não há como
+  // distinguir um título personalizado de uma cópia desatualizada do título
+  // do conteúdo — e o cronograma continuaria mostrando o nome antigo depois
+  // que o admin corrigisse a aula em "Cursos e Aulas". Ver lib/trilha/resolver.
+  titulo_custom?: boolean;
 }
 
 export interface TrilhaDia {

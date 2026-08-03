@@ -19,13 +19,19 @@ async function salvarPeso(formData: FormData) {
   const qtdQuestoes = Number(formData.get("qtd_questoes") ?? 10);
   const totalQuestoesProva = Number(formData.get("total_questoes_prova") ?? 50);
   const observacao = String(formData.get("observacao") ?? "").trim() || null;
+  // Vazio significa "ratear proporcionalmente ao peso", não zero — zero faria
+  // a disciplina não valer nada na nota do simulado.
+  const pontuacaoBruta = String(formData.get("pontuacao_maxima") ?? "").trim();
+  const pontuacaoMaxima = pontuacaoBruta === "" ? null : Number(pontuacaoBruta);
 
   if (!materia) redirect(`${PATH}?erro=${encodeURIComponent("Informe o nome da matéria.")}`);
   if (isNaN(peso) || peso < 0) redirect(`${PATH}?erro=${encodeURIComponent("Peso precisa ser ≥ 0.")}`);
   if (isNaN(qtdQuestoes) || qtdQuestoes < 0) redirect(`${PATH}?erro=${encodeURIComponent("Qtd. de questões precisa ser ≥ 0.")}`);
+  if (pontuacaoMaxima !== null && (isNaN(pontuacaoMaxima) || pontuacaoMaxima < 0))
+    redirect(`${PATH}?erro=${encodeURIComponent("Pontuação máxima precisa ser um número ≥ 0 (ou vazia).")}`);
 
   const { error } = await supabase.from("materias_peso").upsert(
-    { materia, peso, qtd_questoes: qtdQuestoes, total_questoes_prova: totalQuestoesProva, observacao },
+    { materia, peso, qtd_questoes: qtdQuestoes, total_questoes_prova: totalQuestoesProva, observacao, pontuacao_maxima: pontuacaoMaxima },
     { onConflict: "materia" }
   );
   revalidatePath(PATH);
@@ -131,6 +137,7 @@ export default async function AdminPesosPage({
               <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Qtd. Questões</th>
               <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Pontos Potenciais</th>
               <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Relevância %</th>
+              <th className="p-3 text-center text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Pontuação máx.</th>
               <th className="p-3 text-left text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">Observação</th>
               <th className="p-3" />
             </tr>
@@ -153,6 +160,9 @@ export default async function AdminPesosPage({
                     }`}>
                       {relevancia}%
                     </span>
+                  </td>
+                  <td className="p-3 text-center text-navy-dark">
+                    {p.pontuacao_maxima != null ? Number(p.pontuacao_maxima) : <span className="text-navy-dark/35">rateio</span>}
                   </td>
                   <td className="p-3 text-xs text-navy-dark/50">{p.observacao ?? "—"}</td>
                   <td className="p-3">
@@ -197,6 +207,17 @@ export default async function AdminPesosPage({
               <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Total de questões objetivas da prova</label>
               <input name="total_questoes_prova" type="number" min="1" defaultValue="50" required className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">
+              Pontuação máxima da disciplina (opcional)
+            </label>
+            <input name="pontuacao_maxima" type="number" step="any" min="0" placeholder="deixe vazio para ratear pelo peso"
+              className="mt-1 w-full rounded-[10px] border border-navy-dark/15 px-3 py-2.5 text-sm font-bold text-navy-dark outline-none focus:border-navy" />
+            <p className="mt-1 text-[11px] font-semibold text-navy-dark/45">
+              Use quando o edital fixa quanto a disciplina vale. Vazio, o valor é distribuído
+              proporcionalmente a peso × nº de questões dentro do valor total do simulado.
+            </p>
           </div>
           <div>
             <label className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Observação (opcional)</label>

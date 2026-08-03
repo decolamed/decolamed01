@@ -15,6 +15,24 @@ export async function criarLink(titulo: string, url: string) {
   return { ok: true as const };
 }
 
+// Edição de conteúdo já cadastrado. Sem isso, corrigir um título com erro
+// de digitação ou uma URL trocada exigia excluir e cadastrar de novo — o
+// que, além de trabalhoso, quebra qualquer dia do cronograma que já aponte
+// para aquele item pelo ref_id.
+export async function atualizarLink(id: string, titulo: string, url: string) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+  if (!titulo.trim() || !url.trim()) return { ok: false as const, erro: "Preencha título e URL." };
+  const { error } = await supabase
+    .from("links_externos")
+    .update({ titulo: titulo.trim(), url: url.trim() })
+    .eq("id", id);
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
+  if (error) return { ok: false as const, erro: "Não foi possível salvar as alterações." };
+  return { ok: true as const };
+}
+
 // Devolve o resultado (em vez de void) porque a tela faz atualização
 // otimista: ela já pinta o novo estado antes da resposta. Sem saber que a
 // gravação falhou, o admin via o botão trocar, acreditava ter desativado o

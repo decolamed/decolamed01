@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { PageHeader, Card, Th, Td } from "@/components/admin/card";
@@ -39,6 +40,31 @@ async function enviarNotificacao(formData: FormData) {
     redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível enviar a notificação.")}`);
   }
   redirect(`${PATH}?sucesso=${encodeURIComponent(`Notificação enviada para ${usuarioIds.length} aluno(s).`)}`);
+}
+
+// Exclui uma campanha inteira. Cada envio grava N linhas (uma por
+// destinatário) com o mesmo título e o mesmo timestamp, então apagar por
+// (titulo, created_at) remove o aviso de todos os alunos de uma vez — que é
+// o comportamento esperado de "excluir esta notificação". Antes não havia
+// nenhuma forma de remover: uma notificação errada ficava para sempre.
+async function excluirNotificacao(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const titulo = String(formData.get("titulo") ?? "");
+  const criadoEm = String(formData.get("created_at") ?? "");
+  if (!titulo || !criadoEm) {
+    redirect(`${PATH}?erro=${encodeURIComponent("Notificação não identificada.")}`);
+  }
+
+  const { error } = await supabase.from("notificacoes").delete().eq("titulo", titulo).eq("created_at", criadoEm);
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
+  if (error) {
+    redirect(`${PATH}?erro=${encodeURIComponent("Não foi possível excluir a notificação.")}`);
+  }
+  redirect(`${PATH}?sucesso=${encodeURIComponent("Notificação removida de todos os alunos.")}`);
 }
 
 export default async function AdminNotificacoesPage({
@@ -114,6 +140,7 @@ export default async function AdminNotificacoesPage({
                 <Th>Enviado em</Th>
                 <Th>Destinatários</Th>
                 <Th>Lidas</Th>
+                <Th>Ações</Th>
               </tr>
             </thead>
             <tbody>
@@ -124,6 +151,19 @@ export default async function AdminNotificacoesPage({
                   <Td>{new Date(c.created_at).toLocaleString("pt-BR")}</Td>
                   <Td>{c.total}</Td>
                   <Td>{c.lidas} / {c.total}</Td>
+                  <Td>
+                    <form action={excluirNotificacao}>
+                      <input type="hidden" name="titulo" value={c.titulo} />
+                      <input type="hidden" name="created_at" value={c.created_at} />
+                      <SubmitButton
+                        pendingText="..."
+                        className="rounded-lg bg-red/10 px-3 py-1.5 text-xs font-semibold text-red"
+                        confirmar={`Tem certeza que deseja excluir esta notificação? Essa ação removerá a notificação para todos os ${c.total} aluno(s).`}
+                      >
+                        Excluir
+                      </SubmitButton>
+                    </form>
+                  </Td>
                 </tr>
               ))}
               {historico.length === 0 && (

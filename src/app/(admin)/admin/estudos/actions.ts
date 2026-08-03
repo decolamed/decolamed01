@@ -19,6 +19,28 @@ export async function criarBotaoEstudos(titulo: string, icone: string, tipo: Est
   return { ok: true as const };
 }
 
+// Edição de item já cadastrado. Sem isso, corrigir um nome ou um link
+// trocado exigia excluir e cadastrar de novo.
+export async function atualizarBotaoEstudos(
+  id: string,
+  titulo: string,
+  icone: string,
+  tipo: EstudosBotaoTipo,
+  link: string
+) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+  if (!titulo.trim() || !link.trim()) return { ok: false as const, erro: "Preencha nome e link." };
+  const { error } = await supabase
+    .from("estudos_botoes")
+    .update({ titulo: titulo.trim(), icone, tipo, link: link.trim() })
+    .eq("id", id);
+  revalidatePath(PATH);
+  revalidatePath("/aluno");
+  if (error) return { ok: false as const, erro: "Não foi possível salvar as alterações." };
+  return { ok: true as const };
+}
+
 // Devolve o resultado (em vez de void) porque a tela faz atualização
 // otimista: ela já pinta o novo estado antes da resposta. Sem saber que a
 // gravação falhou, o admin via o botão trocar, acreditava ter desativado o

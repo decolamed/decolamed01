@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { resolverCronograma } from "@/lib/trilha/resolver";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO, somarDias } from "@/lib/site/data";
@@ -52,6 +53,7 @@ export default async function AlunoHomePage() {
   const [
     { data: matricula },
     { data: config },
+    { data: configRedacao },
     { data: perfilComPlano },
     { data: questoesData },
     { data: flashcardsData },
@@ -84,6 +86,7 @@ export default async function AlunoHomePage() {
       .limit(1)
       .maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "site.contato.whatsapp").maybeSingle(),
+    supabase.from("configuracoes").select("valor").eq("chave", "redacao.whatsapp").maybeSingle(),
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
     supabase.from("questoes").select("*").eq("ativo", true).limit(POOL_LIMITE),
     supabase.from("flashcards").select("*").eq("ativo", true).limit(POOL_LIMITE),
@@ -139,17 +142,34 @@ export default async function AlunoHomePage() {
   const planoNome = (matricula as any)?.planos?.nome as string | undefined;
   const plano = planoNome && planoNome.toLowerCase().includes("guiado") ? "voo-guiado" : "decolando";
   const numeroWhatsapp = textoConfig(config?.valor);
+  // O botão da redação leva ao WhatsApp da professora, não ao geral da
+  // plataforma — eram dois números configurados e os dois botões abriam o
+  // mesmo. Cai no geral só se o número da professora não estiver preenchido,
+  // para o aluno nunca ficar sem canal.
+  const numeroWhatsappRedacao = textoConfig(configRedacao?.valor) || numeroWhatsapp;
 
   // Dia de hoje no cronograma (trilha_dias) — base de estudo de TODO aluno,
   // com ou sem Copiloto.
   const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
   const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
-  const todosDias = ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero);
+  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
+  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
+  // aula já corrigida pelo admin em "Cursos e Aulas".
+  const todosDias = await resolverCronograma(
+    ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
+  );
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
   // cronograma, que antes só listava missões do Copiloto.
-  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje).slice(0, 7) : [];
+  // TODOS os dias seguintes, sem corte. O limite de 7 fazia o aluno ver um
+  // pedaço do cronograma em "Ver cronograma completo" — o painel do admin é
+  // a fonte oficial, e se ele cadastrou 40 dias o aluno precisa ver os 40.
+  const trilhaProximos = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero > diaTrilhaHoje) : [];
+  // Dias já vencidos ficam disponíveis para consulta e para o aluno concluir
+  // o que ficou para trás — sumir com eles é o que dava a impressão de que o
+  // cronograma "perdia" dias.
+  const trilhaAnteriores = diaTrilhaHoje ? todosDias.filter((d) => d.dia_numero < diaTrilhaHoje) : [];
 
   // Aulas/PDFs/links pendurados nos dias do cronograma. Todo o material
   // importado vive aqui (trilha_dias.itens), não em conteudos_biblioteca —
@@ -180,7 +200,7 @@ export default async function AlunoHomePage() {
       email={profile.email}
       plano={plano}
       whatsappSuporte={montarLinkWhatsapp(numeroWhatsapp, "Olá! Preciso de ajuda com a plataforma Decola Med.")}
-      whatsappRedacao={montarLinkWhatsapp(numeroWhatsapp, "Olá! Quero enviar minha redação ✍")}
+      whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
       dados={{
         temCopiloto,
         questoes: (questoesData as Questao[]) ?? [],
@@ -203,6 +223,7 @@ export default async function AlunoHomePage() {
         missoes: (missoesData as AlunoMissao[]) ?? [],
         trilhaHoje,
         trilhaProximos,
+        trilhaAnteriores,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;

@@ -4,19 +4,14 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { resolverCronograma } from "@/lib/trilha/resolver";
+import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
-const ICONE_TRILHA: Record<string, string> = {
-  aula: "🎬",
-  pdf: "📄",
-  link: "🔗",
-  questoes: "🎯",
-  flashcards: "🃏",
-  simulado: "⏱️",
-  revisao: "🔁",
-  livre: "☕"
-};
+import { ICONE_TIPO } from "@/lib/trilha/catalogo";
+
+const ICONE_TRILHA = ICONE_TIPO;
 
 // Monta o link de destino de cada missão a partir do tipo + ref_id. Sem isso
 // a lista fica só de leitura; com isso o aluno toca no item e vai direto pra
@@ -54,8 +49,17 @@ function montarHrefTrilha(item: TrilhaItem): string | null {
     case "flashcards":
       return item.materia ? `/aluno/flashcards?materia=${encodeURIComponent(item.materia)}` : "/aluno/flashcards";
     case "simulado":
-      return "/aluno/simulados";
+      return item.ref_id ? `/aluno/simulados/${item.ref_id}` : "/aluno/simulados";
+    case "atividade":
+      return item.ref_id ? `/aluno/atividades/${item.ref_id}` : "/aluno/atividades";
+    case "pagina":
+      // A rota interna escolhida pelo admin vem gravada em `url`.
+      return item.url || "/aluno";
+    case "redacao":
+      return "/aluno/redacao";
     default:
+      // "leitura", "revisao" e "livre" não abrem nada de propósito: são
+      // blocos de marcar como feito, não conteúdo com destino.
       return null;
   }
 }
@@ -77,7 +81,7 @@ export default async function AlunoCronogramaPage() {
   const hojeStr = hojeISO();
   const fimStr = somarDias(hojeStr, 7);
 
-  const [{ data: missoesBrutas }, { data: matricula }] = await Promise.all([
+  const [{ data: missoesBrutas }, { data: matricula }, { data: progresso }] = await Promise.all([
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -93,16 +97,33 @@ export default async function AlunoCronogramaPage() {
       .not("acesso_liberado_em", "is", null)
       .order("acesso_liberado_em", { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle(),
+    // O que o aluno já concluiu. Sem isso esta tela mostrava o cronograma
+    // inteiro sem nenhuma marca de progresso — o aluno via a mesma lista
+    // depois de cumprir metade dela.
+    supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", profile.id).eq("concluida", true)
   ]);
+
+  const concluidas = new Set(((progresso as { chave: string }[]) ?? []).map((p) => p.chave));
+  const itemConcluido = (diaNumero: number, indice: number, item: TrilhaItem) => {
+    const chave = chaveDeItemTrilha(diaNumero, indice, item);
+    return chave ? concluidas.has(chave) : false;
+  };
 
   // ---- Dia de hoje no cronograma ----
   let diaAtual: number | null = null;
   let diaTrilha: TrilhaDia | null = null;
+  let todosOsDias: TrilhaDia[] = [];
   if (matricula?.acesso_liberado_em) {
     diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
-    const { data } = await supabase.from("trilha_dias").select("*").eq("dia_numero", diaAtual).maybeSingle();
-    diaTrilha = (data as TrilhaDia) ?? null;
+    // Busca o cronograma inteiro, não só o dia de hoje: esta rota é o
+    // "cronograma completo", e mostrar um dia só era o que dava a impressão
+    // de que os demais tinham sumido. O painel do admin é a fonte oficial.
+    const { data } = await supabase.from("trilha_dias").select("*").order("dia_numero");
+    // Idem à tela do painel: o cronograma lê o conteúdo atual da biblioteca,
+    // não a cópia gravada no jsonb quando o dia foi montado.
+    todosOsDias = await resolverCronograma((data as TrilhaDia[]) ?? []);
+    diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
 
   // ---- Missões individuais (Copiloto ou cadastradas pelo admin) ----
@@ -151,11 +172,15 @@ export default async function AlunoCronogramaPage() {
             )}
             {diaTrilha.itens.map((item, i) => {
               const href = montarHrefTrilha(item);
+              const feito = itemConcluido(diaTrilha!.dia_numero, i, item);
               const conteudo = (
                 <>
                   <span className="text-xl">{ICONE_TRILHA[item.tipo] ?? "📌"}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-display font-bold text-navy-dark">{item.titulo}</p>
+                    <p className={`truncate font-display font-bold ${feito ? "text-navy-dark/45 line-through" : "text-navy-dark"}`}>
+                      {item.titulo}
+                      {feito && <span className="ml-2 align-middle text-[10px] font-black text-green">✓ CONCLUÍDO</span>}
+                    </p>
                     {item.materia && <p className="text-xs text-navy-dark/50">{item.materia}</p>}
                   </div>
                   {href && <span className="text-navy-dark/30">↗</span>}
@@ -175,6 +200,102 @@ export default async function AlunoCronogramaPage() {
                 <div key={i} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow">
                   {conteudo}
                 </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Cronograma completo — todos os dias cadastrados pelo admin, com o de
+          hoje já destacado acima. Antes esta tela mostrava só o dia atual. */}
+      {todosOsDias.length > 1 && (
+        <>
+          <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">
+            Cronograma completo · {todosOsDias.length} dias
+          </h2>
+          <div className="mt-3 space-y-2">
+            {todosOsDias.map((d) => {
+              const passado = diaAtual != null && d.dia_numero < diaAtual;
+              const hoje = d.dia_numero === diaAtual;
+              const itensDoDia = d.itens ?? [];
+              const feitos = itensDoDia.filter((it, i) => itemConcluido(d.dia_numero, i, it)).length;
+              const diaConcluido = itensDoDia.length > 0 && feitos === itensDoDia.length;
+              return (
+                <details
+                  key={d.dia_numero}
+                  // Dia concluído abre junto com o de hoje: o aluno precisa
+                  // conseguir voltar e reassistir o que já cumpriu.
+                  open={hoje || diaConcluido}
+                  className={`rounded-2xl p-4 shadow ${
+                    diaConcluido ? "border border-green/40 bg-green/5" : "bg-white"
+                  } ${passado && !diaConcluido ? "opacity-70" : ""}`}
+                >
+                  <summary className="flex cursor-pointer items-center gap-3">
+                    {diaConcluido && (
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green text-[11px] font-black text-white">
+                        ✓
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+                        diaConcluido ? "bg-green/15 text-green" : "bg-navy-dark/5 text-navy-dark/60"
+                      }`}
+                    >
+                      Dia {d.dia_numero}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-display font-bold text-navy-dark">{d.titulo}</span>
+                    <span className={`text-xs font-semibold ${diaConcluido ? "text-green" : "text-navy-dark/40"}`}>
+                      {itensDoDia.length > 0 ? `${feitos}/${itensDoDia.length}` : "0 itens"}
+                    </span>
+                  </summary>
+                  <div className="mt-3 space-y-1.5">
+                    {(d.itens ?? []).length === 0 && (
+                      <p className="text-sm text-navy-dark/50">Dia livre.</p>
+                    )}
+                    {itensDoDia.map((item, i) => {
+                      const href = montarHrefTrilha(item);
+                      const feito = itemConcluido(d.dia_numero, i, item);
+                      const linha = (
+                        <>
+                          {/* O item cumprido permanece na lista e clicável —
+                              só ganha a marca. Removê-lo tiraria do aluno a
+                              chance de rever a aula. */}
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+                              feito ? "bg-green text-white" : "border border-navy-dark/20"
+                            }`}
+                          >
+                            {feito ? "✓" : ""}
+                          </span>
+                          <span>{ICONE_TRILHA[item.tipo] ?? "📌"}</span>
+                          <span
+                            className={`min-w-0 flex-1 truncate text-sm ${
+                              feito ? "text-navy-dark/45 line-through" : "text-navy-dark"
+                            }`}
+                          >
+                            {item.titulo}
+                          </span>
+                          {href && <span className="text-navy-dark/30">↗</span>}
+                        </>
+                      );
+                      return href ? (
+                        <a
+                          key={i}
+                          href={href}
+                          target={item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" ? "_blank" : undefined}
+                          rel="noreferrer"
+                          className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-navy-dark/5"
+                        >
+                          {linha}
+                        </a>
+                      ) : (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1.5">
+                          {linha}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               );
             })}
           </div>

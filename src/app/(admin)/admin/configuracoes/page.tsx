@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { UploadIcone } from "./upload-icone";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -11,7 +12,9 @@ import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
 
 const CAMPOS = [
   { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
-  { chave: "site.marca.icone_url", label: "Ícone do aplicativo (URL de um PNG quadrado, 512x512, fundo opaco) — vazio usa o padrão" },
+  // Renderizado à parte, com upload e prévia (ver UploadIcone). Continua no
+  // array porque a gravação é a mesma: o upload só preenche a URL.
+  { chave: "site.marca.icone_url", label: "Ícone do aplicativo", upload: true },
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
   { chave: "site.contato.instagram", label: "Usuário do Instagram" },
   { chave: "redacao.whatsapp", label: "WhatsApp da professora de redação (somente números, com DDI)" },
@@ -158,17 +161,43 @@ export default async function AdminConfiguracoesPage({
       <AdminAlert sucesso={searchParams.sucesso} />
 
       <form action={salvarConfiguracoes} className="mt-6 max-w-xl space-y-4 rounded-2xl bg-white p-6 shadow">
-        {CAMPOS.map((campo) => (
-          <div key={campo.chave}>
-            <label className="text-sm font-semibold" htmlFor={campo.chave}>{campo.label}</label>
-            <input
-              id={campo.chave}
-              name={campo.chave}
-              defaultValue={valores.get(campo.chave) ?? ""}
-              className="mt-1 w-full rounded-lg border p-3"
-            />
-          </div>
-        ))}
+        {CAMPOS.map((campo) =>
+          campo.upload ? (
+            <div key={campo.chave}>
+              <label className="text-sm font-semibold">{campo.label}</label>
+              <div className="mt-2">
+                <UploadIcone valorAtual={valores.get(campo.chave) ?? ""} nomeCampo={campo.chave} />
+              </div>
+            </div>
+          ) : (
+            <div key={campo.chave}>
+              <label className="text-sm font-semibold" htmlFor={campo.chave}>{campo.label}</label>
+              <input
+                id={campo.chave}
+                name={campo.chave}
+                defaultValue={valores.get(campo.chave) ?? ""}
+                className="mt-1 w-full rounded-lg border p-3"
+              />
+            </div>
+          )
+        )}
+        {/* Alteração 7.5: os pesos alimentam o Copiloto e a nota ponderada dos
+            simulados, e o admin procurava por eles aqui — a tela em si já
+            existe, faltava o caminho até ela. */}
+        <a
+          href="/admin/copiloto/pesos"
+          className="flex items-center justify-between rounded-lg border border-navy-dark/15 p-3 hover:bg-navy-dark/5"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-navy-dark">Pesos das disciplinas</span>
+            <span className="block text-xs text-navy-dark/50">
+              Peso, quantidade de questões e pontuação máxima de cada disciplina — usados pelo Copiloto e pela nota
+              ponderada dos simulados.
+            </span>
+          </span>
+          <span className="text-navy-dark/40">→</span>
+        </a>
+
         <SubmitButton
           pendingText="Salvando..."
           className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
