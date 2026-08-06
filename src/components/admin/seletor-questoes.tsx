@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { Icon } from "@/components/admin/icon";
 import {
-  filtrarQuestoes, opcoesCompativeis, rotuloProva, FILTROS_VAZIOS,
+  filtrarQuestoes, opcoesCompativeis, rotuloProva, rotuloModalidade, FILTROS_VAZIOS,
   type FiltrosQuestao, type QuestaoFiltravel
 } from "@/lib/site/filtro-questoes";
 
@@ -74,7 +74,14 @@ export function SeletorQuestoes({
     });
   }
 
-  const campo = (k: keyof FiltrosQuestao, label: string, valores: (string | number)[]) => (
+  const campo = (
+    k: keyof FiltrosQuestao,
+    label: string,
+    valores: (string | number)[],
+    // A modalidade é gravada em código ("ampla"), mas ninguém monta prova
+    // procurando por "ampla" — o texto por extenso vai só na exibição.
+    rotulo: (v: string | number) => string = String
+  ) => (
     <select
       value={filtros[k]}
       onChange={(e) => setFiltros((f) => ({ ...f, [k]: e.target.value }))}
@@ -84,7 +91,7 @@ export function SeletorQuestoes({
       <option value="">{label}</option>
       {valores.map((v) => (
         <option key={String(v)} value={String(v)}>
-          {String(v)}
+          {rotulo(v)}
         </option>
       ))}
     </select>
@@ -119,7 +126,7 @@ export function SeletorQuestoes({
           {campo("assunto", "Todos os assuntos", opcoes.assuntos)}
           {campo("prova", "Todas as provas", opcoes.provas)}
           {campo("ano", "Todos os anos", opcoes.anos)}
-          {campo("modalidade", "Todas as modalidades", opcoes.modalidades)}
+          {campo("modalidade", "Todas as modalidades", opcoes.modalidades, (v) => rotuloModalidade(String(v)) ?? String(v))}
           {algumFiltro && (
             <button
               type="button"

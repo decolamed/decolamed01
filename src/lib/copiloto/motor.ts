@@ -8,6 +8,8 @@ import {
   type Pendencia, type DiaAlvo
 } from "@/lib/copiloto/pendencias";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
+import { carregarConfigCopiloto, type ConfigCopiloto } from "@/lib/copiloto/configuracao";
 import type { TrilhaItem } from "@/types/database";
 
 // ============================================================================
@@ -111,6 +113,8 @@ interface DadosAluno {
   // data de liberação). É o que separa o passado — onde moram as pendências
   // — do futuro, onde elas podem ser reagendadas.
   diaTrilhaHoje: number | null;
+  // Parâmetros do algoritmo vindos de `configuracoes` (ver configuracao.ts).
+  config: ConfigCopiloto;
 }
 
 // ---- Configurações por modo ------------------------------------------------
@@ -127,6 +131,8 @@ const TIPOS_CICLO: Record<ModoAdaptativo, string[]> = {
   cirurgico:   ["questoes", "questoes", "questoes"],
 };
 
+// Padrão de duração por tipo. O valor efetivo vem de dados.config
+// (configuracoes → copiloto.duracao.*); isto aqui é só o fallback.
 const DURACAO_TIPO: Record<string, number> = { questoes:40, flashcards:25, revisao:30, aula:45, simulado:90 };
 
 // ============================================================================
@@ -194,7 +200,11 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   const b = briefingR.data;
   const briefing = b ? {
     dataProva: b.data_prova ?? null,
-    sentimentos: b.sentimentos ?? {},
+    // Re-indexado pela chave canônica: briefings antigos gravaram
+    // "Português" e o motor procura por "Linguagens" — sem isto a
+    // autoavaliação do aluno era descartada em silêncio e todo mundo virava
+    // "Atenção".
+    sentimentos: reindexarSentimentos(b.sentimentos),
     diasEstuda: b.dias_estuda ?? [],
     horasPorDia: Number(b.horas_por_dia_semana) || 2,
   } : null;
@@ -238,7 +248,8 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     }
   }
 
-  const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao);
+  const config = await carregarConfigCopiloto();
+  const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao, config);
   const checkinsNaoAplicados = (checkinsR.data ?? []).map((c: any) => ({
     id: c.id,
     resposta_valor: c.resposta_valor as string,
@@ -251,7 +262,19 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
     diaTrilhaHoje: await carregarDiaTrilhaHoje(ctx.alunoId),
+    config,
   };
+}
+
+// Sentimentos do briefing indexados pela chave canônica da matéria, para a
+// busca funcionar independente do nome que o aluno respondeu na época.
+function reindexarSentimentos(bruto: unknown): Record<string, string> {
+  const saida: Record<string, string> = {};
+  Object.entries((bruto ?? {}) as Record<string, string>).forEach(([materia, valor]) => {
+    const k = chaveMateria(materia);
+    if (k) saida[k] = valor;
+  });
+  return saida;
 }
 
 // Conta o conteúdo ativo por matéria. É a checagem que faltava antes de
@@ -263,9 +286,11 @@ async function carregarInventario(): Promise<Map<string, { questoes: number; fla
     supabase.from("questoes").select("materia").eq("ativo", true),
     supabase.from("flashcards").select("materia").eq("ativo", true),
   ]);
+  // Indexado pela chave canônica: uma missão de "Linguagens" precisa achar
+  // as questões mesmo se alguma linha antiga tiver ficado como "Português".
   const mapa = new Map<string, { questoes: number; flashcards: number }>();
   const somar = (materia: string | null, campo: "questoes" | "flashcards") => {
-    const m = (materia ?? "").trim();
+    const m = chaveMateria(materia);
     if (!m) return;
     const atual = mapa.get(m) ?? { questoes: 0, flashcards: 0 };
     atual[campo] += 1;
@@ -297,7 +322,7 @@ function tipoComConteudo(
   materia: string,
   preferido: "questoes" | "flashcards" | "aula" | "revisao"
 ): "questoes" | "flashcards" | null {
-  const inv = dados.inventario.get(materia) ?? { questoes: 0, flashcards: 0 };
+  const inv = dados.inventario.get(chaveMateria(materia)) ?? { questoes: 0, flashcards: 0 };
   if ((preferido === "flashcards" || preferido === "revisao") && inv.flashcards > 0) return "flashcards";
   if (inv.questoes > 0) return "questoes";
   if (inv.flashcards > 0) return "flashcards";
@@ -310,11 +335,12 @@ function detectarModo(
   diasRestantes: number | null,
   diasLivres: number,
   diasOcupados: number,
-  totalMissoesPadrao: number
+  totalMissoesPadrao: number,
+  config: ConfigCopiloto
 ): ModoAdaptativo {
   if (diasRestantes === null) return "equilibrado";
   // Prova iminente ou missões sobrando muito além dos dias disponíveis
-  if (diasRestantes <= 14 || diasLivres < 3) {
+  if (diasRestantes <= config.diasParaModoCirurgico || diasLivres < config.diasLivresMinimos) {
     // Cenário 3: cronograma maior que dias restantes
     if (totalMissoesPadrao > diasRestantes * 1.2) return "cirurgico";
     return "cirurgico";
@@ -362,11 +388,11 @@ function genMateria(materia: string, dados: DadosAluno): number {
   const m = dados.materias.get(materia);
   if (!m) return 0;
   let a = 0, e = 0, t = 0;
-  dados.respostas.filter((r) => r.materia === materia).forEach((r) => {
+  dados.respostas.filter((r) => mesmaMateria(r.materia, materia)).forEach((r) => {
     t++; if (r.correta) a++; else e++;
   });
   const precisao = t > 0 ? (a / t) * 100 : 50;
-  const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+  const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
   return calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: e, diasRestantes: dados.diasRestantes, sentimento });
 }
 
@@ -400,15 +426,44 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
 
   if (diasLivresOrdenados.length === 0) return 0;
 
+  // Capacidade real de cada dia livre. Antes o Copiloto colocava UMA missão
+  // por dia e pulava pro dia seguinte — terça questões, quarta flashcards,
+  // quinta revisão — mesmo sobrando horas em cada um deles. Agora ele enche
+  // o dia até o limite de estudo do aluno antes de abrir o próximo.
+  const maxMinPorDia = (dados.briefing?.horasPorDia ?? 2) * 60;
+  const { data: diasFuturosTrilha } = await supabase
+    .from("trilha_dias")
+    .select("dia_numero, itens")
+    .gte("dia_numero", dados.diaTrilhaHoje ?? 0);
+  const cargaTrilha = new Map<number, number>();
+  ((diasFuturosTrilha ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((d) => {
+    cargaTrilha.set(d.dia_numero, (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0));
+  });
+
+  // O dia do cronograma já ocupa parte do tempo, mesmo num dia "livre" de
+  // missões — desconta, senão o Copiloto estoura a rotina do aluno.
+  const capacidade = diasLivresOrdenados.map((data) => {
+    const offset = diffDias(hojeISO(), data);
+    const doCronograma = cargaTrilha.get((dados.diaTrilhaHoje ?? 0) + offset) ?? 0;
+    return { data, livre: Math.max(0, maxMinPorDia - doCronograma) };
+  });
+  const minutosDisponiveis = capacidade.reduce((s, d) => s + d.livre, 0);
+  if (minutosDisponiveis <= 0) return 0;
+
+  // Quantas missões cabem no tempo total (não mais "uma por dia").
+  const duracaoMedia =
+    TIPOS_CICLO[dados.modo].reduce((s, t) => s + (dados.config.duracaoPorTipo[t] ?? DURACAO_TIPO[t] ?? 40), 0) / TIPOS_CICLO[dados.modo].length;
+  const totalMissoes = Math.max(1, Math.floor(minutosDisponiveis / duracaoMedia));
+
   const totalGen = scores.reduce((s, x) => s + Math.max(x.gen, 0.1), 0);
   const slots: Record<string, number> = {};
   scores.forEach(({ mat, gen }) => {
-    slots[mat] = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * diasLivresOrdenados.length));
+    slots[mat] = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * totalMissoes));
   });
   let soma = Object.values(slots).reduce((s, n) => s + n, 0);
-  for (let i = scores.length - 1; i >= 0 && soma > diasLivresOrdenados.length; i--) {
+  for (let i = scores.length - 1; i >= 0 && soma > totalMissoes; i--) {
     const m = scores[i].mat;
-    const red = Math.min(soma - diasLivresOrdenados.length, Math.max(0, slots[m] - 1));
+    const red = Math.min(soma - totalMissoes, Math.max(0, slots[m] - 1));
     slots[m] -= red; soma -= red;
   }
 
@@ -423,7 +478,7 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   }
 
   // Intercalar
-  const buckets = scores.map(({ mat }) => sequencia.filter((s) => s.materia === mat));
+  const buckets = scores.map(({ mat }) => sequencia.filter((s) => mesmaMateria(s.materia, mat)));
   const intercalada: typeof sequencia = [];
   let rodada = 0;
   while (intercalada.length < sequencia.length) {
@@ -431,22 +486,30 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     rodada++;
   }
 
-  const missoes = intercalada.slice(0, diasLivresOrdenados.length).map((item, i) => {
-    const sc = scores.find((x) => x.mat === item.materia)!;
-    return {
+  // Empacota na ordem: enche o primeiro dia até o limite, depois o segundo.
+  // Só abre um dia novo quando a missão realmente não cabe no atual.
+  const restante = capacidade.map((d) => ({ ...d }));
+  const missoes: Record<string, unknown>[] = [];
+  for (const item of intercalada) {
+    const min = dados.config.duracaoPorTipo[item.tipo] ?? DURACAO_TIPO[item.tipo] ?? 40;
+    const dia = restante.find((d) => d.livre >= min);
+    if (!dia) break; // acabou a capacidade da janela até a prova
+    dia.livre -= min;
+    const sc = scores.find((x) => mesmaMateria(x.mat, item.materia))!;
+    missoes.push({
       aluno_id: dados.alunoId,
-      data: diasLivresOrdenados[i],
+      data: dia.data,
       titulo: `${item.tipo === "questoes" ? "Questões" : item.tipo === "flashcards" ? "Flashcards" : item.tipo === "revisao" ? "Revisão" : "Aula"} · ${item.materia} — Copiloto`,
       materia: item.materia,
       assunto: null as string | null,
       tipo: item.tipo,
-      duracao_minutos: DURACAO_TIPO[item.tipo] ?? 40,
-      duracao_estimada_min: DURACAO_TIPO[item.tipo] ?? 40,
+      duracao_minutos: min,
+      duracao_estimada_min: min,
       prioridade: sc.gen > 10 ? 2 : 1,
       origem: "copiloto" as const,
       motivo_copiloto: `[cenário1/${dados.modo}] GEN=${sc.gen.toFixed(1)}`,
-    };
-  });
+    });
+  }
 
   if (missoes.length > 0) await supabase.from("aluno_missoes").insert(missoes);
   return missoes.length;
@@ -482,15 +545,15 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
   if (!maisUrgente || maisUrgente.gen < CFG[dados.modo].genMin) return 0;
 
   for (const [data, missoesDoDia] of porData) {
-    if (acoes >= 3) break; // no máximo 3 dias modificados por execução
+    if (acoes >= dados.config.maxDiasModificadosPorExecucao) break; // limite configurável no admin
 
     const minUsados = missoesDoDia.reduce((s, m) => s + (m.duracao_estimada_min || m.duracao_minutos), 0);
 
     // --- OPÇÃO A: adicionar missão extra se couber no tempo disponível ---
-    const minExtra = DURACAO_TIPO.questoes;
+    const minExtra = dados.config.duracaoPorTipo.questoes ?? DURACAO_TIPO.questoes;
     const tipoExtra = tipoComConteudo(dados, maisUrgente.mat, "questoes");
     if (tipoExtra && minUsados + minExtra <= maxMinPorDia) {
-      const jaTemMateria = missoesDoDia.some((m) => m.materia === maisUrgente.mat);
+      const jaTemMateria = missoesDoDia.some((m) => mesmaMateria(m.materia, maisUrgente.mat));
       if (!jaTemMateria) {
         await supabase.from("aluno_missoes").insert({
           aluno_id: dados.alunoId, data,
@@ -914,9 +977,9 @@ async function gerarCheckinsContextuais(dados: DadosAluno): Promise<void> {
   // --- PERGUNTA 3: focar em matéria de turbulência com baixa precisão ---
   const materiasCriticas = [...dados.materias.entries()]
     .map(([mat, m]) => {
-      const sentimento = briefing?.sentimentos[mat] ?? "Atenção";
+      const sentimento = briefing?.sentimentos[chaveMateria(mat)] ?? "Atenção";
       if (sentimento !== "Turbulência") return null;
-      const d = dados.respostas.filter((r) => r.materia === mat);
+      const d = dados.respostas.filter((r) => mesmaMateria(r.materia, mat));
       if (d.length < 5) return null;
       const precisao = d.filter((r) => r.correta).length / d.length * 100;
       if (precisao >= 50) return null;
@@ -947,9 +1010,9 @@ async function gerarCheckinsContextuais(dados: DadosAluno): Promise<void> {
     !(await jaFezPerguntaRecentemente(alunoId, "trocar_dominio", 14))
   ) {
     const materiaDominada = [...dados.materias.entries()].find(([mat]) => {
-      const s = briefing?.sentimentos[mat] ?? "Atenção";
+      const s = briefing?.sentimentos[chaveMateria(mat)] ?? "Atenção";
       if (s !== "Domínio") return false;
-      const d = dados.respostas.filter((r) => r.materia === mat);
+      const d = dados.respostas.filter((r) => mesmaMateria(r.materia, mat));
       if (d.length < 5) return false;
       return d.filter((r) => r.correta).length / d.length >= 0.75;
     });
@@ -1032,7 +1095,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         for (let d = 1; d <= Math.min(dias, dados.diasRestantes ?? dias) && adicionados < 5; d++) {
           const iso = somarDias(hojeISO(), d);
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
-          const jaTemMateria = missoesNoDia.some((m) => m.materia === mat);
+          const jaTemMateria = missoesNoDia.some((m) => mesmaMateria(m.materia, mat));
           if (jaTemMateria) continue;
           const tipoFoco = tipoComConteudo(dados, mat, "questoes");
           if (!tipoFoco) break; // matéria pedida no check-in não tem conteúdo
@@ -1058,7 +1121,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         const para = acao_payload.para as string;
         // Encontrar 2-3 missões futuras de 'de' e substituir por missões de 'para'
         const missoesParaSubstituir = dados.missoesAgendadas
-          .filter((m) => m.materia === de && m.origem === "admin" && !m.concluida)
+          .filter((m) => mesmaMateria(m.materia, de) && m.origem === "admin" && !m.concluida)
           .slice(0, 3);
         // Redistribuir apaga missões existentes: se a matéria de destino não
         // tem conteúdo, o aluno terminaria com menos missões válidas do que
@@ -1128,7 +1191,7 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const [materia, assunto] = k.split("||");
     const m = dados.materias.get(materia); if (!m) continue;
     const precisao = (d.a / d.t) * 100;
-    const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+    const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento });
     if (gen < cfg.genMin) continue;
     // `flashPorMat` conta REVISÕES JÁ FEITAS, não flashcards existentes —
@@ -1155,7 +1218,7 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const m = dados.materias.get(materia); if (!m) continue;
     const precisao = (d.a / d.t) * 100;
     if (precisao >= 65) continue;
-    const sentimento = dados.briefing?.sentimentos[materia] ?? "Atenção";
+    const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento }) * 0.7;
     if (gen < cfg.genMin) continue;
     const tipoMat = tipoComConteudo(dados, materia, "questoes");
@@ -1180,7 +1243,8 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
   const cfg = CFG[dados.modo];
   const supabase = createAdminClient();
   const { count } = await supabase.from("copiloto_recomendacoes").select("id", { count: "exact", head: true }).eq("aluno_id", dados.alunoId).eq("status", "pendente");
-  const vagas = cfg.maxRec - (count ?? 0);
+  // maxRec vem do admin (configuracoes → copiloto.max_recomendacoes.*).
+  const vagas = dados.config.maxRecomendacoes[dados.modo] - (count ?? 0);
   if (vagas <= 0) return;
   let criadas = 0;
   for (const iv of intervencoes) {

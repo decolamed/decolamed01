@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import type { Cupom } from "@/types/database";
 
 async function criarCupom(formData: FormData) {
@@ -125,32 +126,31 @@ export default async function AdminCuponsPage({
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Cupons</h1>
+      <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Cupons</h1>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <div className="mt-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Código</th>
-              <th className="p-3">Desconto</th>
-              <th className="p-3">Validade</th>
-              <th className="p-3">Usos</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Parceiro (afiliado)</th>
-              <th className="p-3">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((cupom) => (
-              <tr key={cupom.id} className="border-t">
-                <td className="p-3 font-mono">{cupom.codigo}</td>
-                <td className="p-3">{cupom.tipo === "percentual" ? `${cupom.valor}%` : `R$ ${cupom.valor.toFixed(2)}`}</td>
-                <td className="p-3">{cupom.valido_ate ? new Date(cupom.valido_ate).toLocaleDateString("pt-BR") : "Sem prazo"}</td>
-                <td className="p-3">{cupom.usos}{cupom.limite_usos ? ` / ${cupom.limite_usos}` : ""}</td>
-                <td className="p-3">{cupom.ativo ? "Ativo" : "Inativo"}</td>
-                <td className="p-3">
-                  <form action={vincularParceiro} className="flex items-center gap-1">
+      <div className="mt-6">
+        <TabelaResponsiva
+          linhas={lista}
+          chave={(cupom) => cupom.id}
+          vazio="Nenhum cupom cadastrado."
+          colunas={[
+            { titulo: "Código", principal: true, celula: (cupom) => <span className="font-mono">{cupom.codigo}</span> },
+            {
+              titulo: "Desconto",
+              celula: (cupom) => (cupom.tipo === "percentual" ? `${cupom.valor}%` : `R$ ${cupom.valor.toFixed(2)}`)
+            },
+            {
+              titulo: "Validade",
+              celula: (cupom) => (cupom.valido_ate ? new Date(cupom.valido_ate).toLocaleDateString("pt-BR") : "Sem prazo")
+            },
+            { titulo: "Usos", celula: (cupom) => `${cupom.usos}${cupom.limite_usos ? ` / ${cupom.limite_usos}` : ""}` },
+            { titulo: "Status", celula: (cupom) => (cupom.ativo ? "Ativo" : "Inativo") },
+            {
+              titulo: "Parceiro (afiliado)",
+              celula: (cupom) => (
+                <div>
+                  <form action={vincularParceiro} className="flex flex-wrap items-center gap-1">
                     <input type="hidden" name="id" value={cupom.id} />
                     <select name="parceiro_id" defaultValue={cupom.parceiro_id ?? ""} className="rounded border p-1 text-xs">
                       <option value="">Sem parceiro</option>
@@ -177,31 +177,26 @@ export default async function AdminCuponsPage({
                       {cupom.parceiros.nome} · {cupom.percentual_comissao}% de comissão
                     </p>
                   )}
-                </td>
-                <td className="p-3">
-                  <div className="flex gap-3">
-                    <form action={alternarAtivo}>
-                      <input type="hidden" name="id" value={cupom.id} />
-                      <input type="hidden" name="ativo" value={String(cupom.ativo)} />
-                      <button className="text-orange-dark hover:underline">
-                        {cupom.ativo ? "Desativar" : "Ativar"}
-                      </button>
-                    </form>
-                    <form action={excluirCupom}>
-                      <input type="hidden" name="id" value={cupom.id} />
-                      <button className="text-red-600 hover:underline">Excluir</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {lista.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-6 text-center text-navy-dark/50">Nenhum cupom cadastrado.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              )
+            }
+          ]}
+          acoes={(cupom) => (
+            <>
+              <form action={alternarAtivo}>
+                <input type="hidden" name="id" value={cupom.id} />
+                <input type="hidden" name="ativo" value={String(cupom.ativo)} />
+                <button className="text-orange-dark hover:underline">
+                  {cupom.ativo ? "Desativar" : "Ativar"}
+                </button>
+              </form>
+              <form action={excluirCupom}>
+                <input type="hidden" name="id" value={cupom.id} />
+                <button className="text-red-600 hover:underline">Excluir</button>
+              </form>
+            </>
+          )}
+        />
       </div>
 
       <div className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">

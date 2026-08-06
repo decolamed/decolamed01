@@ -1,5 +1,6 @@
 "use client";
 import { useState, useMemo, useTransition } from "react";
+import { mesmaMateria } from "@/lib/site/materia-canonica";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextArea, TextInput, FieldLabel } from "@/components/admin/interactive";
@@ -189,7 +190,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   const assuntos = Array.from(
     new Set(
       aulas
-        .filter((a) => !filtroMateria || a.materia === filtroMateria)
+        .filter((a) => !filtroMateria || mesmaMateria(a.materia, filtroMateria))
         .map((a) => a.assunto)
         .filter(Boolean)
     )
@@ -363,7 +364,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
           {materiasVisiveis.map((mat) => (
             <div key={mat}>
               <p className="mt-3 px-0 text-[10px] font-extrabold uppercase tracking-widest text-navy-dark/40">{mat}</p>
-              {aulasFiltradas.filter((a) => a.materia === mat).map((a, i, arr) => (
+              {aulasFiltradas.filter((a) => mesmaMateria(a.materia, mat)).map((a, i, arr) => (
                 <div key={a.id} className={`flex flex-wrap items-center gap-3 py-3 ${i < arr.length - 1 ? "border-b border-navy-dark/10" : ""}`}>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-navy/10 text-navy-dark">
                     <Icon name="video" size={16} />

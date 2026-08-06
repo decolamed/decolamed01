@@ -3,6 +3,7 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { enviarRelatoErro } from "./relato-actions";
+import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { nomeDaTela } from "@/lib/site/telas";
 import { formatarNota } from "@/lib/site/nota";
 import { registrarResposta } from "./questoes/actions";
@@ -14,8 +15,9 @@ import { marcarNotificacaoLida } from "./notificacoes-actions";
 import { salvarBriefingApp } from "./briefing/actions";
 import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
-import { dataISO, hojeISO, somarDias } from "@/lib/site/data";
+import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
+import { mesmaMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -56,6 +58,9 @@ interface DecolaAppDados {
   // abaixo da missão de hoje (antes, só as missões do Copiloto apareciam
   // ali, então quem não tinha missões via um cronograma "vazio").
   trilhaProximos: TrilhaDia[];
+  // dia_numero correspondente a hoje — converte a régua relativa do
+  // cronograma em datas reais (ver lib/site/data.ts:dataDoDiaTrilha).
+  diaTrilhaHoje: number | null;
   // Dias já passados do cronograma. Ficam visíveis (recolhidos) para o aluno
   // consultar e concluir o que ficou para trás.
   trilhaAnteriores: TrilhaDia[];
@@ -77,6 +82,9 @@ interface DecolaAppDados {
   conteudosTrilha: { tipo: "aula" | "pdf" | "link"; ref_id: string | null; url: string; titulo: string; materia: string | null }[];
   estudosBotoes: EstudosBotao[];
   baseTemasUrl: string | null;
+  // Destino do botão "Termos de Uso" nas configurações do aluno. Vazio =
+  // botão escondido, em vez de apontar pra um endereço inventado.
+  termosUsoUrl: string | null;
   // Nome do vestibular/instituição vindo de /admin/configuracoes (ver
   // lib/site/marca.ts) — nada de instituição escrita no código, pra
   // plataforma poder atender outros processos seletivos.
@@ -160,6 +168,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     missTab: "diarias",
     upcomingOpen: false,
     qMateria: null,
+    resetConfirmando: false,
+    resetEmAndamento: false,
     rankTab: "geral",
     achTab: "brasoes",
     notifOpen: false,
@@ -946,6 +956,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // persistida no banco via marcarMissaoConcluida().
   missoesHoje(): AlunoMissao[] {
     const hojeStr = this.props.dados.hojeStr;
+    // Se hoje é o dia da prova, não há missão — vale para todas as telas que
+    // partem daqui (sequência de hoje, cronograma, painel).
+    if (this.dataDaProva() === hojeStr) return [];
     return (this.state.missoesLocal as AlunoMissao[]).filter((m) => m.data === hojeStr).sort((a, b) => b.prioridade - a.prioridade);
   }
   iconeMissao(tipo: string) {
@@ -953,17 +966,53 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return m[tipo] || "bot";
   }
   navMissao(m: AlunoMissao) {
-    if (m.tipo === "questoes") this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
-    else if (m.tipo === "flashcards") {
-      const pool = this.props.dados.flashcards;
-      if (m.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === m.materia)), false);
+    // Toda missão precisa abrir alguma coisa de verdade. Antes, quando o
+    // alvo não existia (revisão sem matéria, aula com ref_id apagado), isto
+    // caía num `nav("estudos")` mudo — o cartão parecia não ter ação
+    // nenhuma. Agora cada caminho confere se há conteúdo antes de navegar e,
+    // quando não há, avisa em vez de jogar o aluno numa tela vazia.
+    const questoesDa = (mat: string | null | undefined) =>
+      this.data().questions.filter((q) => (mat ? mesmaMateria(q.materia, mat) : true));
+    const flashcardsDa = (mat: string | null | undefined) =>
+      this.props.dados.flashcards.filter((c) => (mat ? mesmaMateria(c.materia, mat) : true));
+
+    if (m.tipo === "questoes") {
+      if (questoesDa(m.materia).length === 0) {
+        return this.avisar(
+          m.materia
+            ? `Ainda não há questões de ${m.materia} cadastradas. Assim que houver, esta missão abre normalmente.`
+            : "Ainda não há questões cadastradas."
+        );
+      }
+      this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
+    } else if (m.tipo === "flashcards") {
+      const pool = flashcardsDa(m.materia);
+      if (pool.length === 0) {
+        return this.avisar(
+          m.materia
+            ? `Ainda não há flashcards de ${m.materia} cadastrados. Assim que houver, esta missão abre normalmente.`
+            : "Ainda não há flashcards cadastrados."
+        );
+      }
+      if (m.materia) this.iniciarFlashcards(this.embaralhar(pool), false);
       else this.nav("flashcards-select");
     } else if (m.tipo === "simulado") this.nav("simulados");
-    else if (m.tipo === "revisao" && m.materia) this.montarRevisao(m.materia, m.assunto || m.materia);
-    else if (m.tipo === "aula") {
+    else if (m.tipo === "revisao") {
+      // Revisão sem matéria definida usa a matéria mais urgente do aluno, em
+      // vez de simplesmente não fazer nada.
+      const alvo = m.materia || this.priorities()[0]?.mat || null;
+      if (!alvo || questoesDa(alvo).length === 0) {
+        return this.avisar(
+          alvo
+            ? `Ainda não há questões de ${alvo} para montar a revisão.`
+            : "Ainda não há conteúdo suficiente para montar uma revisão."
+        );
+      }
+      this.montarRevisao(alvo, m.assunto || alvo);
+    } else if (m.tipo === "aula") {
       const conteudo = m.ref_id ? this.props.dados.conteudos.find((c) => c.id === m.ref_id) : null;
       if (conteudo) this.abrirAula(conteudo.id, conteudo.titulo, conteudo.url || "", "mapa");
-      else this.nav("estudos");
+      else this.avisar("Esta aula não está mais disponível. Veja as aulas atuais em Estudos.");
     } else this.nav("estudos");
   }
   toggleMissao(id: string) {
@@ -991,12 +1040,39 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         this.avisar("Não foi possível salvar essa missão. Verifique sua conexão e tente de novo.");
       });
   }
+  // Redefinir perfil: apaga histórico/progresso e remonta o perfil a partir
+  // do briefing. Confirmação em dois passos porque é irreversível.
+  confirmarRedefinirPerfil() {
+    if (this.state.resetEmAndamento) return;
+    if (this.props.demoMode) {
+      this.setState({ resetConfirmando: false });
+      return this.avisar("No modo demonstração o perfil não é redefinido de verdade.");
+    }
+    this.setState({ resetEmAndamento: true });
+    redefinirPerfilAluno()
+      .then((res) => {
+        if (!res.ok) {
+          this.setState({ resetEmAndamento: false });
+          return this.avisar(res.erro);
+        }
+        // Recarrega para o app voltar com os dados já zerados — manter o
+        // estado antigo em memória mostraria progresso que não existe mais.
+        if (typeof window !== "undefined") window.location.reload();
+      })
+      .catch(() => {
+        this.setState({ resetEmAndamento: false });
+        this.avisar("Não foi possível redefinir seu perfil. Tente de novo.");
+      });
+  }
   qList() {
     const qs = this.data().questions;
     const m = this.state.qMateria;
     if (!m) return qs;
-    const f = qs.filter((q) => q.materia === m);
-    return f.length ? f : qs;
+    // Sem fallback: antes, quando a matéria escolhida não tinha questão
+    // nenhuma, isto devolvia o banco inteiro — e o aluno via o título
+    // "Praticar · Química" em cima de uma questão de Linguagens. Lista vazia
+    // cai no estado vazio logo abaixo, que é a resposta honesta.
+    return qs.filter((q) => mesmaMateria(q.materia, m));
   }
   startReview() {
     const pr = this.priorities();
@@ -1010,6 +1086,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // scrPlano() e /aluno/cronograma: nenhuma das duas fontes exclui a outra.
   todaySeq() {
     const list: any[] = [];
+    // Se hoje é o dia da prova, não há sequência de estudo — a tela mostra o
+    // cartão do vestibular no lugar.
+    if (this.dataDaProva() === this.props.dados.hojeStr) return list;
     const dia = this.props.dados.trilhaHoje;
     (dia?.itens || []).forEach((item, i) => {
       const chave = this.chaveDeItemTrilha(dia!.dia_numero, i, item);
@@ -1024,18 +1103,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
-    this.missoesHoje().forEach((m) => {
-      list.push({
-        id: m.id,
-        ic: this.iconeMissao(m.tipo),
-        t: m.titulo,
-        d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
-        ia: m.origem === "copiloto",
-        done: m.concluida,
-        act: () => this.navMissao(m),
-        toggle: () => this.toggleMissao(m.id)
-      });
-    });
+    this.missoesHoje().forEach((m) => list.push(this.itemDeMissao(m)));
     const pr0 = this.priorities();
     if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview(), toggle: null });
     return list;
@@ -1145,7 +1213,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
-      if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => c.materia === item.materia)), false);
+      if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, item.materia))), false);
       else this.nav("flashcards-select");
     } else if (item.tipo === "simulado" && !item.ref_id) {
       this.nav("simulados");
@@ -1826,8 +1894,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pro = this.plan() === "voo-guiado";
     const wk = this.weakest();
     const hojeStr = this.props.dados.hojeStr;
+    const dataProvaPainel = this.dataDaProva();
     const upcoming = (this.state.missoesLocal as AlunoMissao[])
-      .filter((m) => m.data > hojeStr)
+      .filter((m) => m.data > hojeStr && !(dataProvaPainel && m.data === dataProvaPainel))
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade)
       .slice(0, 5)
       .map((m) => [m.titulo, new Date(m.data + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })]);
@@ -2176,28 +2245,104 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
+  // Centro de Missões = outra leitura do MESMO cronograma, não uma segunda
+  // organização paralela. Antes esta tela lia só `aluno_missoes`, enquanto o
+  // Cronograma lia `trilha_dias` + `aluno_missoes` — as duas telas mostravam
+  // listas diferentes para o mesmo dia e o aluno não sabia em qual acreditar.
+  // Agora as duas partem de sequenciaDoDia().
   scrMissoes() {
     const { C, h, I, card, chip } = this.ui();
     const t = this.state.missTab;
     const hojeStr = this.props.dados.hojeStr;
-    const todas = this.state.missoesLocal as AlunoMissao[];
-    const list =
-      t === "diarias" ? todas.filter((m) => m.data === hojeStr) : t === "especiais" ? todas.filter((m) => m.origem === "copiloto") : todas.filter((m) => m.data >= hojeStr);
-    const ordenada = [...list].sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
+
+    // Grupos por dia. Começa pelo cronograma e, no fim, acrescenta as datas
+    // que só têm missão — o cronograma tem um número fixo de dias, e o
+    // Copiloto pode agendar missão para depois do último deles. Sem essa
+    // união, essas missões sumiriam da tela (era o que acontecia enquanto
+    // esta tela lia apenas os dias do cronograma).
+    const grupos: { rotulo: string; data: string | null; itens: any[] }[] = [
+      { rotulo: "Hoje", data: hojeStr, itens: this.todaySeq() }
+    ];
+    const datasCobertas = new Set<string>([hojeStr]);
+
+    (this.props.dados.trilhaProximos || []).forEach((dia) => {
+      const iso = this.dataDoDia(dia.dia_numero);
+      if (iso) datasCobertas.add(iso);
+      const base = dia.titulo || `Dia ${dia.dia_numero}`;
+      grupos.push({
+        rotulo: iso ? `${base} · ${dataBR(iso)}` : base,
+        data: iso,
+        itens: this.sequenciaDoDia(dia)
+      });
+    });
+
+    // O dia da prova não recebe missão nem quando cai fora do cronograma —
+    // senão a regra "nada de estudo no dia do exame" valeria só dentro dos
+    // dias cadastrados.
+    const dataProva = this.dataDaProva();
+    const soltas = new Map<string, AlunoMissao[]>();
+    (this.state.missoesLocal as AlunoMissao[]).forEach((m) => {
+      if (m.data <= hojeStr || datasCobertas.has(m.data)) return;
+      if (dataProva && m.data === dataProva) return;
+      if (!soltas.has(m.data)) soltas.set(m.data, []);
+      soltas.get(m.data)!.push(m);
+    });
+    Array.from(soltas.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([data, ms]) => {
+        grupos.push({
+          rotulo: `${nomeDoDiaDaSemana(data)} · ${dataBR(data)}`,
+          data,
+          itens: ms.map((m) => this.itemDeMissao(m))
+        });
+      });
+
+    // Ordem cronológica, com "Hoje" sempre à frente.
+    grupos.sort((a, b) => (a.data ?? "9999").localeCompare(b.data ?? "9999"));
+
+    let visiveis: { rotulo: string; itens: any[] }[];
+    if (t === "diarias") visiveis = grupos.filter((g) => g.data === hojeStr);
+    else if (t === "semanais") visiveis = grupos.slice(0, 8);
+    else visiveis = grupos.map((g) => ({ rotulo: g.rotulo, itens: g.itens.filter((x: any) => x.ia) }));
+
+    const comItens = visiveis.filter((g) => g.itens.length > 0);
+
     return this.screenWrap([
       this.head("Centro de Missões", { back: "mapa" }),
-      h("div", { key: "tabs", style: { display: "flex", gap: 8, padding: "6px 18px 4px" } }, [
-        chip("Diárias", t === "diarias", () => this.setState({ missTab: "diarias" })),
-        chip("Semanais", t === "semanais", () => this.setState({ missTab: "semanais" })),
-        chip("Do Copiloto", t === "especiais", () => this.setState({ missTab: "especiais" }))
-      ]),
       h(
         "div",
-        { key: "list", style: { margin: "12px 18px 0" } },
-        ordenada.length
-          ? card({ padding: 15 }, ordenada.map((m, i) => this.linhaMissao(m, i, ordenada.length)))
-          : h("div", { key: "vazio", style: { textAlign: "center", padding: 20, color: C.sub, fontSize: 12.5, fontWeight: 600 } }, "Nenhuma missão por aqui no momento.")
+        { key: "sub", style: { margin: "2px 18px 0", fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.5 } },
+        "É o mesmo cronograma, visto por dia. Concluir aqui vale lá, e vice-versa."
       ),
+      h("div", { key: "tabs", style: { display: "flex", gap: 8, padding: "10px 18px 4px" } }, [
+        chip("Hoje", t === "diarias", () => this.setState({ missTab: "diarias" })),
+        chip("Próximos dias", t === "semanais", () => this.setState({ missTab: "semanais" })),
+        chip("Do Copiloto", t === "especiais", () => this.setState({ missTab: "especiais" }))
+      ]),
+      ...(comItens.length
+        ? comItens.map((g, gi) =>
+            h("div", { key: "g" + gi, style: { margin: "12px 18px 0" } }, [
+              h(
+                "div",
+                { key: "r", style: { fontSize: 11, fontWeight: 800, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 7 } },
+                g.rotulo
+              ),
+              card({ padding: 15 }, g.itens.map((x: any, i: number) => this.linhaSequencia(x, i, g.itens.length)))
+            ])
+          )
+        : [
+            h(
+              "div",
+              { key: "vazio", style: { margin: "12px 18px 0" } },
+              card(
+                { padding: 20 },
+                h("div", { style: { textAlign: "center", color: C.sub, fontSize: 12.5, fontWeight: 600 } },
+                  t === "especiais"
+                    ? "O Copiloto ainda não adicionou nada ao seu cronograma."
+                    : "Nenhuma missão por aqui no momento.")
+              )
+            )
+          ]),
       t === "especiais"
         ? h("div", { key: "note", style: { margin: "14px 18px 0", padding: "13px 15px", borderRadius: 16, background: C.peach, display: "flex", gap: 10, alignItems: "center" } }, [
             I("gift", 20, C.dark ? C.peachTxt : "#9a5218"),
@@ -2205,6 +2350,112 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ])
         : null
     ]);
+  }
+
+  // Uma linha da sequência unificada (item de cronograma OU missão), no
+  // mesmo formato que todaySeq() produz.
+  linhaSequencia(x: any, i: number, total: number) {
+    const { C, h, I } = this.ui();
+    return h(
+      "div",
+      { key: "s" + x.id, style: { display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: i < total - 1 ? "1px solid " + C.line : "none", opacity: x.done ? 0.55 : 1 } },
+      [
+        h(
+          "div",
+          {
+            key: "n",
+            onClick: (e: any) => { e.stopPropagation(); if (x.toggle) x.toggle(); },
+            title: x.toggle ? (x.done ? "Desmarcar" : "Marcar como concluído") : undefined,
+            style: { width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: x.toggle ? "pointer" : "default", fontSize: 10.5, fontWeight: 900, background: x.done ? C.green : C.chip, color: x.done ? "#fff" : C.sub }
+          },
+          x.done ? I("check", 12, "#fff", 3) : i + 1
+        ),
+        h("div", { key: "t", onClick: () => x.act && x.act(), style: { flex: 1, cursor: x.act ? "pointer" : "default", minWidth: 0 } }, [
+          h("div", { key: "a", style: { fontSize: 12, fontWeight: 800, textDecoration: x.done ? "line-through" : "none" } }, x.t),
+          h("div", { key: "b", style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, x.d)
+        ]),
+        x.ia
+          ? h("span", { key: "g", style: { fontSize: 8, fontWeight: 900, color: C.orange, background: C.orangeSoft, padding: "2px 7px", borderRadius: 99 } }, "COPILOTO")
+          : I("chevR", 14, C.faint)
+      ]
+    );
+  }
+
+  // ---- Datas do cronograma --------------------------------------------
+  // O cronograma é uma régua relativa (dia_numero). Estas três funções são
+  // a única ponte para o calendário: sabendo qual dia_numero é hoje, todo o
+  // resto sai por diferença.
+
+  /** Data YYYY-MM-DD de um dia do cronograma, ou null se não dá pra saber. */
+  dataDoDia(diaNumero: number): string | null {
+    const hojeNum = this.props.dados.diaTrilhaHoje;
+    if (!hojeNum) return null;
+    return dataDoDiaTrilha(diaNumero, hojeNum, this.props.dados.hojeStr);
+  }
+
+  /** "Segunda-feira · 04/08/2026" — subtítulo do dia no cronograma. */
+  rotuloDataDoDia(diaNumero: number): string | null {
+    const iso = this.dataDoDia(diaNumero);
+    if (!iso) return null;
+    return `${nomeDoDiaDaSemana(iso)} · ${dataBR(iso)}`;
+  }
+
+  /** Data da prova informada pelo aluno no briefing (YYYY-MM-DD) ou null. */
+  dataDaProva(): string | null {
+    const d = this.props.dados.briefing?.data_prova;
+    return d ? String(d).slice(0, 10) : null;
+  }
+
+  /**
+   * O dia da prova não é dia de estudo: no lugar das missões o aluno vê o
+   * cartão do vestibular. Antes o cronograma seguia normalmente por cima da
+   * data da prova, mandando o aluno estudar no dia do exame.
+   */
+  ehDiaDaProva(diaNumero: number): boolean {
+    const prova = this.dataDaProva();
+    if (!prova) return false;
+    return this.dataDoDia(diaNumero) === prova;
+  }
+
+  // Missão (aluno_missoes) no formato da sequência unificada. Extraído
+  // porque três telas montavam esta mesma linha à mão — e divergir aqui é
+  // exatamente o que fazia Cronograma e Centro de Missões discordarem.
+  itemDeMissao(m: AlunoMissao) {
+    return {
+      id: m.id,
+      ic: this.iconeMissao(m.tipo),
+      t: m.titulo,
+      d: (m.materia ? m.materia + " · " : "") + m.duracao_minutos + " min",
+      ia: m.origem === "copiloto",
+      done: m.concluida,
+      act: () => this.navMissao(m),
+      toggle: () => this.toggleMissao(m.id)
+    };
+  }
+
+  // Mesma montagem de todaySeq(), para um dia qualquer do cronograma.
+  sequenciaDoDia(dia: TrilhaDia) {
+    // Dia da prova não recebe missão nenhuma.
+    if (this.ehDiaDaProva(dia.dia_numero)) return [];
+    const list: any[] = [];
+    (dia.itens || []).forEach((item, i) => {
+      const chave = this.chaveDeItemTrilha(dia.dia_numero, i, item);
+      list.push({
+        id: "trilha-" + dia.dia_numero + "-" + i,
+        ic: this.iconeMissao(item.tipo),
+        t: item.titulo,
+        d: item.materia || dia.titulo || "",
+        ia: false,
+        done: this.estaConcluido(chave),
+        act: () => this.abrirItemTrilha(item),
+        toggle: chave ? () => this.toggleItemGenerico(chave) : null
+      });
+    });
+    const isoDoDia = this.dataDoDia(dia.dia_numero);
+    (this.state.missoesLocal as AlunoMissao[])
+      .filter((m) => isoDoDia !== null && m.data === isoDoDia)
+      .forEach((m) => list.push(this.itemDeMissao(m)));
+    return list;
   }
 
   scrEstudos() {
@@ -2568,7 +2819,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   montarRevisao(materia: string, tema: string) {
     const pool = this.props.dados.questoes.map((q) => this.mapQuestao(q));
     const mesmoAssunto = pool.filter((q) => q.tema === tema);
-    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => q.materia === materia);
+    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => mesmaMateria(q.materia, materia));
     const embaralhado = [...base].sort(() => Math.random() - 0.5).slice(0, 5);
     this.setState({ reviewMode: true, revPool: embaralhado, revIdx: 0, revPicked: null, revDone: false, revResult: null, revScore: 0, revFinished: false });
   }
@@ -3398,23 +3649,84 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "ac", style: { margin: "0 18px" } },
         card(
           { padding: "6px 16px" },
-          [
-            ["user", "Editar perfil"],
-            ["lock", "Alterar senha"],
-            ["calendar", "Recalibrar plano de voo"],
-            ["file", "Termos e privacidade"]
-          ].map((r, i) =>
+          // "Termos de Uso" só entra na lista quando o admin cadastrou o
+          // endereço em Configurações. Antes o item apontava para um
+          // "decolamed.com.br/termos" escrito no código, que não existia e
+          // não tinha onde ser configurado.
+          ([
+            ["user", "Editar perfil", () => this.nav("perfil")],
+            ["lock", "Alterar senha", () => this.nav("senha")],
+            ["calendar", "Recalibrar plano de voo", () => this.nav("briefing")],
+            ...(this.props.dados.termosUsoUrl
+              ? [["file", "Termos de Uso", () => this.openBrowser("Termos de Uso", this.props.dados.termosUsoUrl as string, "config")] as [string, string, () => void]]
+              : [])
+          ] as [string, string, () => void][]).map((r, i, arr) =>
             h(
               "div",
               {
                 key: i,
-                onClick: [() => this.nav("perfil"), () => this.nav("senha"), () => this.nav("briefing"), () => this.openBrowser("Termos e Privacidade", "decolamed.com.br/termos", "config")][i],
-                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 3 ? "1px solid " + C.line : "none", cursor: "pointer" }
+                onClick: r[2],
+                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
               [I(r[0], 18, C.sub), h("span", { key: "t", style: { flex: 1, fontSize: 13, fontWeight: 700 } }, r[1]), I("chevR", 15, C.faint)]
             )
           )
         )
+      ),
+      // Zona de risco: a ação é destrutiva e irreversível, então fica
+      // separada do resto, com confirmação em dois passos.
+      h("div", { key: "lblrz", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Recomeçar do zero"),
+      h(
+        "div",
+        { key: "reset", style: { margin: "0 18px" } },
+        card({ padding: 16 }, [
+          h("div", { key: "t", style: { fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 } }, [
+            I("alert", 16, C.orange),
+            "Redefinir perfil"
+          ]),
+          h(
+            "div",
+            { key: "d", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 6, lineHeight: 1.55 } },
+            "Apaga seu histórico, progresso, estatísticas, cronograma personalizado e as adaptações do Copiloto. Seu cadastro, plano e créditos de redação continuam. Seu perfil é montado de novo a partir do briefing."
+          ),
+          this.state.resetConfirmando
+            ? h("div", { key: "c", style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 8 } }, [
+                h(
+                  "div",
+                  { key: "w", style: { fontSize: 11.5, fontWeight: 800, color: C.orange, lineHeight: 1.5 } },
+                  "Tem certeza? Isso não pode ser desfeito."
+                ),
+                h("div", { key: "b", style: { display: "flex", gap: 8 } }, [
+                  h(
+                    "div",
+                    {
+                      key: "sim",
+                      onClick: () => this.confirmarRedefinirPerfil(),
+                      style: { flex: 1, textAlign: "center", padding: "11px 0", borderRadius: 12, background: this.state.resetEmAndamento ? C.chip : C.orange, color: this.state.resetEmAndamento ? C.sub : "#fff", fontSize: 12, fontWeight: 900, cursor: this.state.resetEmAndamento ? "default" : "pointer" }
+                    },
+                    this.state.resetEmAndamento ? "REDEFININDO..." : "SIM, REDEFINIR"
+                  ),
+                  h(
+                    "div",
+                    {
+                      key: "nao",
+                      onClick: () => { if (!this.state.resetEmAndamento) this.setState({ resetConfirmando: false }); },
+                      style: { flex: 1, textAlign: "center", padding: "11px 0", borderRadius: 12, background: C.chip, color: C.txt, fontSize: 12, fontWeight: 900, cursor: "pointer" }
+                    },
+                    "CANCELAR"
+                  )
+                ])
+              ])
+            : h(
+                "div",
+                {
+                  key: "b",
+                  onClick: () => this.setState({ resetConfirmando: true }),
+                  style: { marginTop: 12, textAlign: "center", padding: "11px 0", borderRadius: 12, border: "1.5px solid " + C.orange, color: C.orange, fontSize: 12, fontWeight: 900, cursor: "pointer" }
+                },
+                "REDEFINIR PERFIL"
+              )
+        ])
       ),
       h("div", { key: "lbl3", style: { margin: "18px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } }, "Como usar a plataforma"),
       h(
@@ -3664,11 +3976,37 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ]
     );
   }
+  // O dia da prova não é dia de estudo. Em vez das missões, o aluno vê o
+  // destino: é o dia para o qual todo o cronograma foi construído.
+  cartaoDiaDaProva(diaNumero: number) {
+    const { C, h, card } = this.ui();
+    const rotulo = this.rotuloDataDoDia(diaNumero);
+    return h(
+      "div",
+      { key: "prova" + diaNumero, style: { margin: "0 18px 10px" } },
+      card({ padding: 18, background: C.headGrad, border: "none", color: "#fff" }, [
+        h(
+          "div",
+          { key: "l", style: { fontSize: 10, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase", color: "rgba(255,255,255,.65)" } },
+          "Dia " + diaNumero + (rotulo ? " · " + rotulo : "")
+        ),
+        h("div", { key: "t", style: { fontSize: 19, fontWeight: 900, marginTop: 8, letterSpacing: "-.01em" } }, "🎯 " + (this.props.dados.nomeVestibular ? "Vestibular " + this.props.dados.nomeVestibular : "Dia da Prova")),
+        h(
+          "div",
+          { key: "s", style: { fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)", marginTop: 8, lineHeight: 1.55 } },
+          "Sem missões hoje. Descanse, confira o local de prova e leve documento e caneta. Você se preparou para este dia."
+        )
+      ])
+    );
+  }
   // Cartão de um dia do cronograma (usado nos dias anteriores e nos
   // próximos). `passado` só muda a aparência — os itens continuam clicáveis,
   // para o aluno poder concluir o que ficou para trás.
   cartaoDiaTrilha(dia: TrilhaDia, passado: boolean) {
     const { C, h, I, card } = this.ui();
+    // No dia da prova o cronograma dá lugar ao cartão do vestibular: nada de
+    // missão marcada para o dia do exame.
+    if (this.ehDiaDaProva(dia.dia_numero)) return this.cartaoDiaDaProva(dia.dia_numero);
     const itens = dia.itens || [];
     const feitos = itens.filter((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item))).length;
     const concluido = itens.length > 0 && feitos === itens.length;
@@ -3678,10 +4016,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const opacidade = concluido ? 1 : passado ? 0.75 : 1;
     return h(
       "div",
-      { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 8px", opacity: opacidade } },
+      { key: "trilha" + dia.dia_numero, style: { margin: "0 18px 12px", opacity: opacidade } },
       card(
         {
-          padding: 15,
+          padding: 16,
           ...(concluido ? { border: "1.5px solid " + C.green, background: C.greenSoft } : {})
         },
         [
@@ -3705,7 +4043,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               ? h("span", { key: "lbl", style: { marginLeft: "auto", fontSize: 9, fontWeight: 900, color: "#fff", background: C.green, padding: "3px 8px", borderRadius: 99, letterSpacing: ".05em" } }, "CONCLUÍDO")
               : null
           ]),
-          h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 2, marginBottom: itens.length ? 8 : 0 } }, dia.titulo),
+          // Data real do dia — "Dia 7" sozinho não diz ao aluno quando é.
+          this.rotuloDataDoDia(dia.dia_numero)
+            ? h("div", { key: "dt", style: { fontSize: 10.5, fontWeight: 700, color: C.sub, marginTop: 3 } }, this.rotuloDataDoDia(dia.dia_numero))
+            : null,
+          h("div", { key: "n", style: { fontSize: 13.5, fontWeight: 900, marginTop: 6, marginBottom: itens.length ? 10 : 0, lineHeight: 1.35 } }, dia.titulo),
           // Barra de progresso do dia: mostra o avanço sem precisar contar os
           // itens um a um.
           itens.length && !concluido
@@ -3715,7 +4057,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 h("div", { key: "f", style: { width: Math.round((feitos / itens.length) * 100) + "%", height: "100%", background: C.green, borderRadius: 99, transition: "width .25s" } })
               )
             : null,
-          ...itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
+          // Itens do dia numa coluna com respiro entre eles: empilhados sem
+          // gap, o cartão virava um bloco só e ficava difícil distinguir
+          // uma aula da próxima.
+          itens.length
+            ? h(
+                "div",
+                { key: "itens", style: { display: "flex", flexDirection: "column", gap: 6 } },
+                itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
+              )
+            : null
         ]
       )
     );
@@ -3737,8 +4088,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pr = this.priorities();
     const hoje = this.missoesHoje();
     const hojeStr = this.props.dados.hojeStr;
+    // Mesma regra do Centro de Missões: nada de missão no dia da prova. Se
+    // as duas telas divergissem aqui, voltaria a valer a queixa de que
+    // cronograma e missões mostram coisas diferentes.
+    const dataProvaPlano = this.dataDaProva();
     const proximas = (this.state.missoesLocal as AlunoMissao[])
-      .filter((m) => m.data > hojeStr)
+      .filter((m) => m.data > hojeStr && !(dataProvaPlano && m.data === dataProvaPlano))
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
     const porDia = new Map<string, AlunoMissao[]>();
     proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
@@ -3760,7 +4115,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           )
         : null,
       // Missão do dia do cronograma — a "trilha" é exatamente esta visão.
-      diaTrilha
+      diaTrilha && this.ehDiaDaProva(diaTrilha.dia_numero)
+        ? h("div", { key: "hero", style: { marginTop: 12 } }, this.cartaoDiaDaProva(diaTrilha.dia_numero))
+        : diaTrilha
         ? h(
             "div",
             { key: "hero", style: { margin: "12px 18px 0" } },
@@ -3768,7 +4125,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h(
                 "div",
                 { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } },
-                "Hoje · Dia " + diaTrilha.dia_numero
+                "Hoje · Dia " + diaTrilha.dia_numero + (this.rotuloDataDoDia(diaTrilha.dia_numero) ? " · " + this.rotuloDataDoDia(diaTrilha.dia_numero) : "")
               ),
               h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, diaTrilha.titulo),
               diaTrilha.itens?.length
@@ -4394,7 +4751,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         ? h(
             "div",
             { key: "materias", style: { margin: "14px 18px 0", display: "flex", flexWrap: "wrap", gap: 8 } },
-            materias.map((m) => chip(m, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => c.materia === m)), false)))
+            materias.map((m) => chip(m, false, () => this.iniciarFlashcards(this.embaralhar(todos.filter((c) => mesmaMateria(c.materia, m))), false)))
           )
         : null,
       S.fcModoAberto === "assunto"

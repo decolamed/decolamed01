@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { materiasUnicas } from "@/lib/site/materia-canonica";
 
 // Fonte única da lista de matérias mostrada ao aluno.
 //
@@ -29,7 +30,7 @@ export const MATERIAS_PADRAO = [
   "Química",
   "Física",
   "Matemática",
-  "Português",
+  "Linguagens",
   "História",
   "Geografia"
 ];
@@ -49,14 +50,13 @@ export async function getMateriasDoConteudo(): Promise<string[]> {
     supabase.from("flashcards").select("materia").eq("ativo", true)
   ]);
 
-  const nomes = new Set<string>();
+  // materiasUnicas() colapsa sinônimos: se sobrar alguma linha antiga como
+  // "Português", ela vira "Linguagens" e não aparece duas vezes na lista.
+  const brutos: (string | null)[] = [];
   [questoes, flashcards].forEach((linhas) => {
-    (linhas ?? []).forEach((l: { materia: string | null }) => {
-      const m = (l.materia ?? "").trim();
-      if (m) nomes.add(m);
-    });
+    (linhas ?? []).forEach((l: { materia: string | null }) => brutos.push(l.materia));
   });
 
-  const lista = Array.from(nomes).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const lista = materiasUnicas(brutos).sort((a, b) => a.localeCompare(b, "pt-BR"));
   return lista.length ? lista : MATERIAS_PADRAO;
 }

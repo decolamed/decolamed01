@@ -6,6 +6,7 @@ import { Icon } from "@/components/admin/icon";
 import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput, TextArea, FieldLabel } from "@/components/admin/interactive";
 import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
+import { ROTULO_MODALIDADE, rotuloModalidade } from "@/lib/site/filtro-questoes";
 import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, alternarAtivoQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
@@ -369,7 +370,7 @@ export function QuestoesManager({
                         onde a questão veio, sem abrir a edição. */}
                     {(q.prova_nome || q.ano) && (
                       <span className="rounded-full bg-navy/10 px-2.5 py-1 text-[10px] font-extrabold text-navy">
-                        {[q.prova_nome, q.ano ? `${q.ano}${q.semestre ? `.${q.semestre}` : ""}` : null, q.modalidade]
+                        {[q.prova_nome, q.ano ? `${q.ano}${q.semestre ? `.${q.semestre}` : ""}` : null, rotuloModalidade(q.modalidade)]
                           .filter(Boolean)
                           .join(" ")}
                         {q.numero_questao != null ? ` · Q${q.numero_questao}` : ""}
@@ -434,7 +435,20 @@ export function QuestoesManager({
           <FieldLabel>Prova de origem</FieldLabel>
           <div className="grid grid-cols-2 gap-2">
             <TextInput value={draft.provaNome ?? ""} onChange={(e) => setDraft({ ...draft, provaNome: e.target.value })} placeholder={`Prova (ex.: ${nomeVestibular})`} />
-            <TextInput value={draft.modalidade ?? ""} onChange={(e) => setDraft({ ...draft, modalidade: e.target.value })} placeholder="Modalidade (Ampla, Cotas...)" />
+            {/* Lista fechada porque o banco tem CHECK em ampla/peba: digitar
+                qualquer outra coisa aqui devolveria um erro cru do Postgres. */}
+            <select
+              value={draft.modalidade ?? ""}
+              onChange={(e) => setDraft({ ...draft, modalidade: e.target.value })}
+              className="w-full rounded-[10px] border border-navy-dark/15 px-3 py-2 text-xs font-semibold text-navy-dark outline-none"
+            >
+              <option value="">Modalidade (opcional)</option>
+              {Object.entries(ROTULO_MODALIDADE).map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </select>
             <TextInput type="number" value={draft.ano ?? ""} onChange={(e) => setDraft({ ...draft, ano: e.target.value })} placeholder="Ano (2025)" />
             <TextInput value={draft.semestre ?? ""} onChange={(e) => setDraft({ ...draft, semestre: e.target.value })} placeholder="Semestre (1 ou 2)" />
             <TextInput type="number" value={draft.numeroQuestao ?? ""} onChange={(e) => setDraft({ ...draft, numeroQuestao: e.target.value })} placeholder="Nº da questão" />

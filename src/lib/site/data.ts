@@ -67,3 +67,35 @@ export function diffDias(a: string, b: string): number {
 export function diaDaSemana(dataIso: string): number {
   return new Date(dataIso + "T12:00:00Z").getUTCDay();
 }
+
+const NOMES_DIA = [
+  "Domingo",
+  "Segunda-feira",
+  "Terça-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sábado"
+];
+
+/** "Segunda-feira" para uma data YYYY-MM-DD. */
+export function nomeDoDiaDaSemana(dataIso: string): string {
+  return NOMES_DIA[diaDaSemana(dataIso)];
+}
+
+/** "04/08/2026" para uma data YYYY-MM-DD. */
+export function dataBR(dataIso: string): string {
+  const [a, m, d] = dataIso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
+/**
+ * Data de calendário de um dia do cronograma.
+ *
+ * `trilha_dias.dia_numero` é relativo ao início do aluno, não a um dia fixo
+ * — por isso a tela só conseguia dizer "Dia 1", "Dia 2". Sabendo qual
+ * dia_numero é hoje, o resto da régua sai por diferença.
+ */
+export function dataDoDiaTrilha(diaNumero: number, diaNumeroHoje: number, hoje: string = hojeISO()): string {
+  return somarDias(hoje, diaNumero - diaNumeroHoje);
+}

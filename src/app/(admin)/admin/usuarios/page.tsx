@@ -5,6 +5,7 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import type { Profile } from "@/types/database";
 import {
   criarAlunoManual,
@@ -49,17 +50,17 @@ export default async function AdminUsuariosPage({
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Usuários</h1>
+      <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Usuários</h1>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <form className="mt-4 flex flex-wrap gap-3" action="/admin/usuarios">
+      <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap" action="/admin/usuarios">
         <input
           name="q"
           defaultValue={searchParams.q}
           placeholder="Buscar por nome ou e-mail"
-          className="w-full max-w-sm rounded-lg border p-3"
+          className="w-full rounded-lg border p-3 sm:max-w-sm"
         />
-        <select name="role" defaultValue={searchParams.role ?? ""} className="rounded-lg border p-3">
+        <select name="role" defaultValue={searchParams.role ?? ""} className="w-full rounded-lg border p-3 sm:w-auto">
           <option value="">Todos os papéis</option>
           <option value="aluno">Alunos</option>
           <option value="parceiro">Parceiros</option>
@@ -71,22 +72,17 @@ export default async function AdminUsuariosPage({
         </SubmitButton>
       </form>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Nome</th>
-              <th className="p-3">Contato</th>
-              <th className="p-3">Papel</th>
-              <th className="p-3">Plano</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(usuarios ?? []).map((u: Profile & { planos: { nome: string } | null }) => (
-              <tr key={u.id} className="border-t align-top">
-                <td className="p-3">
+      <div className="mt-6">
+        <TabelaResponsiva
+          linhas={(usuarios ?? []) as (Profile & { planos: { nome: string } | null })[]}
+          chave={(u) => u.id}
+          vazio="Nenhum usuário encontrado."
+          colunas={[
+            {
+              titulo: "Nome",
+              principal: true,
+              celula: (u) => (
+                <>
                   <Link href={`/admin/usuarios/${u.id}`} className="font-semibold text-navy-dark hover:underline">
                     {u.nome}
                   </Link>
@@ -95,162 +91,166 @@ export default async function AdminUsuariosPage({
                       manual
                     </span>
                   )}
-                </td>
-                <td className="p-3">
-                  <p>{u.email}</p>
+                </>
+              )
+            },
+            {
+              titulo: "Contato",
+              celula: (u) => (
+                <div>
+                  <p className="break-all">{u.email}</p>
                   <p className="text-xs text-navy-dark/50">{u.telefone ?? "sem telefone"}</p>
                   <div className="mt-1">
                     <WhatsappButton telefone={u.telefone} nome={u.nome} />
                   </div>
-                </td>
-                <td className="p-3">{ROLE_LABEL[u.role] ?? u.role}</td>
-                <td className="p-3">
-                  {u.role === "aluno" ? (
-                    <form action={alterarPlano} className="flex items-center gap-2">
-                      <input type="hidden" name="id" value={u.id} />
-                      <select name="planoId" defaultValue={u.plano_id ?? ""} className="rounded border p-1">
-                        <option value="">—</option>
-                        {(planos ?? []).map((p: any) => (
-                          <option key={p.id} value={p.id}>{p.nome}</option>
-                        ))}
-                      </select>
-                      <SubmitButton pendingText="..." className="text-orange-dark hover:underline">
-                        Salvar
-                      </SubmitButton>
-                    </form>
-                  ) : (
-                    <span className="text-navy-dark/40">—</span>
-                  )}
-                </td>
-                <td className="p-3">
-                  {u.ativo ? (
-                    <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">Ativo</span>
-                  ) : (
-                    <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">Desativado</span>
-                  )}
-                </td>
-                <td className="p-3">
-                  <div className="flex flex-col items-start gap-1.5">
-                    <form action={reenviarConvite}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <input type="hidden" name="email" value={u.email} />
-                      <input type="hidden" name="nome" value={u.nome} />
-                      <SubmitButton pendingText="Enviando..." className="text-navy hover:underline">
-                        Reenviar e-mail de acesso
-                      </SubmitButton>
-                    </form>
+                </div>
+              )
+            },
+            { titulo: "Papel", celula: (u) => ROLE_LABEL[u.role] ?? u.role },
+            {
+              titulo: "Plano",
+              celula: (u) =>
+                u.role === "aluno" ? (
+                  <form action={alterarPlano} className="flex items-center gap-2">
+                    <input type="hidden" name="id" value={u.id} />
+                    <select name="planoId" defaultValue={u.plano_id ?? ""} className="rounded border p-1">
+                      <option value="">—</option>
+                      {(planos ?? []).map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.nome}</option>
+                      ))}
+                    </select>
+                    <SubmitButton pendingText="..." className="text-orange-dark hover:underline">
+                      Salvar
+                    </SubmitButton>
+                  </form>
+                ) : (
+                  <span className="text-navy-dark/40">—</span>
+                )
+            },
+            {
+              titulo: "Status",
+              celula: (u) =>
+                u.ativo ? (
+                  <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">Ativo</span>
+                ) : (
+                  <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">Desativado</span>
+                )
+            }
+          ]}
+          acoes={(u) => (
+            <div className="flex flex-col items-start gap-1.5">
+              <form action={reenviarConvite}>
+                <input type="hidden" name="id" value={u.id} />
+                <input type="hidden" name="email" value={u.email} />
+                <input type="hidden" name="nome" value={u.nome} />
+                <SubmitButton pendingText="Enviando..." className="text-navy hover:underline">
+                  Reenviar e-mail de acesso
+                </SubmitButton>
+              </form>
 
-                    <form action={reenviarSenha}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <input type="hidden" name="email" value={u.email} />
-                      <SubmitButton pendingText="Enviando..." className="text-navy hover:underline">
-                        Reenviar redefinição de senha
-                      </SubmitButton>
-                    </form>
+              <form action={reenviarSenha}>
+                <input type="hidden" name="id" value={u.id} />
+                <input type="hidden" name="email" value={u.email} />
+                <SubmitButton pendingText="Enviando..." className="text-navy hover:underline">
+                  Reenviar redefinição de senha
+                </SubmitButton>
+              </form>
 
-                    {u.id !== adminAtual.id && (
-                      <form action={u.ativo ? desativarUsuario : reativarUsuario}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <ConfirmSubmitButton
-                          pendingText="..."
-                          confirmMessage={
-                            u.ativo
-                              ? `Desativar o acesso de ${u.nome}? O login será bloqueado imediatamente.`
-                              : `Reativar o acesso de ${u.nome}?`
-                          }
-                          className={u.ativo ? "text-red-600 hover:underline" : "text-green-700 hover:underline"}
-                        >
-                          {u.ativo ? "Desativar usuário" : "Reativar usuário"}
-                        </ConfirmSubmitButton>
-                      </form>
-                    )}
+              {u.id !== adminAtual.id && (
+                <form action={u.ativo ? desativarUsuario : reativarUsuario}>
+                  <input type="hidden" name="id" value={u.id} />
+                  <ConfirmSubmitButton
+                    pendingText="..."
+                    confirmMessage={
+                      u.ativo
+                        ? `Desativar o acesso de ${u.nome}? O login será bloqueado imediatamente.`
+                        : `Reativar o acesso de ${u.nome}?`
+                    }
+                    className={u.ativo ? "text-red-600 hover:underline" : "text-green-700 hover:underline"}
+                  >
+                    {u.ativo ? "Desativar usuário" : "Reativar usuário"}
+                  </ConfirmSubmitButton>
+                </form>
+              )}
 
-                    {u.role !== "admin" ? (
-                      <form action={tornarAdmin}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <ConfirmSubmitButton
-                          pendingText="..."
-                          confirmMessage={`Tornar ${u.nome} administrador? Ele passará a ter acesso total ao painel.`}
-                          className="text-orange-dark hover:underline"
-                        >
-                          Tornar administrador
-                        </ConfirmSubmitButton>
-                      </form>
-                    ) : (
-                      u.id !== adminAtual.id && (
-                        <form action={removerAdmin}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <ConfirmSubmitButton
-                            pendingText="..."
-                            confirmMessage={`Remover a permissão de administrador de ${u.nome}?`}
-                            className="text-red-600 hover:underline"
-                          >
-                            Remover permissão de admin
-                          </ConfirmSubmitButton>
-                        </form>
-                      )
-                    )}
+              {u.role !== "admin" ? (
+                <form action={tornarAdmin}>
+                  <input type="hidden" name="id" value={u.id} />
+                  <ConfirmSubmitButton
+                    pendingText="..."
+                    confirmMessage={`Tornar ${u.nome} administrador? Ele passará a ter acesso total ao painel.`}
+                    className="text-orange-dark hover:underline"
+                  >
+                    Tornar administrador
+                  </ConfirmSubmitButton>
+                </form>
+              ) : (
+                u.id !== adminAtual.id && (
+                  <form action={removerAdmin}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <ConfirmSubmitButton
+                      pendingText="..."
+                      confirmMessage={`Remover a permissão de administrador de ${u.nome}?`}
+                      className="text-red-600 hover:underline"
+                    >
+                      Remover permissão de admin
+                    </ConfirmSubmitButton>
+                  </form>
+                )
+              )}
 
-                    {u.role !== "admin" && (
-                      u.role !== "parceiro" ? (
-                        <form action={tornarParceiro}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <ConfirmSubmitButton
-                            pendingText="..."
-                            confirmMessage={`Tornar ${u.nome} parceiro? Ele passará a ter acesso à área de afiliados.`}
-                            className="text-navy hover:underline"
-                          >
-                            Tornar parceiro
-                          </ConfirmSubmitButton>
-                        </form>
-                      ) : (
-                        <form action={removerParceiro}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <ConfirmSubmitButton
-                            pendingText="..."
-                            confirmMessage={`Remover a permissão de parceiro de ${u.nome}?`}
-                            className="text-red-600 hover:underline"
-                          >
-                            Remover permissão de parceiro
-                          </ConfirmSubmitButton>
-                        </form>
-                      )
-                    )}
+              {u.role !== "admin" &&
+                (u.role !== "parceiro" ? (
+                  <form action={tornarParceiro}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <ConfirmSubmitButton
+                      pendingText="..."
+                      confirmMessage={`Tornar ${u.nome} parceiro? Ele passará a ter acesso à área de afiliados.`}
+                      className="text-navy hover:underline"
+                    >
+                      Tornar parceiro
+                    </ConfirmSubmitButton>
+                  </form>
+                ) : (
+                  <form action={removerParceiro}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <ConfirmSubmitButton
+                      pendingText="..."
+                      confirmMessage={`Remover a permissão de parceiro de ${u.nome}?`}
+                      className="text-red-600 hover:underline"
+                    >
+                      Remover permissão de parceiro
+                    </ConfirmSubmitButton>
+                  </form>
+                ))}
 
-                    {u.role !== "admin" && (
-                      u.role !== "professor" ? (
-                        <form action={tornarProfessor}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <ConfirmSubmitButton
-                            pendingText="..."
-                            confirmMessage={`Tornar ${u.nome} professor?`}
-                            className="text-navy hover:underline"
-                          >
-                            Tornar professor
-                          </ConfirmSubmitButton>
-                        </form>
-                      ) : (
-                        <form action={removerProfessor}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <ConfirmSubmitButton
-                            pendingText="..."
-                            confirmMessage={`Remover a permissão de professor de ${u.nome}?`}
-                            className="text-red-600 hover:underline"
-                          >
-                            Remover permissão de professor
-                          </ConfirmSubmitButton>
-                        </form>
-                      )
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {(usuarios ?? []).length === 0 && (
-              <tr><td colSpan={6} className="p-6 text-center text-navy-dark/50">Nenhum usuário encontrado.</td></tr>
-            )}
-          </tbody>
-        </table>
+              {u.role !== "admin" &&
+                (u.role !== "professor" ? (
+                  <form action={tornarProfessor}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <ConfirmSubmitButton
+                      pendingText="..."
+                      confirmMessage={`Tornar ${u.nome} professor?`}
+                      className="text-navy hover:underline"
+                    >
+                      Tornar professor
+                    </ConfirmSubmitButton>
+                  </form>
+                ) : (
+                  <form action={removerProfessor}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <ConfirmSubmitButton
+                      pendingText="..."
+                      confirmMessage={`Remover a permissão de professor de ${u.nome}?`}
+                      className="text-red-600 hover:underline"
+                    >
+                      Remover permissão de professor
+                    </ConfirmSubmitButton>
+                  </form>
+                ))}
+            </div>
+          )}
+        />
       </div>
 
       <div className="mt-8 max-w-2xl rounded-2xl bg-white p-6 shadow">

@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { marcarComissaoPaga } from "./actions";
@@ -185,47 +186,33 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
         <a href="/admin/vendas" className="text-sm text-navy-dark/50 underline">Limpar filtros</a>
       </form>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Comprador</th>
-              <th className="p-3">Plano</th>
-              <th className="p-3">Valor bruto</th>
-              <th className="p-3">Valor líquido</th>
-              <th className="p-3">Forma</th>
-              <th className="p-3">Origem</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Data</th>
-              <th className="p-3">Cupom</th>
-              <th className="p-3">Comissão</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((v) => (
-              <tr key={v.id} className="border-t">
-                <td className="p-3">
+      <div className="mt-6">
+        <TabelaResponsiva
+          linhas={lista}
+          chave={(v) => v.id}
+          vazio="Nenhuma venda encontrada para este filtro."
+          colunas={[
+            {
+              titulo: "Comprador",
+              principal: true,
+              celula: (v) => (
+                <div>
                   <p>{v.comprador_nome ?? "—"}</p>
-                  <p className="text-xs text-navy-dark/50">{v.comprador_email ?? "—"}</p>
-                </td>
-                <td className="p-3">{v.plano_nome ?? "—"}</td>
-                <td className="p-3">{formatarCentavos(v.valor_centavos)}</td>
-                <td className="p-3">{formatarCentavos(v.valor_liquido_centavos ?? v.valor_centavos)}</td>
-                <td className="p-3">{v.forma_pagamento ?? "—"}</td>
-                <td className="p-3">{ORIGEM_LABEL[v.origem_pagamento] ?? v.origem_pagamento}</td>
-                <td className="p-3">{STATUS_LABEL[v.status] ?? v.status}</td>
-                <td className="p-3">{formatarData(v.data_pagamento)}</td>
-                <td className="p-3 font-mono text-xs">{v.cupom_codigo ?? "—"}</td>
-                <td className="p-3">{v.comissao_centavos > 0 ? formatarCentavos(v.comissao_centavos) : "—"}</td>
-              </tr>
-            ))}
-            {lista.length === 0 && (
-              <tr>
-                <td colSpan={10} className="p-6 text-center text-navy-dark/50">Nenhuma venda encontrada para este filtro.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  <p className="break-all text-xs text-navy-dark/50">{v.comprador_email ?? "—"}</p>
+                </div>
+              )
+            },
+            { titulo: "Plano", celula: (v) => v.plano_nome ?? "—" },
+            { titulo: "Valor bruto", celula: (v) => formatarCentavos(v.valor_centavos) },
+            { titulo: "Valor líquido", celula: (v) => formatarCentavos(v.valor_liquido_centavos ?? v.valor_centavos) },
+            { titulo: "Forma", celula: (v) => v.forma_pagamento ?? "—" },
+            { titulo: "Origem", celula: (v) => ORIGEM_LABEL[v.origem_pagamento] ?? v.origem_pagamento },
+            { titulo: "Status", celula: (v) => STATUS_LABEL[v.status] ?? v.status },
+            { titulo: "Data", celula: (v) => formatarData(v.data_pagamento) },
+            { titulo: "Cupom", celula: (v) => <span className="font-mono text-xs">{v.cupom_codigo ?? "—"}</span> },
+            { titulo: "Comissão", celula: (v) => (v.comissao_centavos > 0 ? formatarCentavos(v.comissao_centavos) : "—") }
+          ]}
+        />
       </div>
 
       <h2 className="mt-10 font-display text-xl font-bold text-navy-dark">Comissões de parceiros</h2>
@@ -236,54 +223,41 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
           : "Nenhuma comissão pendente."}
       </p>
 
-      <div className="mt-4 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Parceiro</th>
-              <th className="p-3">Venda</th>
-              <th className="p-3">Valor</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Pago em</th>
-              <th className="p-3">Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comissoes.map((c) => (
-              <tr key={c.id} className="border-t">
-                <td className="p-3">{c.parceiro?.nome ?? "—"}</td>
-                <td className="p-3">
+      <div className="mt-4">
+        <TabelaResponsiva
+          linhas={comissoes}
+          chave={(c) => c.id}
+          vazio="Nenhuma comissão gerada ainda. Elas aparecem aqui quando uma venda com cupom de parceiro é confirmada."
+          colunas={[
+            { titulo: "Parceiro", principal: true, celula: (c) => c.parceiro?.nome ?? "—" },
+            {
+              titulo: "Venda",
+              celula: (c) => (
+                <div>
                   <p>{c.pagamento?.comprador_nome ?? "—"}</p>
                   <p className="text-xs text-navy-dark/50">
                     {c.pagamento?.plano_nome ?? "—"} · {formatarData(c.pagamento?.data_pagamento ?? null)}
                   </p>
-                </td>
-                <td className="p-3 font-semibold">{formatarCentavos(c.valor_centavos)}</td>
-                <td className="p-3">{COMISSAO_STATUS_LABEL[c.status] ?? c.status}</td>
-                <td className="p-3">{c.data_pagamento ? formatarData(c.data_pagamento) : "—"}</td>
-                <td className="p-3">
-                  {c.status === "pendente" ? (
-                    <form action={marcarComissaoPaga}>
-                      <input type="hidden" name="id" value={c.id} />
-                      <SubmitButton pendingText="..." className="rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white">
-                        Marcar como paga
-                      </SubmitButton>
-                    </form>
-                  ) : (
-                    <span className="text-navy-dark/40">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {comissoes.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-navy-dark/50">
-                  Nenhuma comissão gerada ainda. Elas aparecem aqui quando uma venda com cupom de parceiro é confirmada.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              )
+            },
+            { titulo: "Valor", celula: (c) => <span className="font-semibold">{formatarCentavos(c.valor_centavos)}</span> },
+            { titulo: "Status", celula: (c) => COMISSAO_STATUS_LABEL[c.status] ?? c.status },
+            { titulo: "Pago em", celula: (c) => (c.data_pagamento ? formatarData(c.data_pagamento) : "—") }
+          ]}
+          acoes={(c) =>
+            c.status === "pendente" ? (
+              <form action={marcarComissaoPaga}>
+                <input type="hidden" name="id" value={c.id} />
+                <SubmitButton pendingText="..." className="rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white">
+                  Marcar como paga
+                </SubmitButton>
+              </form>
+            ) : (
+              <span className="text-navy-dark/40">—</span>
+            )
+          }
+        />
       </div>
     </div>
   );

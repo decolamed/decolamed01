@@ -212,6 +212,8 @@ export interface Flashcard {
   verso: string;
   ativo: boolean;
   gerado_por_ia: boolean;
+  // Sequência pedagógica do lote importado. Null nos cartões criados à mão.
+  ordem: number | null;
   criado_por: string | null;
   created_at: string;
   updated_at: string;

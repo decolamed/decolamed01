@@ -8,6 +8,7 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
+import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { adicionarMissaoIndividual, excluirMissaoIndividual } from "./actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
 
@@ -278,36 +279,26 @@ export default async function AdminDetalhesUsuarioPage({
       </div>
 
       <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Histórico de pagamentos</h2>
-      <div className="mt-3 overflow-x-auto rounded-2xl bg-white shadow">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-navy/5 text-navy-dark/70">
-            <tr>
-              <th className="p-3">Data</th>
-              <th className="p-3">Plano</th>
-              <th className="p-3">Valor bruto</th>
-              <th className="p-3">Valor líquido</th>
-              <th className="p-3">Origem</th>
-              <th className="p-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagamentos.map((p) => (
-              <tr key={p.id} className="border-t">
-                <td className="p-3">{formatarData(p.data_pagamento)}</td>
-                <td className="p-3">{p.plano_nome ?? "—"}</td>
-                <td className="p-3">{formatarCentavos(p.valor_centavos)}</td>
-                <td className="p-3">{formatarCentavos(p.valor_liquido_centavos ?? p.valor_centavos)}</td>
-                <td className="p-3">{ORIGEM_LABEL[p.origem_pagamento] ?? p.origem_pagamento}</td>
-                <td className="p-3">{STATUS_PAGAMENTO_LABEL[p.status] ?? p.status}</td>
-              </tr>
-            ))}
-            {pagamentos.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-navy-dark/50">Nenhum pagamento registrado.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Seis colunas numa tabela comum obrigam o admin a arrastar a tela de
+          lado no celular. TabelaResponsiva mantém a tabela no desktop e
+          transforma cada pagamento num cartão no celular. */}
+      <div className="mt-3">
+        <TabelaResponsiva
+          linhas={pagamentos}
+          chave={(p) => p.id}
+          vazio="Nenhum pagamento registrado."
+          colunas={[
+            { titulo: "Data", celula: (p) => formatarData(p.data_pagamento), principal: true },
+            { titulo: "Plano", celula: (p) => p.plano_nome ?? "—" },
+            { titulo: "Valor bruto", celula: (p) => formatarCentavos(p.valor_centavos) },
+            {
+              titulo: "Valor líquido",
+              celula: (p) => formatarCentavos(p.valor_liquido_centavos ?? p.valor_centavos)
+            },
+            { titulo: "Origem", celula: (p) => ORIGEM_LABEL[p.origem_pagamento] ?? p.origem_pagamento },
+            { titulo: "Status", celula: (p) => STATUS_PAGAMENTO_LABEL[p.status] ?? p.status }
+          ]}
+        />
       </div>
 
       <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Eventos importantes</h2>
@@ -376,27 +367,21 @@ export default async function AdminDetalhesUsuarioPage({
       {matriculas.length > 1 && (
         <>
           <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Outras matrículas</h2>
-          <div className="mt-3 overflow-x-auto rounded-2xl bg-white shadow">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-navy/5 text-navy-dark/70">
-                <tr>
-                  <th className="p-3">Plano</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Início</th>
-                  <th className="p-3">Vencimento</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matriculas.slice(1).map((m) => (
-                  <tr key={m.id} className="border-t">
-                    <td className="p-3">{m.planos?.nome ?? "—"}</td>
-                    <td className="p-3">{STATUS_MATRICULA_LABEL[m.status] ?? m.status}</td>
-                    <td className="p-3">{formatarData(m.acesso_liberado_em)}</td>
-                    <td className="p-3">{m.acesso_expira_em ? formatarData(m.acesso_expira_em) : "Sem vencimento"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3">
+            <TabelaResponsiva
+              linhas={matriculas.slice(1)}
+              chave={(m) => m.id}
+              vazio="Nenhuma outra matrícula."
+              colunas={[
+                { titulo: "Plano", celula: (m) => m.planos?.nome ?? "—", principal: true },
+                { titulo: "Status", celula: (m) => STATUS_MATRICULA_LABEL[m.status] ?? m.status },
+                { titulo: "Início", celula: (m) => formatarData(m.acesso_liberado_em) },
+                {
+                  titulo: "Vencimento",
+                  celula: (m) => (m.acesso_expira_em ? formatarData(m.acesso_expira_em) : "Sem vencimento")
+                }
+              ]}
+            />
           </div>
         </>
       )}

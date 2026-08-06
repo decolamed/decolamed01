@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { pingAsaas } from "@/lib/asaas/client";
 import { getGeminiApiKey, salvarGeminiApiKey, removerGeminiApiKey, gerarTextoGemini } from "@/lib/gemini/client";
 import { getYoutubeApiKey, salvarYoutubeApiKey, removerYoutubeApiKey } from "@/lib/youtube/client";
+import { CAMPOS_CONFIG_COPILOTO } from "@/lib/copiloto/configuracao";
 import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
 
 const CAMPOS = [
@@ -18,8 +19,36 @@ const CAMPOS = [
   { chave: "site.contato.whatsapp", label: "WhatsApp (somente números, com DDI)" },
   { chave: "site.contato.instagram", label: "Usuário do Instagram" },
   { chave: "redacao.whatsapp", label: "WhatsApp da professora de redação (somente números, com DDI)" },
-  { chave: "redacao.base_temas_url", label: "Link da Base de Temas de redação" }
+  { chave: "redacao.base_temas_url", label: "Link da Base de Temas de redação" },
+  // O app do aluno já tinha o botão "Termos de Uso", mas não havia onde
+  // dizer para onde ele aponta — o botão existia sem destino.
+  { chave: "site.termos_uso_url", label: "Link dos Termos de Uso (aceita qualquer URL, inclusive Canva)" }
 ];
+
+// Parâmetros do algoritmo do Copiloto. Antes eram constantes no código —
+// o painel prometia controlar o algoritmo e não controlava nada.
+async function salvarConfigCopiloto(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const resultados = await Promise.all(
+    CAMPOS_CONFIG_COPILOTO.map((campo) => {
+      const bruto = String(formData.get(campo.chave) ?? "").trim();
+      // Vazio significa "usar o padrão": grava string vazia e o carregador
+      // cai no fallback (ver lib/copiloto/configuracao.ts).
+      return supabase
+        .from("configuracoes")
+        .upsert({ chave: campo.chave, valor: valorConfig(bruto) }, { onConflict: "chave" });
+    })
+  );
+
+  revalidatePath("/admin/configuracoes");
+  if (resultados.some((r) => r.error)) {
+    redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os parâmetros do Copiloto."));
+  }
+  redirect("/admin/configuracoes?sucesso=" + encodeURIComponent("Parâmetros do Copiloto salvos — valem na próxima rodada."));
+}
 
 async function salvarConfiguracoes(formData: FormData) {
   "use server";
@@ -178,12 +207,25 @@ export default async function AdminConfiguracoesPage({
                 defaultValue={valores.get(campo.chave) ?? ""}
                 className="mt-1 w-full rounded-lg border p-3"
               />
+              {/* "Testar link" abre o endereço salvo numa aba nova, para o
+                  admin conferir o destino sem sair do painel. Só aparece
+                  quando já existe algo salvo. */}
+              {campo.chave.endsWith("_url") && (valores.get(campo.chave) ?? "") !== "" && (
+                <a
+                  href={valores.get(campo.chave)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-xs font-bold text-navy hover:underline"
+                >
+                  Testar link ↗
+                </a>
+              )}
             </div>
           )
         )}
-        {/* Alteração 7.5: os pesos alimentam o Copiloto e a nota ponderada dos
-            simulados, e o admin procurava por eles aqui — a tela em si já
-            existe, faltava o caminho até ela. */}
+        {/* Os pesos alimentam o Copiloto e a nota ponderada dos simulados, e
+            o admin procurava por eles aqui — a tela em si já existe,
+            faltava o caminho até ela. */}
         <a
           href="/admin/copiloto/pesos"
           className="flex items-center justify-between rounded-lg border border-navy-dark/15 p-3 hover:bg-navy-dark/5"
@@ -203,6 +245,40 @@ export default async function AdminConfiguracoesPage({
           className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
         >
           Salvar alterações
+        </SubmitButton>
+      </form>
+
+      <form action={salvarConfigCopiloto} className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Algoritmo do Copiloto</h2>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Parâmetros que o algoritmo usa para montar as missões. Deixe um campo <strong>vazio</strong> para usar o
+          valor padrão indicado ao lado. As mudanças valem na próxima rodada do Copiloto.
+        </p>
+        <div className="mt-4 space-y-3">
+          {CAMPOS_CONFIG_COPILOTO.map((campo) => (
+            <div key={campo.chave}>
+              <label className="text-sm font-semibold text-navy-dark" htmlFor={campo.chave}>
+                {campo.rotulo}
+              </label>
+              <input
+                id={campo.chave}
+                name={campo.chave}
+                type="number"
+                min="1"
+                step="1"
+                placeholder={`padrão: ${campo.padrao}`}
+                defaultValue={valores.get(campo.chave) ?? ""}
+                className="mt-1 w-full rounded-lg border p-3"
+              />
+              <p className="mt-0.5 text-xs text-navy-dark/50">{campo.ajuda}</p>
+            </div>
+          ))}
+        </div>
+        <SubmitButton
+          pendingText="Salvando..."
+          className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        >
+          Salvar parâmetros
         </SubmitButton>
       </form>
 

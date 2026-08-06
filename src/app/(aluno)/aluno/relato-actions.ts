@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { nomeDaTela } from "@/lib/site/telas";
@@ -20,5 +21,18 @@ export async function enviarRelatoErro(mensagem: string, categoria: string, tela
     pagina: nomeDaTela(tela)
   });
 
-  return { ok: !error };
+  if (error) {
+    // Sem isto o relato se perdia em silêncio: o aluno via "enviado" e o
+    // admin nunca recebia nada. O motivo real fica no log do servidor.
+    console.error("Falha ao gravar relato de erro:", error.message);
+    return { ok: false as const };
+  }
+
+  // Invalida a fila do admin na hora: a tela é dinâmica, mas o painel pode
+  // ter servido uma versão anterior e o relato só apareceria no próximo
+  // acesso — que é exatamente o "não chega no painel" relatado.
+  revalidatePath("/admin/relatos");
+  revalidatePath("/admin");
+
+  return { ok: true as const };
 }

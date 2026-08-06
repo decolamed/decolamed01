@@ -43,13 +43,29 @@ export const FILTROS_VAZIOS: FiltrosQuestao = {
   modalidade: ""
 };
 
+/**
+ * O banco guarda a modalidade em código ("ampla"/"peba"), que é o que o CHECK
+ * da tabela aceita. Quem lê a tela quer o nome por extenso.
+ */
+export const ROTULO_MODALIDADE: Record<string, string> = {
+  ampla: "Ampla Concorrência",
+  peba: "Rede PEBA"
+};
+
+export function rotuloModalidade(modalidade: string | null | undefined): string | null {
+  const m = modalidade?.trim();
+  if (!m) return null;
+  return ROTULO_MODALIDADE[m] ?? m;
+}
+
 /** Rótulo da prova de origem: "FACAPE 2026.1 — Ampla Concorrência". */
 export function rotuloProva(q: QuestaoFiltravel): string | null {
   const nome = q.prova_nome?.trim();
   if (!nome && !q.ano) return null;
   const edicao = q.ano ? `${q.ano}${q.semestre ? "." + q.semestre : ""}` : "";
   const base = [nome, edicao].filter(Boolean).join(" ");
-  return q.modalidade?.trim() ? `${base} — ${q.modalidade.trim()}` : base || null;
+  const mod = rotuloModalidade(q.modalidade);
+  return mod ? `${base} — ${mod}` : base || null;
 }
 
 /**
