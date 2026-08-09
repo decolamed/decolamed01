@@ -1838,7 +1838,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     }
     return h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.bg, color: C.txt } }, [
       this.comKey("demo", this.demoBanner()),
-      h("div", { key: "c", style: { flex: 1, overflowY: "auto", paddingBottom: opts.noTab ? 24 : 110, display: "flex", flexDirection: "column" } }, children),
+      // `data-conteudo-rolavel` é o gancho que o CSS usa para dar respiro
+      // lateral proporcional no tablet (ver decola-app.module.css). O
+      // conteúdo é montado com React.createElement e estilos inline, sem
+      // classes próprias — este atributo evita ter que tocar em cada tela.
+      h("div", { key: "c", "data-conteudo-rolavel": true, style: { flex: 1, overflowY: "auto", paddingBottom: opts.noTab ? 24 : 110, display: "flex", flexDirection: "column" } }, children),
       opts.noTab ? null : this.comKey("tabbar", this.tabbar()),
       this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
       this.state.moreOpen && !opts.noTab ? this.comKey("more", this.moreSheet()) : null,

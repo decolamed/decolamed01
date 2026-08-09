@@ -40,19 +40,46 @@
   }
 }
 
-/* Tablet (entre o cartão de celular e a sidebar de desktop): sem isso o app
-   só centralizava o mesmo cartão de 480px num viewport bem maior, deixando
-   uma faixa enorme de espaço vazio nas laterais em iPads etc. Aqui o
-   cartão ganha mais largura real — ainda com o chrome de abas do mobile,
-   já que criar uma terceira variante de chrome só para tablet seria
-   desproporcional ao ganho. */
+/* ---------------------------------------------------------------------------
+   TABLET — faixa própria, nem celular esticado nem desktop comprimido.
+
+   A versão anterior travava o cartão em 680px. Num iPad de 1024px isso
+   deixava ~170px de vazio de cada lado, e a tela parecia um site de celular
+   centralizado numa tela grande — exatamente o que foi relatado.
+
+   Agora o cartão ocupa a largura disponível (com uma folga proporcional, não
+   fixa), e os respiros internos crescem junto: 18px de margem lateral fazem
+   sentido num aparelho de 390px, não num de 900px. O chrome de abas do
+   mobile é mantido de propósito — a navegação por toque é o padrão certo
+   para tablet, e é o que foi pedido.
+   ------------------------------------------------------------------------ */
 @media (min-width: 768px) {
   .shell {
-    max-width: 680px;
+    /* 6vw de folga de cada lado em vez de uma largura fixa: acompanha o
+       aparelho em vez de deixar sobra. */
+    max-width: min(940px, 88vw);
     margin-top: 32px;
     margin-bottom: 32px;
     min-height: calc(100vh - 64px);
     min-height: calc(100dvh - 64px);
+  }
+
+  /* Respiro interno proporcional. Os blocos do app usam `margin: … 18px`
+     escrito no estilo inline; esta regra empurra as laterais sem precisar
+     tocar em cada tela — e usa :global porque o conteúdo é gerado por
+     React.createElement, sem classes próprias. */
+  .shell :global([data-conteudo-rolavel]) > * {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+/* Tablet grande em retrato (iPad Pro 1024×1366) — mais largura ainda, sem
+   entrar na faixa de desktop, que só faz sentido com espaço para a sidebar
+   E o conteúdo lado a lado. */
+@media (min-width: 1000px) and (max-width: 1149px) {
+  .shell {
+    max-width: 92vw;
   }
 }
 
