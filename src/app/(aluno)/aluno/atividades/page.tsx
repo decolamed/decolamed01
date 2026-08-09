@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { PaginaAluno, CartaoAluno } from "@/components/aluno/pagina-aluno";
 
 // ============================================================================
 // ATIVIDADES — aba única do aluno (item 13)
@@ -111,47 +112,60 @@ export default async function AlunoAtividadesPage() {
   const disponiveis = itens.filter((i) => i.totalQuestoes > 0 || i.temRedacao);
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">Atividades</h1>
-        <Link href="/aluno" className="text-sm text-navy hover:underline">← Voltar ao painel</Link>
-      </div>
-      <p className="mt-1 text-sm text-navy-dark/60">
-        Simulados e atividades em um só lugar. O título de cada item diz do que se trata.
-      </p>
-
-      <div className="mt-6 space-y-3">
+    <PaginaAluno
+      titulo="Atividades"
+      descricao="Simulados e atividades em um só lugar. O título de cada item diz do que se trata."
+    >
+      <div className="space-y-3">
         {disponiveis.map((item) => (
-          <div key={item.href} className="rounded-2xl bg-white p-5 shadow">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-display font-bold text-navy-dark">{item.titulo}</p>
-                <p className="text-xs text-navy-dark/50">
-                  {item.totalQuestoes > 0
-                    ? `${item.totalQuestoes} ${item.totalQuestoes === 1 ? "questão" : "questões"}`
-                    : "Somente redação"}
-                  {item.temRedacao && item.totalQuestoes > 0 ? " + redação" : ""}
-                  {item.minutos ? ` · ${item.minutos} min` : ""}
-                  {item.materia ? ` · ${item.materia}` : ""}
-                </p>
-                {item.ultimaNota != null && (
-                  <p className="mt-1 text-xs font-semibold text-green-700">Última nota: {item.ultimaNota}%</p>
-                )}
+          <CartaoAluno key={item.href} className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-display text-base font-bold text-navy-dark">{item.titulo}</p>
+
+                {/* Etiquetas em vez de uma linha corrida de texto: no cartão
+                    branco sobre o navy, blocos separados leem melhor e
+                    acompanham o padrão de "chips" usado no resto do app. */}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Etiqueta>
+                    {item.totalQuestoes > 0
+                      ? `${item.totalQuestoes} ${item.totalQuestoes === 1 ? "questão" : "questões"}`
+                      : "Somente redação"}
+                  </Etiqueta>
+                  {item.temRedacao && item.totalQuestoes > 0 && <Etiqueta>+ redação</Etiqueta>}
+                  {item.minutos != null && <Etiqueta>{item.minutos} min</Etiqueta>}
+                  {item.materia && <Etiqueta>{item.materia}</Etiqueta>}
+                  {item.ultimaNota != null && (
+                    <span className="rounded-full bg-green/10 px-2.5 py-1 text-[11px] font-extrabold text-green">
+                      Última nota: {item.ultimaNota}%
+                    </span>
+                  )}
+                </div>
               </div>
+
               <Link
                 href={item.href}
-                className="rounded-full bg-orange px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-dark"
+                className="shrink-0 rounded-full bg-orange px-6 py-2.5 text-sm font-extrabold uppercase tracking-wide text-white transition hover:bg-orange-dark"
               >
                 {item.ultimaNota != null ? "Refazer" : "Começar"}
               </Link>
             </div>
-          </div>
+          </CartaoAluno>
         ))}
 
         {disponiveis.length === 0 && (
-          <p className="py-6 text-center text-sm text-navy-dark/50">Nenhuma atividade disponível ainda.</p>
+          <CartaoAluno className="py-10 text-center">
+            <p className="text-sm font-semibold text-navy-dark/50">Nenhuma atividade disponível ainda.</p>
+          </CartaoAluno>
         )}
       </div>
-    </div>
+    </PaginaAluno>
+  );
+}
+
+/** Etiqueta neutra de metadado do cartão (quantidade, tempo, matéria). */
+function Etiqueta({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full bg-navy/5 px-2.5 py-1 text-[11px] font-bold text-navy-dark/60">{children}</span>
   );
 }

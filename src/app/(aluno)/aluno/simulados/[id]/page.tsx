@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getNomeVestibular, rotuloNotaPonderada } from "@/lib/site/marca";
 import { SimuladoRunner, type PropostaRedacao } from "@/components/aluno/simulado-runner";
 import { normalizarIdioma } from "@/lib/site/idioma-aluno";
+import { PaginaAluno, CartaoAluno } from "@/components/aluno/pagina-aluno";
 import type { Simulado } from "@/types/database";
 
 export default async function AlunoSimuladoPage({ params }: { params: { id: string } }) {
@@ -34,31 +35,39 @@ export default async function AlunoSimuladoPage({ params }: { params: { id: stri
     .order("ordem");
 
   const questoes = (itens ?? []).map((item: any) => item.questoes).filter(Boolean);
+  const titulo = (simulado as Simulado).titulo;
 
+  // O simulado é aberto pela aba Atividades (as duas listagens foram
+  // unificadas na visão do aluno), então o "voltar" leva para lá e a moldura
+  // é a mesma — sair da lista e cair num visual diferente é o que fazia a
+  // execução parecer outro produto.
   if (questoes.length === 0) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow">
-        <p className="text-navy-dark/70">Este simulado ainda não tem questões cadastradas.</p>
-        <Link href="/aluno/simulados" className="mt-4 inline-block text-navy hover:underline">
-          ← Voltar
-        </Link>
-      </div>
+      <PaginaAluno titulo={titulo} voltarPara="/aluno/atividades" rotuloVoltar="Voltar às atividades">
+        <CartaoAluno className="py-10 text-center">
+          <p className="text-sm font-semibold text-navy-dark/50">
+            Este simulado ainda não tem questões cadastradas.
+          </p>
+        </CartaoAluno>
+      </PaginaAluno>
     );
   }
 
   const nomeVestibular = await getNomeVestibular();
 
   return (
-    <SimuladoRunner
-      simuladoId={params.id}
-      titulo={(simulado as Simulado).titulo}
-      tempoMinutos={(simulado as Simulado).tempo_minutos}
-      questoes={questoes}
-      rotuloNota={rotuloNotaPonderada(nomeVestibular)}
-      nomeVestibular={nomeVestibular}
-      variavelIdioma={Boolean((simulado as { variavel_idioma?: boolean }).variavel_idioma)}
-      idiomaDoBriefing={normalizarIdioma(briefing?.idioma_prova)}
-      redacao={(simulado as { redacao?: PropostaRedacao | null }).redacao ?? null}
-    />
+    <PaginaAluno titulo={titulo} voltarPara="/aluno/atividades" rotuloVoltar="Voltar às atividades">
+      <SimuladoRunner
+        simuladoId={params.id}
+        titulo={titulo}
+        tempoMinutos={(simulado as Simulado).tempo_minutos}
+        questoes={questoes}
+        rotuloNota={rotuloNotaPonderada(nomeVestibular)}
+        nomeVestibular={nomeVestibular}
+        variavelIdioma={Boolean((simulado as { variavel_idioma?: boolean }).variavel_idioma)}
+        idiomaDoBriefing={normalizarIdioma(briefing?.idioma_prova)}
+        redacao={(simulado as { redacao?: PropostaRedacao | null }).redacao ?? null}
+      />
+    </PaginaAluno>
   );
 }

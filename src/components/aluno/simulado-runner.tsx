@@ -107,7 +107,7 @@ export function SimuladoRunner({
     return (
       <div>
         <div className="rounded-2xl bg-white p-8 text-center shadow">
-          <span className="text-4xl">🏁</span>
+          <span className="mx-auto block h-1 w-10 rounded-full bg-orange" />
           <h1 className="mt-2 font-display text-2xl font-bold text-navy-dark">Simulado concluído!</h1>
           <p className="mt-2 text-navy-dark/70">
             Você acertou {resultado.acertos} de {resultado.total} questões.
@@ -130,10 +130,10 @@ export function SimuladoRunner({
               {verGabarito ? "Esconder gabarito comentado" : "Ver gabarito comentado"}
             </button>
             <Link
-              href="/aluno/simulados"
+              href="/aluno/atividades"
               className="rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5"
             >
-              Voltar aos simulados
+              Voltar às atividades
             </Link>
           </div>
         </div>
@@ -258,7 +258,7 @@ export function SimuladoRunner({
             segundosRestantes < 60 ? "bg-red-50 text-red-600" : "bg-navy/5 text-navy-dark"
           }`}
         >
-          ⏱️ {tempoFormatado}
+          {tempoFormatado}
         </span>
       </div>
 
@@ -342,7 +342,7 @@ export function SimuladoRunner({
               disabled={enviando}
               className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark disabled:opacity-60"
             >
-              {enviando ? "Enviando..." : "Enviar simulado ✓"}
+              {enviando ? "Enviando..." : "Enviar simulado"}
             </button>
           </div>
         </div>
@@ -392,7 +392,7 @@ export function SimuladoRunner({
               disabled={enviando}
               className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark disabled:opacity-60"
             >
-              {enviando ? "Enviando..." : "Enviar simulado ✓"}
+              {enviando ? "Enviando..." : "Enviar simulado"}
             </button>
           )}
         </div>
