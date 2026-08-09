@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { getNomeVestibular, VESTIBULAR_PADRAO } from "@/lib/site/marca";
+import { PaginaAluno } from "@/components/aluno/pagina-aluno";
 
 interface DesempenhoMateria {
   materia: string;
@@ -112,19 +113,13 @@ export default async function AlunoRaioXPage() {
 
   const semDados = listaRespostas.length === 0;
 
+  // Só a moldura mudou (item 10): fundo navy, título centralizado e sem
+  // emoji. Todo o cálculo acima e todo o conteúdo abaixo seguem intactos.
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">🩻 Raio-X {rotuloVestibular}</h1>
-        <Link href="/aluno" className="text-sm text-navy hover:underline">
-          ← Voltar ao painel
-        </Link>
-      </div>
-      <p className="mt-1 text-sm text-navy-dark/60">
-        Análise do seu desempenho usando os pesos oficiais das disciplinas — quanto maior o peso da matéria, mais
-        importante é acertar nela.
-      </p>
-
+    <PaginaAluno
+      titulo={`Raio-X ${rotuloVestibular}`.trim()}
+      descricao="Análise do seu desempenho usando os pesos oficiais das disciplinas — quanto maior o peso da matéria, mais importante é acertar nela."
+    >
       {semDados ? (
         <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow">
           <p className="text-navy-dark/70">
@@ -209,6 +204,6 @@ export default async function AlunoRaioXPage() {
           )}
         </>
       )}
-    </div>
+    </PaginaAluno>
   );
 }

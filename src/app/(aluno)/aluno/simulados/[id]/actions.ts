@@ -4,6 +4,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { calcularNotaPonderada } from "@/lib/site/nota";
 import { createClient } from "@/lib/supabase/server";
 import { rodarCopiloto } from "@/lib/copiloto/motor";
+import { materiaVisivelParaIdioma, normalizarIdioma } from "@/lib/site/idioma-aluno";
 
 export interface ItemGabarito {
   questaoId: string;
@@ -56,17 +57,40 @@ export interface ResultadoSimulado {
  * nota final. Se o aluno só respondeu questão de uma matéria, a nota FACAPE
  * é a precisão daquela matéria (peso vira 100% do total).
  */
-export async function submeterSimulado(simuladoId: string, respostas: Record<string, string>) {
+export async function submeterSimulado(
+  simuladoId: string,
+  respostas: Record<string, string>,
+  idiomaEscolhido?: string | null
+) {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  const { data: itens } = await supabase
-    .from("simulado_questoes")
-    .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto, imagens)")
-    .eq("simulado_id", simuladoId)
-    .order("ordem");
+  const [{ data: itens }, { data: configIdioma }, { data: briefing }] = await Promise.all([
+    supabase
+      .from("simulado_questoes")
+      .select("questao_id, ordem, questoes(enunciado, alternativas, resposta_correta, explicacao, materia, assunto, imagens)")
+      .eq("simulado_id", simuladoId)
+      .order("ordem"),
+    supabase.from("simulados").select("variavel_idioma").eq("id", simuladoId).maybeSingle(),
+    supabase.from("aluno_briefing").select("idioma_prova").eq("aluno_id", profile.id).maybeSingle()
+  ]);
 
-  const lista = itens ?? [];
+  // Item 16.4: com a variável de idioma ligada, as questões do idioma que o
+  // aluno NÃO escolheu deixam de existir para ele — não aparecem no
+  // gabarito, não contam no total, não entram no peso nem na nota. Sem este
+  // corte, quem faz Inglês seria penalizado pelas cinco questões de Espanhol
+  // que nem chegou a ver.
+  //
+  // A escolha vem do que o aluno marcou ao iniciar o simulado; se ele não
+  // marcou nada, cai no idioma do briefing. Sem nenhum dos dois, nada é
+  // filtrado — melhor corrigir tudo do que descartar questões por engano.
+  const idiomaDaTentativa = configIdioma?.variavel_idioma
+    ? normalizarIdioma(idiomaEscolhido) ?? normalizarIdioma(briefing?.idioma_prova)
+    : null;
+
+  const lista = (itens ?? []).filter((item: any) =>
+    materiaVisivelParaIdioma(item.questoes?.materia, idiomaDaTentativa)
+  );
   let acertos = 0;
 
   // Agrupa por matéria pra calcular precisão e depois pesar

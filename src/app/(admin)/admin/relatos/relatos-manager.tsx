@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toast, useToast } from "@/components/admin/interactive";
@@ -29,6 +29,19 @@ export function RelatosManager({ relatos: inicial }: { relatos: RelatoExibicao[]
   const [filtro, setFiltro] = useState<StatusRelato | "todos">("pendente");
   const [, startTransition] = useTransition();
   const { toast, show } = useToast();
+
+  // Ressincroniza com o servidor sempre que a página é renderizada de novo.
+  //
+  // Este era o motivo de relatos novos não aparecerem no painel mesmo já
+  // gravados no banco: `useState(inicial)` só lê a prop na PRIMEIRA
+  // montagem. Voltando à tela pela navegação do Next (que reaproveita o
+  // componente montado) ou depois de um revalidatePath, o servidor mandava
+  // a lista atualizada e o componente continuava exibindo a lista antiga —
+  // sem erro nenhum, o que fez o defeito sobreviver a várias correções que
+  // olharam só para o envio do aluno.
+  useEffect(() => {
+    setRelatos(inicial);
+  }, [inicial]);
 
   const contagem = useMemo(() => {
     const c: Record<string, number> = { todos: relatos.length };

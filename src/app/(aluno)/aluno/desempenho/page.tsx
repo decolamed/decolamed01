@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { PaginaAluno } from "@/components/aluno/pagina-aluno";
 
 export default async function AlunoDesempenhoPage() {
   const profile = await requireAcessoAluno();
@@ -42,14 +43,14 @@ export default async function AlunoDesempenhoPage() {
 
   const semDadosAinda = totalQuestoes === 0 && totalFlashcards === 0 && listaTentativas.length === 0;
 
+  // Só a moldura mudou (item 11): fundo navy, título centralizado, sem
+  // emoji e com o "Voltar ao painel" no padrão da plataforma em vez de um
+  // link de texto solto. O que a tela calcula e mostra segue igual.
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">📊 Desempenho</h1>
-        <Link href="/aluno" className="text-sm text-navy hover:underline">
-          ← Voltar ao painel
-        </Link>
-      </div>
+    <PaginaAluno
+      titulo="Desempenho"
+      descricao="Como você vem indo em questões, flashcards e simulados."
+    >
 
       {semDadosAinda ? (
         <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow">
@@ -70,19 +71,19 @@ export default async function AlunoDesempenhoPage() {
         <>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl bg-white p-6 shadow">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange/10 text-lg">🎯</span>
+              <span className="block h-1 w-8 rounded-full bg-orange" />
               <p className="mt-3 text-sm text-navy-dark/60">Precisão em questões</p>
               <p className="mt-1 font-display text-3xl font-extrabold text-navy-dark">{precisaoGeral}%</p>
               <p className="text-xs text-navy-dark/40">{acertosQuestoes} de {totalQuestoes} respondidas</p>
             </div>
             <div className="rounded-2xl bg-white p-6 shadow">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange/10 text-lg">🃏</span>
+              <span className="block h-1 w-8 rounded-full bg-orange" />
               <p className="mt-3 text-sm text-navy-dark/60">Memorização (flashcards)</p>
               <p className="mt-1 font-display text-3xl font-extrabold text-navy-dark">{precisaoFlashcards}%</p>
               <p className="text-xs text-navy-dark/40">{lembrados} de {totalFlashcards} lembrados</p>
             </div>
             <div className="rounded-2xl bg-white p-6 shadow">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange/10 text-lg">⏱️</span>
+              <span className="block h-1 w-8 rounded-full bg-orange" />
               <p className="mt-3 text-sm text-navy-dark/60">Média em simulados</p>
               <p className="mt-1 font-display text-3xl font-extrabold text-navy-dark">{mediaSimulados}%</p>
               <p className="text-xs text-navy-dark/40">{listaTentativas.length} simulado(s) feito(s)</p>
@@ -134,6 +135,6 @@ export default async function AlunoDesempenhoPage() {
           )}
         </>
       )}
-    </div>
+    </PaginaAluno>
   );
 }

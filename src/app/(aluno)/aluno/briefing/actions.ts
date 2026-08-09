@@ -4,8 +4,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { rodarCopiloto } from "@/lib/copiloto/motor";
 
 const SENTIMENTOS_VALIDOS = new Set(["Domínio", "Atenção", "Turbulência"]);
+
+// Item 15: a prova tem 5 questões de língua estrangeira e o aluno faz UMA
+// das duas. Sem essa escolha registrada, a plataforma não consegue entregar
+// só o idioma certo — e é por isso que ela é obrigatória no briefing.
+const IDIOMAS_VALIDOS = new Set(["ingles", "espanhol"]);
 
 /**
  * Faz de fato o upsert do briefing — sem redirect, pra poder ser chamada
@@ -37,9 +43,13 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
     if (SENTIMENTOS_VALIDOS.has(valor)) sentimentos[materia] = valor;
   }
 
+  const idiomaBruto = String(formData.get("idioma_prova") ?? "").trim().toLowerCase();
+  const idiomaProva = IDIOMAS_VALIDOS.has(idiomaBruto) ? idiomaBruto : null;
+
   if (!dataProva) return { ok: false, erro: "Informe a data da prova." };
   if (diasPorSemana < 1 || diasPorSemana > 7) return { ok: false, erro: "Dias por semana precisa estar entre 1 e 7." };
   if (horasPorDia < 1 || horasPorDia > 12) return { ok: false, erro: "Horas por dia precisa estar entre 1 e 12." };
+  if (!idiomaProva) return { ok: false, erro: "Escolha o idioma que você fará na prova (Inglês ou Espanhol)." };
 
   // Compatibilidade com colunas antigas (dias_estuda / horas_por_dia_semana /
   // horas_por_dia_fim_semana): guardamos o mesmo número em ambos e todos os
@@ -58,6 +68,7 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
       horas_por_dia_semana: horasPorDia,
       horas_por_dia_fim_semana: horasPorDia,
       dias_estuda: diasEstuda,
+      idioma_prova: idiomaProva,
       sentimentos,
       observacoes
     },
@@ -69,9 +80,76 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
     return { ok: false, erro: "Não foi possível salvar o briefing." };
   }
 
+  await reprojetarJornada(profile.id, dataProva);
+
   revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
+  revalidatePath("/aluno/copiloto");
   return { ok: true };
+}
+
+/**
+ * Faz os novos dados do briefing valerem de verdade no resto da plataforma.
+ *
+ * Item 18: até aqui o Recalibrar Voo gravava o formulário e parava. O aluno
+ * mudava a data da prova, confirmava, e cronograma, missões e Copiloto
+ * seguiam com os parâmetros antigos — o formulário mostrava o dado novo e o
+ * comportamento continuava o velho.
+ *
+ * Duas coisas acontecem aqui:
+ *
+ *   1. Missões FUTURAS geradas pelo Copiloto sob os parâmetros antigos são
+ *      removidas. Só as do Copiloto, só as não concluídas e só as de hoje em
+ *      diante — o histórico do aluno e o que o admin agendou à mão ficam
+ *      intactos, como pede o item 18.3.
+ *   2. O Copiloto roda de novo e remonta a rota com a nova janela, as novas
+ *      dificuldades e o novo idioma. Como ele parte do desempenho já
+ *      registrado, conteúdo concluído não volta por padrão; volta como
+ *      revisão só quando os erros indicarem (item 18.4).
+ *
+ * O cronograma-base não precisa de nada aqui: ele é projetado na janela do
+ * aluno a cada leitura (lib/trilha/ajuste-voo-guiado.ts), então a nova data
+ * da prova já muda a rota na próxima tela aberta.
+ */
+async function reprojetarJornada(alunoId: string, dataProva: string): Promise<void> {
+  const supabase = createClient();
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const { error: erroLimpeza } = await supabase
+    .from("aluno_missoes")
+    .delete()
+    .eq("aluno_id", alunoId)
+    .eq("origem", "copiloto")
+    .eq("concluida", false)
+    .gte("data", hoje);
+
+  if (erroLimpeza) {
+    // Não impede o resto: uma missão antiga sobrando é bem menos grave do
+    // que abortar a recalibração depois de o briefing já ter sido gravado.
+    console.error("Recalibragem: falha ao limpar missões antigas do Copiloto:", erroLimpeza.message);
+  }
+
+  try {
+    await rodarCopiloto({ alunoId });
+  } catch (e) {
+    // O briefing já está salvo e o cronograma já reflete a nova janela; a
+    // próxima rodada do Copiloto recompõe as missões.
+    console.error("Recalibragem: Copiloto não conseguiu remontar a rota agora:", e);
+  }
+
+  // Missão agendada para depois da prova não faz sentido — pode existir se o
+  // aluno ANTECIPOU a data. O gatilho do banco já barra criação no dia da
+  // prova; aqui limpamos o que ficou além dela.
+  const { error: erroPosProva } = await supabase
+    .from("aluno_missoes")
+    .delete()
+    .eq("aluno_id", alunoId)
+    .eq("concluida", false)
+    .gte("data", dataProva);
+
+  if (erroPosProva) {
+    console.error("Recalibragem: falha ao remover missões após a data da prova:", erroPosProva.message);
+  }
 }
 
 // Usada pelo <form action={...}> de /aluno/briefing — redireciona de

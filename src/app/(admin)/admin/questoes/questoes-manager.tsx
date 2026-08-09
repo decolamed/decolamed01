@@ -7,6 +7,7 @@ import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput, TextArea,
 import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
 import { ROTULO_MODALIDADE, rotuloModalidade } from "@/lib/site/filtro-questoes";
+import { materiaCanonica } from "@/lib/site/materia-canonica";
 import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, alternarAtivoQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
@@ -97,6 +98,16 @@ export function QuestoesManager({
   }
 
   const materias = ["Todas", ...materiasExistentes];
+
+  // Contagem por matéria calculada a cada render sobre a lista vinda do
+  // banco. É a mesma conta que o aluno vê no Banco de Questões — se as duas
+  // divergirem, o problema está na consulta de um dos lados, não aqui.
+  const totalAtivas = questoes.filter((q) => q.ativo).length;
+  const contagemPorMateria = new Map<string, number>();
+  questoes.forEach((q) => {
+    const nome = materiaCanonica(q.materia);
+    if (nome) contagemPorMateria.set(nome, (contagemPorMateria.get(nome) ?? 0) + 1);
+  });
 
   // Opções de filtro derivadas das próprias questões — nada fixo no código:
   // conforme o admin importa provas novas, elas aparecem aqui sozinhas.
@@ -241,9 +252,33 @@ export function QuestoesManager({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Banco de Questões" subtitle={`Crie e edite questões ligadas à matriz do ${nomeVestibular} — grava direto no banco`} />
+        <PageHeader
+          title="Banco de Questões"
+          subtitle={
+            questoes.length === 0
+              ? `Nenhuma questão cadastrada — crie ou importe questões da matriz do ${nomeVestibular}`
+              : `${questoes.length} questão${questoes.length === 1 ? "" : "ões"} cadastrada${questoes.length === 1 ? "" : "s"}` +
+                (totalAtivas === questoes.length ? "" : ` · ${totalAtivas} ativa${totalAtivas === 1 ? "" : "s"}`) +
+                ` · matriz do ${nomeVestibular}`
+          }
+        />
         <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar em massa"}</GhostButton>
       </div>
+
+      {questoes.length > 0 && (
+        <Card className="mb-3">
+          <h2 className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Por matéria</h2>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+            {Array.from(contagemPorMateria.entries())
+              .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
+              .map(([nome, qtd]) => (
+                <span key={nome} className="text-sm font-semibold text-navy-dark">
+                  {nome} <span className="font-extrabold text-orange">{qtd}</span>
+                </span>
+              ))}
+          </div>
+        </Card>
+      )}
 
       {importando && (
         <Card className="mb-3">

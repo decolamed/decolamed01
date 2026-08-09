@@ -25,6 +25,26 @@ async function salvarMetadadosSimulado(id: string, formData: FormData) {
   const valorTotal = Number(formData.get("valor_total") ?? 1000);
   const usarPesos = formData.get("usar_pesos") === "on";
 
+  // Item 16: variável Inglês/Espanhol. Com ela ligada, o admin pode cadastrar
+  // questões dos dois idiomas no mesmo simulado; o aluno escolhe uma delas ao
+  // iniciar e só essa entra na nota.
+  const variavelIdioma = formData.get("variavel_idioma") === "on";
+
+  // Item 17: proposta de redação. Só a proposta — a plataforma não coleta o
+  // texto do aluno aqui; a correção segue pelo fluxo do professor.
+  const temaRedacao = String(formData.get("redacao_tema") ?? "").trim();
+  const textosRedacao = String(formData.get("redacao_textos") ?? "").trim();
+  const instrucoesRedacao = String(formData.get("redacao_instrucoes") ?? "").trim();
+  // Sem tema não há proposta: guardar textos motivadores soltos deixaria o
+  // aluno com um item de redação sem saber sobre o que escrever.
+  const redacao = temaRedacao
+    ? {
+        tema: temaRedacao,
+        textos_motivadores: textosRedacao || null,
+        instrucoes: instrucoesRedacao || null
+      }
+    : null;
+
   if (!titulo) {
     redirect(`/admin/simulados/${id}?erro=${encodeURIComponent("Informe um título para o simulado.")}`);
   }
@@ -43,7 +63,9 @@ async function salvarMetadadosSimulado(id: string, formData: FormData) {
       tempo_minutos: tempo,
       gabarito_modo: gabaritoModo === "imediato" ? "imediato" : "ao_final",
       valor_total: valorTotal,
-      usar_pesos: usarPesos
+      usar_pesos: usarPesos,
+      variavel_idioma: variavelIdioma,
+      redacao
     })
     .eq("id", id);
 
@@ -156,6 +178,63 @@ export default async function EscolherQuestoesSimuladoPage({
           Com os pesos ativos, o aluno vê a nota ponderada (ex.: 720 / 1000) em vez de só o percentual de acertos. Os
           pesos vêm de Configurações → Pesos das disciplinas.
         </p>
+
+        {/* Variável Inglês / Espanhol (item 16) */}
+        <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-navy-dark">
+          <input type="checkbox" name="variavel_idioma" defaultChecked={s.variavel_idioma ?? false} />
+          Este simulado tem questões de Inglês e de Espanhol
+        </label>
+        <p className="mt-1 text-[11px] font-semibold text-navy-dark/45">
+          Com a opção ligada você pode cadastrar questões dos dois idiomas aqui, junto com as demais matérias. Ao
+          iniciar, o aluno escolhe qual vai fazer: ele vê apenas as questões daquele idioma, e só elas contam na
+          quantidade de questões, nos pesos e na nota. As do outro idioma não existem para ele.
+        </p>
+
+        {/* Proposta de redação (item 17) */}
+        <fieldset className="mt-5 rounded-xl border border-navy-dark/10 p-4">
+          <legend className="px-1 text-xs font-extrabold uppercase tracking-wide text-navy-dark/50">
+            Redação (opcional)
+          </legend>
+          <p className="text-[11px] font-semibold text-navy-dark/45">
+            Preencha o tema para incluir uma redação como item deste simulado. Ela aparece para o aluno depois das
+            questões, dentro do mesmo cronômetro. A plataforma apresenta apenas a proposta — o aluno escreve à mão e
+            envia pelo fluxo de correção com a professora. Deixe o tema vazio para remover a redação.
+          </p>
+
+          <label className="mt-3 block text-xs font-semibold text-navy-dark/60" htmlFor="redacao_tema">
+            Tema
+          </label>
+          <input
+            id="redacao_tema"
+            name="redacao_tema"
+            defaultValue={s.redacao?.tema ?? ""}
+            placeholder="Ex.: Os desafios do acesso à saúde mental no Brasil"
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+
+          <label className="mt-3 block text-xs font-semibold text-navy-dark/60" htmlFor="redacao_textos">
+            Textos motivadores
+          </label>
+          <textarea
+            id="redacao_textos"
+            name="redacao_textos"
+            rows={5}
+            defaultValue={s.redacao?.textos_motivadores ?? ""}
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+
+          <label className="mt-3 block text-xs font-semibold text-navy-dark/60" htmlFor="redacao_instrucoes">
+            Instruções da proposta
+          </label>
+          <textarea
+            id="redacao_instrucoes"
+            name="redacao_instrucoes"
+            rows={3}
+            defaultValue={s.redacao?.instrucoes ?? ""}
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+        </fieldset>
+
         <SubmitButton pendingText="Salvando..." className="mt-4 rounded-lg bg-navy px-5 py-2 text-sm font-semibold text-white">
           Salvar dados
         </SubmitButton>

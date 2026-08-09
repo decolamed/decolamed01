@@ -8,6 +8,12 @@ import { BriefingWizard } from "@/components/aluno/briefing-wizard";
 // 3 passos: intro → briefing → animação "calculando rota" → decolar. Ao
 // concluir, o aluno vai direto pro slideboard (/aluno/tutorial), e depois
 // pra /aluno.
+// O aluno chega aqui logo depois de um Redefinir Perfil, que acabou de
+// apagar o briefing. Uma versão em cache traria de volta as respostas
+// antigas no formulário e daria a impressão de que o reset não funcionou.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AlunoBriefingPage({
   searchParams
 }: {

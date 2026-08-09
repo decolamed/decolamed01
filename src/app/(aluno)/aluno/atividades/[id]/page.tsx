@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { AtividadeRunner } from "@/components/aluno/atividade-runner";
+import { PaginaAluno, CartaoAluno } from "@/components/aluno/pagina-aluno";
 import type { Atividade } from "@/types/database";
 
 export default async function AlunoAtividadePage({ params }: { params: { id: string } }) {
@@ -31,21 +32,29 @@ export default async function AlunoAtividadePage({ params }: { params: { id: str
       imagens: i.questoes.imagens ?? []
     }));
 
+  // Mesma moldura da listagem: quem entra numa atividade continua na aba
+  // Atividades, e a tela de execução não pode parecer outro lugar.
   if (questoes.length === 0) {
     return (
-      <div>
-        <Link href="/aluno/atividades" className="text-sm text-navy hover:underline">← Voltar às atividades</Link>
-        <p className="mt-6 text-center text-sm text-navy-dark/50">Essa atividade ainda não tem questões cadastradas.</p>
-      </div>
+      <PaginaAluno titulo={a.titulo} voltarPara="/aluno/atividades" rotuloVoltar="Voltar às atividades">
+        <CartaoAluno className="py-10 text-center">
+          <p className="text-sm font-semibold text-navy-dark/50">
+            Essa atividade ainda não tem questões cadastradas.
+          </p>
+        </CartaoAluno>
+      </PaginaAluno>
     );
   }
 
   return (
-    <div>
-      <Link href="/aluno/atividades" className="text-sm text-navy hover:underline">← Voltar às atividades</Link>
-      <div className="mt-3">
-        <AtividadeRunner atividadeId={a.id} titulo={a.titulo} gabaritoModo={a.gabarito_modo} tempoLimiteMinutos={a.tempo_limite_minutos} questoes={questoes} />
-      </div>
-    </div>
+    <PaginaAluno titulo={a.titulo} voltarPara="/aluno/atividades" rotuloVoltar="Voltar às atividades">
+      <AtividadeRunner
+        atividadeId={a.id}
+        titulo={a.titulo}
+        gabaritoModo={a.gabarito_modo}
+        tempoLimiteMinutos={a.tempo_limite_minutos}
+        questoes={questoes}
+      />
+    </PaginaAluno>
   );
 }

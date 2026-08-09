@@ -4,6 +4,8 @@ import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
+import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
+import { filtrarPorIdioma, normalizarIdioma, textoAdaptadoAoIdioma } from "@/lib/site/idioma-aluno";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO, somarDias } from "@/lib/site/data";
@@ -29,7 +31,20 @@ import type {
   ImagemQuestao
 } from "@/types/database";
 
-const POOL_LIMITE = 60;
+// Antes existia aqui um `POOL_LIMITE = 60` aplicado a questões e flashcards.
+//
+// Era a causa de três sintomas que pareciam separados: o aluno via 60
+// flashcards de 352; o Banco de Questões mostrava "Biologia — 28" quando há
+// 82; e Química e Linguagens simplesmente não apareciam como matéria. Como
+// o corte pegava as 60 primeiras linhas numa ordem que o Postgres não
+// garante, matérias inteiras ficavam de fora e as contagens exibidas eram
+// as do recorte, não as do banco.
+//
+// Sem corte, o payload medido é 542 kB de questões e 57 kB de flashcards
+// (texto cru, antes do gzip) — cabe folgado. Se o banco crescer a alguns
+// milhares de questões, a saída é paginar por matéria sob demanda, nunca
+// voltar a truncar em silêncio: truncar aqui não deixa rastro nenhum na
+// tela, que é o que tornou esse defeito tão difícil de enxergar.
 
 export default async function AlunoHomePage() {
   // Camada 2 de proteção (a camada 1 é o middleware): garante que mesmo que
@@ -89,8 +104,9 @@ export default async function AlunoHomePage() {
     supabase.from("configuracoes").select("valor").eq("chave", "site.contato.whatsapp").maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "redacao.whatsapp").maybeSingle(),
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
-    supabase.from("questoes").select("*").eq("ativo", true).limit(POOL_LIMITE),
-    supabase.from("flashcards").select("*").eq("ativo", true).limit(POOL_LIMITE),
+    supabase.from("questoes").select("*").eq("ativo", true).order("materia").order("created_at"),
+    supabase.from("flashcards").select("*").eq("ativo", true).order("ordem", { ascending: true, nullsFirst: false }),
+
     supabase.from("simulados").select("*").eq("ativo", true),
     // Sem resposta_correta: essas linhas viram props de um Client Component
     // (o app do aluno inteiro), e tudo que vai pra props chega ao HTML/JS do
@@ -157,9 +173,39 @@ export default async function AlunoHomePage() {
   // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
   // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
   // aula já corrigida pelo admin em "Cursos e Aulas".
-  const todosDias = await resolverCronograma(
+  // Idioma escolhido no briefing. Governa tudo que é de língua estrangeira
+  // daqui pra baixo: acervo, cronograma e textos.
+  const idiomaAluno = normalizarIdioma((briefingData as { idioma_prova?: string | null } | null)?.idioma_prova);
+
+  const diasResolvidos = await resolverCronograma(
     ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
   );
+
+  // Plano Voo Guiado: projeta o cronograma-base na janela real do aluno
+  // (início → prova, só nos dias que ele estuda). Sem isto, quem tem 20 dias
+  // até a prova recebia a mesma trilha de 40 dias do Plano Decolando e
+  // metade do conteúdo caía depois da prova. O Decolando não é afetado — ver
+  // lib/trilha/ajuste-voo-guiado.ts.
+  const { dias: diasAjustados, compactado: cronogramaCompactado } = ajustarCronogramaAoAluno(diasResolvidos, {
+    temCopiloto,
+    briefing: briefingData as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
+    hojeStr
+  });
+
+  // Personalização por idioma no cronograma (item 15.4). O cronograma-base é
+  // o mesmo para todos e traz itens genéricos como "5 questões de
+  // Inglês/Espanhol": aqui o item some para quem não faz aquele idioma, e o
+  // texto genérico passa a citar só o idioma do aluno — o rótulo acompanha o
+  // conteúdo que ele de fato vai abrir.
+  const todosDias = idiomaAluno
+    ? diasAjustados.map((dia) => ({
+        ...dia,
+        itens: filtrarPorIdioma(dia.itens ?? [], idiomaAluno).map((item) => ({
+          ...item,
+          titulo: textoAdaptadoAoIdioma(item.titulo, idiomaAluno)
+        }))
+      }))
+    : diasAjustados;
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
@@ -205,8 +251,12 @@ export default async function AlunoHomePage() {
       whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
       dados={{
         temCopiloto,
-        questoes: (questoesData as Questao[]) ?? [],
-        flashcards: (flashcardsData as Flashcard[]) ?? [],
+        // Filtrados pelo idioma escolhido no briefing: quem faz Inglês não
+        // recebe questão nem flashcard de Espanhol em lugar nenhum do app.
+        // Quem ainda não respondeu continua vendo os dois — ver
+        // lib/site/idioma-aluno.ts.
+        questoes: filtrarPorIdioma((questoesData as Questao[]) ?? [], idiomaAluno),
+        flashcards: filtrarPorIdioma((flashcardsData as Flashcard[]) ?? [], idiomaAluno),
         simulados: (simuladosData as Simulado[]) ?? [],
         simuladoQuestoesCount: (simuladoQuestoesData ?? []).reduce((acc: Record<string, number>, r: any) => {
           acc[r.simulado_id] = (acc[r.simulado_id] ?? 0) + 1;
@@ -226,6 +276,11 @@ export default async function AlunoHomePage() {
         trilhaHoje,
         trilhaProximos,
         trilhaAnteriores,
+        // O cronograma-base foi projetado na janela real deste aluno (Voo
+        // Guiado com menos dias até a prova do que a trilha tem). A tela usa
+        // isto para explicar por que os dias vêm agrupados, em vez de deixar
+        // o aluno achando que perdeu conteúdo.
+        cronogramaCompactado,
         // dia_numero de hoje: é o que permite converter a régua relativa do
         // cronograma ("Dia 1", "Dia 2") em datas de calendário na tela.
         diaTrilhaHoje,

@@ -80,7 +80,7 @@ export function AtividadeRunner({
     return (
       <div>
         <div className="rounded-2xl bg-white p-8 text-center shadow">
-          <span className="text-4xl">✅</span>
+          <span className="mx-auto block h-1 w-10 rounded-full bg-orange" />
           <h1 className="mt-2 font-display text-2xl font-bold text-navy-dark">Atividade concluída!</h1>
           <p className="mt-2 text-navy-dark/70">Você acertou {resultado.acertos} de {resultado.total} questões.</p>
           <div className="mt-4 flex flex-col items-center gap-1">
@@ -140,7 +140,7 @@ export function AtividadeRunner({
         </div>
         {tempoFormatado && (
           <span className={`rounded-full px-4 py-2 font-display text-lg font-bold ${segundosRestantes! < 60 ? "bg-red-50 text-red-600" : "bg-navy/5 text-navy-dark"}`}>
-            ⏱️ {tempoFormatado}
+            {tempoFormatado}
           </span>
         )}
       </div>
@@ -216,7 +216,7 @@ export function AtividadeRunner({
               disabled={enviando}
               className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark disabled:opacity-60"
             >
-              {enviando ? "Enviando..." : "Enviar atividade ✓"}
+              {enviando ? "Enviando..." : "Enviar atividade"}
             </button>
           )}
         </div>

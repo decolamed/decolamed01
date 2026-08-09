@@ -6,6 +6,7 @@ import { Icon } from "@/components/admin/icon";
 import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput } from "@/components/admin/interactive";
 import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseFlashcardsTexto, type FlashcardParseado } from "@/lib/importacao/parse-flashcards";
+import { materiaCanonica, mesmaMateria } from "@/lib/site/materia-canonica";
 import { salvarFlashcard, salvarFlashcardsEmLote, excluirFlashcard } from "./actions";
 import type { Flashcard } from "@/types/database";
 
@@ -42,7 +43,19 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
   }
 
   const materias = ["Todas", ...materiasExistentes];
-  const lista = cards.filter((x) => filtro === "Todas" || x.materia === filtro);
+  const lista = cards.filter((x) => filtro === "Todas" || mesmaMateria(x.materia, filtro));
+
+  // Contadores derivados de `cards`, que é o resultado da consulta ao banco
+  // feita a cada carregamento da página (a rota é dinâmica). Não há número
+  // guardado: incluir ou excluir um flashcard muda esta conta na hora, que é
+  // o que faltava para o admin saber quantos cartões existem de fato.
+  const totalCards = cards.length;
+  const totalAtivos = cards.filter((c) => c.ativo).length;
+  const porMateria = new Map<string, number>();
+  cards.forEach((c) => {
+    const nome = materiaCanonica(c.materia);
+    if (nome) porMateria.set(nome, (porMateria.get(nome) ?? 0) + 1);
+  });
 
   function iniciarEdicao(card: Flashcard) {
     setEditId(card.id);
@@ -90,9 +103,32 @@ export function FlashcardsManager({ cards, materiasExistentes }: { cards: Flashc
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Flashcards" subtitle="Flashcards nativos da plataforma — grava direto no banco" />
+        <PageHeader
+          title="Flashcards"
+          subtitle={
+            totalCards === 0
+              ? "Nenhum flashcard cadastrado ainda"
+              : `${totalCards} flashcard${totalCards === 1 ? "" : "s"} cadastrado${totalCards === 1 ? "" : "s"}` +
+                (totalAtivos === totalCards ? "" : ` · ${totalAtivos} ativo${totalAtivos === 1 ? "" : "s"}`)
+          }
+        />
         <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar em massa"}</GhostButton>
       </div>
+
+      {totalCards > 0 && (
+        <Card className="mb-3">
+          <h2 className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Por matéria</h2>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+            {Array.from(porMateria.entries())
+              .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
+              .map(([nome, qtd]) => (
+                <span key={nome} className="text-sm font-semibold text-navy-dark">
+                  {nome} <span className="font-extrabold text-orange">{qtd}</span>
+                </span>
+              ))}
+          </div>
+        </Card>
+      )}
 
       {importando && (
         <Card className="mb-3">

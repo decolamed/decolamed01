@@ -108,7 +108,7 @@ interface DadosAluno {
   // missão de "Flashcards de Português" contando as revisões que o aluno já
   // tinha feito — o que não diz nada sobre os flashcards ainda existirem. O
   // aluno abria a missão e via "Não há flashcards disponíveis".
-  inventario: Map<string, { questoes: number; flashcards: number }>;
+  inventario: Map<string, InventarioMateria>;
   // Em que dia do cronograma o aluno está hoje (null se a matrícula não tem
   // data de liberação). É o que separa o passado — onde moram as pendências
   // — do futuro, onde elas podem ser reagendadas.
@@ -118,6 +118,21 @@ interface DadosAluno {
 }
 
 // ---- Configurações por modo ------------------------------------------------
+
+/** Aula real disponível para virar missão (id é o que amarra o vínculo). */
+interface AulaDoInventario {
+  id: string;
+  titulo: string;
+  materia: string | null;
+  assunto: string | null;
+  url: string | null;
+}
+
+interface InventarioMateria {
+  questoes: number;
+  flashcards: number;
+  aulas: AulaDoInventario[];
+}
 
 const CFG = {
   generoso:    { maxRec: 8,  errosMinGatilho: 1, genMin: 0.5,  gemini: true  },
@@ -280,24 +295,46 @@ function reindexarSentimentos(bruto: unknown): Record<string, string> {
 // Conta o conteúdo ativo por matéria. É a checagem que faltava antes de
 // prometer uma missão ao aluno: só se cria missão de um tipo que realmente
 // tem conteúdo disponível para aquela matéria.
-async function carregarInventario(): Promise<Map<string, { questoes: number; flashcards: number }>> {
+async function carregarInventario(): Promise<Map<string, InventarioMateria>> {
   const supabase = createAdminClient();
-  const [{ data: qs }, { data: fs }] = await Promise.all([
+  const [{ data: qs }, { data: fs }, { data: aulas }] = await Promise.all([
     supabase.from("questoes").select("materia").eq("ativo", true),
     supabase.from("flashcards").select("materia").eq("ativo", true),
+    // As aulas entram com id e título, não só contadas: é o id que amarra a
+    // missão ao conteúdo real. Sem ele a missão "Aula de Física" abria com
+    // "Esta aula não está mais disponível" — ver resolverConteudoMissao().
+    supabase
+      .from("conteudos_biblioteca")
+      .select("id, titulo, materia, assunto, url")
+      .eq("ativo", true)
+      .in("tipo", ["aula", "video_externo"])
+      .not("url", "is", null),
   ]);
+
   // Indexado pela chave canônica: uma missão de "Linguagens" precisa achar
   // as questões mesmo se alguma linha antiga tiver ficado como "Português".
-  const mapa = new Map<string, { questoes: number; flashcards: number }>();
-  const somar = (materia: string | null, campo: "questoes" | "flashcards") => {
+  const mapa = new Map<string, InventarioMateria>();
+  const daMateria = (materia: string | null): InventarioMateria | null => {
     const m = chaveMateria(materia);
-    if (!m) return;
-    const atual = mapa.get(m) ?? { questoes: 0, flashcards: 0 };
-    atual[campo] += 1;
+    if (!m) return null;
+    const atual = mapa.get(m) ?? { questoes: 0, flashcards: 0, aulas: [] };
     mapa.set(m, atual);
+    return atual;
   };
-  (qs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "questoes"));
-  (fs ?? []).forEach((r: { materia: string | null }) => somar(r.materia, "flashcards"));
+
+  (qs ?? []).forEach((r: { materia: string | null }) => {
+    const inv = daMateria(r.materia);
+    if (inv) inv.questoes += 1;
+  });
+  (fs ?? []).forEach((r: { materia: string | null }) => {
+    const inv = daMateria(r.materia);
+    if (inv) inv.flashcards += 1;
+  });
+  (aulas ?? []).forEach((r: AulaDoInventario) => {
+    const inv = daMateria(r.materia);
+    if (inv) inv.aulas.push(r);
+  });
+
   return mapa;
 }
 
@@ -314,6 +351,8 @@ async function carregarDiaTrilhaHoje(alunoId: string): Promise<number | null> {
   return liberado ? calcularDiaTrilha(liberado) : null;
 }
 
+const INVENTARIO_VAZIO: InventarioMateria = { questoes: 0, flashcards: 0, aulas: [] };
+
 // Devolve um tipo de missão que REALMENTE tem conteúdo para a matéria, ou
 // null quando não há nada — nesse caso a missão simplesmente não é criada,
 // em vez de virar um beco sem saída na tela do aluno.
@@ -321,12 +360,64 @@ function tipoComConteudo(
   dados: DadosAluno,
   materia: string,
   preferido: "questoes" | "flashcards" | "aula" | "revisao"
-): "questoes" | "flashcards" | null {
-  const inv = dados.inventario.get(chaveMateria(materia)) ?? { questoes: 0, flashcards: 0 };
+): "questoes" | "flashcards" | "aula" | null {
+  const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
+  // "aula" era pedido pelo ciclo do modo generoso mas nunca era devolvido
+  // aqui: as missões de aula escapavam da checagem de conteúdo e nasciam
+  // sem vínculo nenhum.
+  if (preferido === "aula" && inv.aulas.length > 0) return "aula";
   if ((preferido === "flashcards" || preferido === "revisao") && inv.flashcards > 0) return "flashcards";
   if (inv.questoes > 0) return "questoes";
   if (inv.flashcards > 0) return "flashcards";
+  if (inv.aulas.length > 0) return "aula";
   return null;
+}
+
+/**
+ * Resolve o conteúdo concreto de uma missão: título e, quando o tipo exige,
+ * o `ref_id` do registro real.
+ *
+ * É aqui que a cadeia "matéria identificada → título → conteúdo aberto"
+ * passa a ficar amarrada. Antes a missão gravava só matéria e tipo; para
+ * `aula` o app procurava `conteudos.find(c => c.id === m.ref_id)` com
+ * `ref_id` sempre nulo e caía direto na mensagem "Esta aula não está mais
+ * disponível" — todas as 11 missões de aula do banco estavam assim.
+ *
+ * Devolve null quando não existe conteúdo para a matéria; nesse caso a
+ * missão não deve ser criada.
+ */
+function resolverConteudoMissao(
+  dados: DadosAluno,
+  materia: string,
+  tipoPreferido: string
+): { tipo: string; titulo: string; refId: string | null; assunto: string | null } | null {
+  const preferido = (["questoes", "flashcards", "aula", "revisao"] as const).includes(
+    tipoPreferido as "questoes"
+  )
+    ? (tipoPreferido as "questoes" | "flashcards" | "aula" | "revisao")
+    : "questoes";
+
+  const tipo = tipoComConteudo(dados, materia, preferido);
+  if (!tipo) return null;
+
+  if (tipo === "aula") {
+    const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
+    // Rotaciona pela lista para não indicar sempre a mesma primeira aula da
+    // matéria a todos os alunos.
+    const escolhida = inv.aulas[Math.floor(Math.random() * inv.aulas.length)];
+    if (!escolhida) return null;
+    return {
+      tipo: "aula",
+      // O título é o da aula de verdade: o aluno lê o mesmo nome que vai
+      // encontrar em Estudos.
+      titulo: `Aula · ${escolhida.titulo}`,
+      refId: escolhida.id,
+      assunto: escolhida.assunto ?? null
+    };
+  }
+
+  const rotulo = tipo === "flashcards" ? "Flashcards" : "Questões";
+  return { tipo, titulo: `${rotulo} · ${materia}`, refId: null, assunto: null };
 }
 
 // ---- Detecção de modo ------------------------------------------------------
@@ -491,7 +582,12 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   const restante = capacidade.map((d) => ({ ...d }));
   const missoes: Record<string, unknown>[] = [];
   for (const item of intercalada) {
-    const min = dados.config.duracaoPorTipo[item.tipo] ?? DURACAO_TIPO[item.tipo] ?? 40;
+    // Resolve o conteúdo ANTES de reservar o tempo do dia: uma matéria sem
+    // material nenhum não deve consumir capacidade de um dia livre.
+    const conteudo = resolverConteudoMissao(dados, item.materia, item.tipo);
+    if (!conteudo) continue;
+
+    const min = dados.config.duracaoPorTipo[conteudo.tipo] ?? DURACAO_TIPO[conteudo.tipo] ?? 40;
     const dia = restante.find((d) => d.livre >= min);
     if (!dia) break; // acabou a capacidade da janela até a prova
     dia.livre -= min;
@@ -499,10 +595,13 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     missoes.push({
       aluno_id: dados.alunoId,
       data: dia.data,
-      titulo: `${item.tipo === "questoes" ? "Questões" : item.tipo === "flashcards" ? "Flashcards" : item.tipo === "revisao" ? "Revisão" : "Aula"} · ${item.materia} — Copiloto`,
+      titulo: `${conteudo.titulo} — Copiloto`,
       materia: item.materia,
-      assunto: null as string | null,
-      tipo: item.tipo,
+      assunto: conteudo.assunto,
+      tipo: conteudo.tipo,
+      // Para aula, aponta o registro real em conteudos_biblioteca. É o que
+      // faz o clique abrir o player em vez de "aula não disponível".
+      ref_id: conteudo.refId,
       duracao_minutos: min,
       duracao_estimada_min: min,
       prioridade: sc.gen > 10 ? 2 : 1,
@@ -550,17 +649,20 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     const minUsados = missoesDoDia.reduce((s, m) => s + (m.duracao_estimada_min || m.duracao_minutos), 0);
 
     // --- OPÇÃO A: adicionar missão extra se couber no tempo disponível ---
-    const minExtra = dados.config.duracaoPorTipo.questoes ?? DURACAO_TIPO.questoes;
-    const tipoExtra = tipoComConteudo(dados, maisUrgente.mat, "questoes");
-    if (tipoExtra && minUsados + minExtra <= maxMinPorDia) {
+    const conteudoExtra = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
+    const minExtra = conteudoExtra
+      ? dados.config.duracaoPorTipo[conteudoExtra.tipo] ?? DURACAO_TIPO[conteudoExtra.tipo] ?? 40
+      : 0;
+    if (conteudoExtra && minUsados + minExtra <= maxMinPorDia) {
       const jaTemMateria = missoesDoDia.some((m) => mesmaMateria(m.materia, maisUrgente.mat));
       if (!jaTemMateria) {
         await supabase.from("aluno_missoes").insert({
           aluno_id: dados.alunoId, data,
-          titulo: `${tipoExtra === "flashcards" ? "Flashcards" : "Questões"} · ${maisUrgente.mat} — Copiloto (extra)`,
+          titulo: `${conteudoExtra.titulo} — Copiloto (extra)`,
           materia: maisUrgente.mat,
-          assunto: null,
-          tipo: tipoExtra,
+          assunto: conteudoExtra.assunto,
+          tipo: conteudoExtra.tipo,
+          ref_id: conteudoExtra.refId,
           duracao_minutos: minExtra,
           duracao_estimada_min: minExtra,
           prioridade: 2,
@@ -588,15 +690,16 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     // Substituir: cria a nova missão do Copiloto e remove a antiga. A troca
     // só pode acontecer se a nova tiver conteúdo — trocar uma missão válida
     // por uma vazia deixaria o aluno com menos do que tinha antes.
-    const tipoSubst = tipoComConteudo(dados, maisUrgente.mat, "questoes");
-    if (!tipoSubst) continue;
+    const conteudoSubst = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
+    if (!conteudoSubst) continue;
     await supabase.from("aluno_missoes").delete().eq("id", candidataSubstituir.m.id);
     await supabase.from("aluno_missoes").insert({
       aluno_id: dados.alunoId, data,
-      titulo: `${tipoSubst === "flashcards" ? "Flashcards" : "Questões"} · ${maisUrgente.mat} — Copiloto (substituiu ${candidataSubstituir.m.materia})`,
+      titulo: `${conteudoSubst.titulo} — Copiloto (substituiu ${candidataSubstituir.m.materia})`,
       materia: maisUrgente.mat,
-      assunto: null,
-      tipo: tipoSubst,
+      assunto: conteudoSubst.assunto,
+      tipo: conteudoSubst.tipo,
+      ref_id: conteudoSubst.refId,
       duracao_minutos: candidataSubstituir.m.duracao_minutos,
       duracao_estimada_min: candidataSubstituir.m.duracao_estimada_min,
       prioridade: 2,
@@ -1175,8 +1278,6 @@ interface Intervencao {
 function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
   const cfg = CFG[dados.modo];
   const lista: Intervencao[] = [];
-  const flashPorMat = new Map<string, number>();
-  dados.revisoes.forEach((r) => flashPorMat.set(r.materia, (flashPorMat.get(r.materia) ?? 0) + 1));
 
   // Por assunto
   const porAssunto = new Map<string, { a: number; e: number; t: number; mat: string }>();
@@ -1194,13 +1295,23 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento });
     if (gen < cfg.genMin) continue;
-    // `flashPorMat` conta REVISÕES JÁ FEITAS, não flashcards existentes —
-    // era o que fazia o Copiloto prometer "Flashcards de X" para uma matéria
-    // sem nenhum flashcard cadastrado. A preferência continua a mesma, mas
-    // agora passa pelo inventário real antes de virar missão.
+    // Escolha do formato da revisão.
+    //
+    // A condição de flashcards era `precisao < 35 && flashPorMat > 0`, e
+    // `flashPorMat` conta REVISÕES JÁ FEITAS pelo aluno — não os flashcards
+    // que existem. Para quem nunca revisou nada (o caso de todo aluno novo),
+    // esse contador é zero e a condição nunca era verdadeira: o Copiloto
+    // simplesmente não gerava revisão em flashcard, que é o que foi relatado.
+    //
+    // Agora quem responde é o inventário real (dados.inventario, via
+    // tipoComConteudo) e o limiar de precisão sobe para 60: flashcard é a
+    // ferramenta certa justamente para lacuna de memorização — erro por não
+    // lembrar, não por não saber resolver. Erro em volume (>=3) continua
+    // pedindo questões, que é treino de aplicação.
+    const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
     const preferido = dados.modo === "cirurgico" ? "questoes"
       : d.e >= 3 ? "questoes"
-      : precisao < 35 && (flashPorMat.get(materia) ?? 0) > 0 ? "flashcards"
+      : precisao < 60 && inv.flashcards > 0 ? "flashcards"
       : "questoes";
     const tipo = tipoComConteudo(dados, materia, preferido);
     if (!tipo) continue; // sem conteúdo para essa matéria: nada a recomendar
@@ -1249,9 +1360,46 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
   let criadas = 0;
   for (const iv of intervencoes) {
     if (criadas >= vagas) break;
-    let q = supabase.from("copiloto_recomendacoes").select("id").eq("aluno_id", dados.alunoId).eq("status", "pendente").eq("materia", iv.materia);
+    // Já existe recomendação para esta matéria/assunto — pendente OU já
+    // respondida?
+    //
+    // Antes esta checagem filtrava `status = 'pendente'`. Consequência: no
+    // instante em que o aluno tocava em "Já revisei", a recomendação saía do
+    // conjunto verificado e a rodada seguinte do Copiloto recriava uma
+    // idêntica. O aluno via o cartão sumir, recarregava a página e ele
+    // estava lá de novo — parecia que a conclusão não tinha sido salva,
+    // quando na verdade tinha: o que voltava era uma recomendação NOVA.
+    let q = supabase
+      .from("copiloto_recomendacoes")
+      .select("id, status, concluida_em, gerado_em")
+      .eq("aluno_id", dados.alunoId)
+      .eq("materia", iv.materia)
+      .order("gerado_em", { ascending: false })
+      .limit(1);
     if (iv.assunto) q = q.eq("assunto", iv.assunto); else q = q.is("assunto", null);
-    const { data: dup } = await q.maybeSingle(); if (dup) continue;
+    const { data: anteriores } = await q;
+    const anterior = (anteriores ?? [])[0] as
+      | { id: string; status: string; concluida_em: string | null; gerado_em: string | null }
+      | undefined;
+
+    if (anterior) {
+      // Pendente: o aluno ainda não respondeu, não faz sentido duplicar.
+      if (anterior.status === "pendente") continue;
+
+      // Já respondida: só volta a ser recomendada se houver ERRO NOVO no
+      // assunto depois da resposta. É a diferença entre revisão estratégica
+      // e repetição — o aluno que revisou e passou a acertar não recebe a
+      // mesma tarefa de novo, mas quem voltou a errar recebe.
+      const desde = anterior.concluida_em ?? anterior.gerado_em;
+      const houveErroNovo = dados.respostas.some(
+        (r) =>
+          !r.correta &&
+          mesmaMateria(r.materia, iv.materia) &&
+          (iv.assunto ? r.assunto === iv.assunto : true) &&
+          (!desde || r.createdAt > desde)
+      );
+      if (!houveErroNovo) continue;
+    }
     let motivo = iv.descricao;
     if (cfg.gemini && iv.gen > 12) {
       const r = await gerarTextoGemini(`Copiloto Decola: 2 frases motivadoras para o aluno revisar agora. Contexto: ${iv.descricao}. Sem saudação, português informal.`);

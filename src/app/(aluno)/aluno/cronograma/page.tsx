@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
+import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
@@ -81,7 +82,7 @@ export default async function AlunoCronogramaPage() {
   const hojeStr = hojeISO();
   const fimStr = somarDias(hojeStr, 7);
 
-  const [{ data: missoesBrutas }, { data: matricula }, { data: progresso }] = await Promise.all([
+  const [{ data: missoesBrutas }, { data: matricula }, { data: progresso }, { data: briefing }] = await Promise.all([
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -101,7 +102,14 @@ export default async function AlunoCronogramaPage() {
     // O que o aluno já concluiu. Sem isso esta tela mostrava o cronograma
     // inteiro sem nenhuma marca de progresso — o aluno via a mesma lista
     // depois de cumprir metade dela.
-    supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", profile.id).eq("concluida", true)
+    supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", profile.id).eq("concluida", true),
+    // Data da prova, início e disponibilidade: é o que define a janela real
+    // usada para projetar o cronograma do Voo Guiado.
+    supabase
+      .from("aluno_briefing")
+      .select("data_prova, inicio_estudos, dias_estuda, horas_por_dia_semana")
+      .eq("aluno_id", profile.id)
+      .maybeSingle()
   ]);
 
   const concluidas = new Set(((progresso as { chave: string }[]) ?? []).map((p) => p.chave));
@@ -114,6 +122,7 @@ export default async function AlunoCronogramaPage() {
   let diaAtual: number | null = null;
   let diaTrilha: TrilhaDia | null = null;
   let todosOsDias: TrilhaDia[] = [];
+  let cronogramaCompactado = false;
   if (matricula?.acesso_liberado_em) {
     diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
     // Busca o cronograma inteiro, não só o dia de hoje: esta rota é o
@@ -122,7 +131,19 @@ export default async function AlunoCronogramaPage() {
     const { data } = await supabase.from("trilha_dias").select("*").order("dia_numero");
     // Idem à tela do painel: o cronograma lê o conteúdo atual da biblioteca,
     // não a cópia gravada no jsonb quando o dia foi montado.
-    todosOsDias = await resolverCronograma((data as TrilhaDia[]) ?? []);
+    const resolvidos = await resolverCronograma((data as TrilhaDia[]) ?? []);
+
+    // Mesmo ajuste aplicado no painel (aluno/page.tsx): a rota do Voo Guiado
+    // é projetada na janela real do aluno. As duas telas PRECISAM passar
+    // pela mesma função — se uma comprimisse e a outra não, o aluno veria
+    // "Dia 3 de 20" aqui e "Dia 3 de 40" lá.
+    const ajuste = ajustarCronogramaAoAluno(resolvidos, {
+      temCopiloto,
+      briefing: briefing as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
+      hojeStr
+    });
+    todosOsDias = ajuste.dias;
+    cronogramaCompactado = ajuste.compactado;
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
 
@@ -153,6 +174,14 @@ export default async function AlunoCronogramaPage() {
             Você segue o cronograma abaixo e, quando o Copiloto identifica algo que vale revisar, ele acrescenta missões extras
             automaticamente.
           </p>
+          {/* Mesmo aviso do painel: sem ele, o aluno que vê a rota agrupada
+              acha que perdeu conteúdo. */}
+          {cronogramaCompactado && (
+            <p className="mt-2 border-t border-white/15 pt-2 text-white/70">
+              Sua rota foi ajustada ao tempo que você tem até a prova: os dias foram agrupados para caber na sua janela,
+              respeitando as horas por dia informadas no briefing. Nenhum conteúdo foi removido.
+            </p>
+          )}
         </div>
       )}
 

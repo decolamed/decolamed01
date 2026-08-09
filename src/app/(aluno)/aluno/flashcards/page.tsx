@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { FlashcardsStudy } from "@/components/aluno/flashcards-study";
+import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
 import type { Flashcard } from "@/types/database";
 
 const LIMITE_POR_RODADA = 15;
@@ -14,15 +15,19 @@ export default async function AlunoFlashcardsPage({
   await requireAcessoAluno();
   const supabase = createClient();
 
-  let query = supabase.from("flashcards").select("*").eq("ativo", true);
-  if (searchParams.materia) query = query.eq("materia", searchParams.materia);
+  // Sem `.limit(50)`: com o teto, o sorteio só via as 50 primeiras linhas e
+  // os demais flashcards nunca apareciam numa rodada — parte do sintoma de
+  // "importei 300 e só tenho 60".
+  const { data: cardsData } = await supabase.from("flashcards").select("*").eq("ativo", true);
 
-  const { data: cardsData } = await query.limit(50);
-  const todos = (cardsData as Flashcard[]) ?? [];
+  const todos = ((cardsData as Flashcard[]) ?? []).filter(
+    (c) => !searchParams.materia || mesmaMateria(c.materia, searchParams.materia)
+  );
   const cards = [...todos].sort(() => Math.random() - 0.5).slice(0, LIMITE_POR_RODADA);
 
-  const { data: materiasData } = await supabase.from("flashcards").select("materia").eq("ativo", true);
-  const materias = Array.from(new Set((materiasData ?? []).map((m: any) => m.materia))).sort();
+  const materias = materiasUnicas((cardsData ?? []).map((m: any) => m.materia)).sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
+  );
 
   return (
     <div>

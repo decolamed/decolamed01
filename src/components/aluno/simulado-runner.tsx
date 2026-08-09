@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { submeterSimulado, type ItemGabarito, type ResultadoSimulado } from "@/app/(aluno)/aluno/simulados/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
+import { filtrarPorIdioma } from "@/lib/site/idioma-aluno";
 
 interface QuestaoSimulado {
   id: string;
@@ -13,13 +14,22 @@ interface QuestaoSimulado {
   imagens: { url: string; legenda: string | null; ordem: number }[];
 }
 
+export interface PropostaRedacao {
+  tema: string;
+  textos_motivadores?: string | null;
+  instrucoes?: string | null;
+}
+
 export function SimuladoRunner({
   simuladoId,
   titulo,
   tempoMinutos,
   questoes,
   rotuloNota,
-  nomeVestibular
+  nomeVestibular,
+  variavelIdioma = false,
+  idiomaDoBriefing = null,
+  redacao = null
 }: {
   simuladoId: string;
   titulo: string;
@@ -30,6 +40,12 @@ export function SimuladoRunner({
   // escrita no código.
   rotuloNota: string;
   nomeVestibular: string;
+  /** Item 16: o simulado tem questões de Inglês E Espanhol. */
+  variavelIdioma?: boolean;
+  /** Idioma já escolhido no briefing — vira a sugestão inicial. */
+  idiomaDoBriefing?: "ingles" | "espanhol" | null;
+  /** Item 17: proposta de redação, quando o admin cadastrou uma. */
+  redacao?: PropostaRedacao | null;
 }) {
   const [indice, setIndice] = useState(0);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
@@ -37,13 +53,31 @@ export function SimuladoRunner({
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoSimulado | null>(null);
   const [verGabarito, setVerGabarito] = useState(false);
+  // Item 16.2: com a variável ligada, o simulado só começa depois de o aluno
+  // dizer qual idioma vai fazer. Sem escolha, ele veria as questões dos dois
+  // e seria avaliado por questões que nem deveria responder.
+  const [idioma, setIdioma] = useState<"ingles" | "espanhol" | null>(
+    variavelIdioma ? idiomaDoBriefing : null
+  );
 
-  const questao = questoes[indice];
+  // Questões efetivamente na prova DESTE aluno. As do idioma não escolhido
+  // não aparecem, não contam no total e não entram na nota — o servidor
+  // aplica o mesmo corte em submeterSimulado(), então a tela e o cálculo
+  // nunca divergem.
+  const questoesDaProva = useMemo(
+    () => (variavelIdioma ? filtrarPorIdioma(questoes, idioma) : questoes),
+    [questoes, variavelIdioma, idioma]
+  );
+
+  // Item 17.2: a redação é o último item, depois das questões objetivas.
+  const totalItens = questoesDaProva.length + (redacao ? 1 : 0);
+  const naRedacao = Boolean(redacao) && indice >= questoesDaProva.length;
+  const questao = questoesDaProva[indice];
 
   async function enviar() {
     if (enviando || resultado) return;
     setEnviando(true);
-    const res = await submeterSimulado(simuladoId, respostas);
+    const res = await submeterSimulado(simuladoId, respostas, idioma);
     setResultado(res);
     setEnviando(false);
   }
@@ -73,7 +107,7 @@ export function SimuladoRunner({
     return (
       <div>
         <div className="rounded-2xl bg-white p-8 text-center shadow">
-          <span className="text-4xl">🏁</span>
+          <span className="mx-auto block h-1 w-10 rounded-full bg-orange" />
           <h1 className="mt-2 font-display text-2xl font-bold text-navy-dark">Simulado concluído!</h1>
           <p className="mt-2 text-navy-dark/70">
             Você acertou {resultado.acertos} de {resultado.total} questões.
@@ -96,10 +130,10 @@ export function SimuladoRunner({
               {verGabarito ? "Esconder gabarito comentado" : "Ver gabarito comentado"}
             </button>
             <Link
-              href="/aluno/simulados"
+              href="/aluno/atividades"
               className="rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5"
             >
-              Voltar aos simulados
+              Voltar às atividades
             </Link>
           </div>
         </div>
@@ -177,25 +211,60 @@ export function SimuladoRunner({
   }
 
   // ---------- TELA DA PROVA ----------
+  // ---------- ESCOLHA DE IDIOMA (item 16.2) ----------
+  // Vem antes de tudo, inclusive do cronômetro: o tempo só começa a correr
+  // depois que o aluno sabe qual prova vai fazer.
+  if (variavelIdioma && !idioma) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow">
+        <h1 className="font-display text-xl font-bold text-navy-dark">{titulo}</h1>
+        <p className="mt-3 text-sm text-navy-dark/70">
+          Este simulado tem questões de língua estrangeira. Qual idioma você vai fazer?
+        </p>
+        <p className="mt-1 text-xs text-navy-dark/50">
+          Você responde apenas às questões do idioma escolhido, e só elas contam na sua nota.
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          {([
+            { valor: "ingles", rotulo: "Inglês" },
+            { valor: "espanhol", rotulo: "Espanhol" }
+          ] as const).map((op) => (
+            <button
+              key={op.valor}
+              onClick={() => setIdioma(op.valor)}
+              className="rounded-xl border-2 border-navy/15 p-4 font-display font-bold text-navy-dark transition hover:border-orange hover:bg-orange/5"
+            >
+              {op.rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow">
         <div>
           <p className="font-display font-bold text-navy-dark">{titulo}</p>
-          <p className="text-xs text-navy-dark/50">{respondidas} de {questoes.length} respondidas</p>
+          <p className="text-xs text-navy-dark/50">
+            {respondidas} de {questoesDaProva.length} respondidas
+            {redacao ? " · + redação" : ""}
+            {idioma ? ` · ${idioma === "ingles" ? "Inglês" : "Espanhol"}` : ""}
+          </p>
         </div>
         <span
           className={`rounded-full px-4 py-2 font-display text-lg font-bold ${
             segundosRestantes < 60 ? "bg-red-50 text-red-600" : "bg-navy/5 text-navy-dark"
           }`}
         >
-          ⏱️ {tempoFormatado}
+          {tempoFormatado}
         </span>
       </div>
 
-      {/* Grade de navegação entre questões */}
+      {/* Grade de navegação entre questões (+ redação no fim, se houver) */}
       <div className="mt-4 flex flex-wrap gap-2">
-        {questoes.map((q, i) => (
+        {questoesDaProva.map((q, i) => (
           <button
             key={q.id}
             onClick={() => setIndice(i)}
@@ -210,8 +279,74 @@ export function SimuladoRunner({
             {i + 1}
           </button>
         ))}
+        {redacao && (
+          <button
+            onClick={() => setIndice(questoesDaProva.length)}
+            className={`h-9 rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide ${
+              naRedacao ? "bg-orange text-white" : "bg-white text-navy-dark shadow"
+            }`}
+          >
+            Redação
+          </button>
+        )}
       </div>
 
+      {/* ---------- REDAÇÃO (item 17) ----------
+          Só a proposta. Não existe campo de digitação nem upload aqui de
+          propósito: o aluno escreve à mão, dentro do mesmo cronômetro, e
+          envia depois pelo fluxo de correção que já existe. */}
+      {naRedacao && redacao ? (
+        <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
+          <span className="rounded-full bg-orange/10 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-orange">
+            Redação
+          </span>
+          <h2 className="mt-4 font-display text-lg font-bold text-navy-dark">{redacao.tema}</h2>
+
+          {redacao.textos_motivadores && (
+            <div className="mt-4">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Textos motivadores</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-navy-dark">
+                {redacao.textos_motivadores}
+              </p>
+            </div>
+          )}
+
+          {redacao.instrucoes && (
+            <div className="mt-4">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Instruções</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-navy-dark">{redacao.instrucoes}</p>
+            </div>
+          )}
+
+          <div className="mt-5 rounded-xl bg-navy/5 p-4 text-sm leading-relaxed text-navy-dark/80">
+            <p className="font-bold text-navy-dark">Como fazer esta redação</p>
+            <p className="mt-1">
+              Não há espaço para escrever aqui na plataforma. Escreva à mão, no caderno, durante o próprio tempo deste
+              simulado — o cronômetro acima é o mesmo. Ao terminar, você pode enviar sua redação para a professora pelo
+              fluxo de correção em <span className="font-semibold">Redação</span>.
+            </p>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between">
+            <button
+              onClick={() => setIndice((i) => Math.max(0, i - 1))}
+              className="rounded-full border border-navy/20 px-5 py-2.5 font-semibold text-navy-dark"
+            >
+              ← Anterior
+            </button>
+            <button
+              onClick={() => {
+                if (confirm(`Enviar o simulado? Você respondeu ${respondidas} de ${questoesDaProva.length} questões.`))
+                  enviar();
+              }}
+              disabled={enviando}
+              className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark disabled:opacity-60"
+            >
+              {enviando ? "Enviando..." : "Enviar simulado"}
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
         <span className="rounded-full bg-navy/5 px-3 py-1 text-xs font-semibold text-navy-dark/60">{questao.materia}</span>
         <p className="mt-4 whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
@@ -241,26 +376,28 @@ export function SimuladoRunner({
             ← Anterior
           </button>
 
-          {indice < questoes.length - 1 ? (
+          {indice < totalItens - 1 ? (
             <button
               onClick={() => setIndice((i) => i + 1)}
               className="rounded-full bg-navy px-5 py-2.5 font-semibold text-white"
             >
-              Próxima →
+              {indice === questoesDaProva.length - 1 && redacao ? "Ir para a redação →" : "Próxima →"}
             </button>
           ) : (
             <button
               onClick={() => {
-                if (confirm(`Enviar o simulado? Você respondeu ${respondidas} de ${questoes.length} questões.`)) enviar();
+                if (confirm(`Enviar o simulado? Você respondeu ${respondidas} de ${questoesDaProva.length} questões.`))
+                  enviar();
               }}
               disabled={enviando}
               className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark disabled:opacity-60"
             >
-              {enviando ? "Enviando..." : "Enviar simulado ✓"}
+              {enviando ? "Enviando..." : "Enviar simulado"}
             </button>
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
