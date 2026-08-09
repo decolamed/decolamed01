@@ -175,7 +175,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     qMateria: null,
     resetConfirmando: false,
     resetEmAndamento: false,
-    rankTab: "geral",
     achTab: "brasoes",
     notifOpen: false,
     moreOpen: false,
@@ -1682,7 +1681,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       { k: "plano", ic: "calendar", t: "Cronograma" },
       { k: "estudos", ic: "book", t: "Estudos" },
       { k: "questoes", ic: "target", t: "Questões" },
-      { k: "simulados", ic: "file", t: "Simulados" },
       { k: "flashcards-select", ic: "cards", t: "Flashcards" },
       { k: "atividades", ic: "target", t: "Atividades", href: "/aluno/atividades" },
       { k: "copiloto", ic: "bot", t: "Copiloto IA" },
@@ -1918,7 +1916,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // `href` = rota real do Next; sem `href`, é uma tela interna da SPA.
     const items: { k: string; ic: string; t: string; href?: string }[] = [
       { k: "questoes", ic: "target", t: "Questões" },
-      { k: "simulados", ic: "file", t: "Simulados" },
       { k: "atividades", ic: "target", t: "Atividades", href: "/aluno/atividades" },
       { k: "copiloto", ic: "bot", t: "Copiloto IA" },
       { k: "plano", ic: "calendar", t: "Cronograma" },
@@ -3424,9 +3421,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   scrRanking() {
-    const { C, h, card, chip } = this.ui();
+    const { C, h, card } = this.ui();
     const d = this.data();
-    const t = this.state.rankTab;
     if (!d.ranking.length) {
       return this.screenWrap([
         this.head("Ranking", { back: "mapa" }),
@@ -3440,11 +3436,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const podium = [d.ranking[1], d.ranking[0], d.ranking[2]];
     return this.screenWrap([
       this.head("Ranking", { back: "mapa" }),
-      h("div", { key: "tabs", style: { display: "flex", gap: 8, padding: "6px 18px 4px" } }, [
-        chip("Geral", t === "geral", () => this.setState({ rankTab: "geral" })),
-        chip("Ponderado", t === "facape", () => this.setState({ rankTab: "facape" })),
-        chip("Amigos", t === "amigos", () => this.setState({ rankTab: "amigos" }))
-      ]),
+      // Item 12: as abas "Amigos" e "Ponderado" foram removidas. "Amigos"
+      // supunha uma funcionalidade que não existe (não há como adicionar
+      // outro aluno como amigo) e "Ponderado" não tinha nenhuma seleção que
+      // a justificasse — as duas eram filtros que não filtravam nada. Sobrou
+      // o Ranking Geral, com o mesmo funcionamento de antes.
       h(
         "div",
         { key: "podium", style: { margin: "18px 18px 0", display: "flex", alignItems: "flex-end", gap: 10, justifyContent: "center" } },

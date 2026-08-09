@@ -227,6 +227,13 @@ export interface FlashcardRevisao {
   created_at: string;
 }
 
+/** Proposta de redação anexada a um simulado ou atividade (item 17). */
+export interface PropostaRedacaoSimulado {
+  tema: string;
+  textos_motivadores?: string | null;
+  instrucoes?: string | null;
+}
+
 export interface Simulado {
   id: string;
   titulo: string;
@@ -239,6 +246,17 @@ export interface Simulado {
   valor_total: number;
   /** Nota calculada pelos pesos de `materias_peso` em vez de % de acertos. */
   usar_pesos: boolean;
+  /**
+   * O simulado tem questões de Inglês E de Espanhol; o aluno escolhe uma das
+   * duas ao iniciar e só ela conta na contagem, nos pesos e na nota.
+   */
+  variavel_idioma: boolean;
+  /**
+   * Proposta de redação do simulado. Guarda só o enunciado da proposta — a
+   * plataforma não coleta o texto do aluno, que escreve à mão e envia pelo
+   * fluxo de correção com a professora.
+   */
+  redacao: PropostaRedacaoSimulado | null;
   ativo: boolean;
   criado_por: string | null;
   created_at: string;
