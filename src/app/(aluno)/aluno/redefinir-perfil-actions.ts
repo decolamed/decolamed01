@@ -3,22 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
-import { rodarCopiloto } from "@/lib/copiloto/motor";
 
 /**
- * Zera o histórico de estudo do aluno e reconstrói o perfil a partir do
- * briefing.
+ * Zera a jornada do aluno e o devolve ao estado de conta recém-criada.
  *
  * Apaga: respostas, revisões de flashcards, tentativas de simulado e de
- * atividade, progresso de itens, missões, e tudo que o Copiloto tinha
- * adaptado (recomendações, eventos, check-ins, produções de IA).
+ * atividade, progresso de itens, missões, tudo que o Copiloto tinha
+ * adaptado (recomendações, eventos, check-ins, produções de IA) e o próprio
+ * briefing.
  *
- * Preserva: cadastro, matrícula, plano, créditos de redação, relatos — e o
- * briefing, que é justamente a base usada para gerar o perfil de novo.
+ * Preserva: cadastro e autenticação, matrícula, plano, créditos de redação e
+ * relatos — o item 19 é explícito em manter a conta.
  *
  * A remoção acontece dentro de uma função no banco (redefinir_perfil_aluno)
  * para ser atômica: apagar metade das tabelas deixaria o aluno num estado
  * pior do que o de antes.
+ *
+ * O Copiloto NÃO é executado aqui, de propósito. Ele rodava logo após a
+ * limpeza e, com o briefing ainda preservado, reconstruía missões e
+ * recomendações na mesma hora: a página recarregava e o aluno via a jornada
+ * de volta, com toda a aparência de que o reset não tinha funcionado. A nova
+ * rota nasce quando o aluno responde o briefing de novo (ver
+ * briefing/actions.ts → reprojetarJornada), e aí sem nenhuma influência do
+ * histórico antigo, como pede o item 19.6.
  */
 export async function redefinirPerfilAluno(): Promise<{ ok: true } | { ok: false; erro: string }> {
   const profile = await requireAcessoAluno();
@@ -31,17 +38,9 @@ export async function redefinirPerfilAluno(): Promise<{ ok: true } | { ok: false
     return { ok: false, erro: "Não foi possível redefinir seu perfil. Tente de novo." };
   }
 
-  // Com o histórico zerado, o Copiloto remonta as missões a partir do
-  // briefing. Se falhar, o perfil continua zerado e válido — a próxima
-  // rodada do Copiloto reconstrói —, então não é motivo para dizer ao aluno
-  // que a redefinição não funcionou.
-  try {
-    await rodarCopiloto({ alunoId: profile.id });
-  } catch (e) {
-    console.error("Copiloto não conseguiu regerar o perfil agora:", e);
-  }
-
   revalidatePath("/aluno");
   revalidatePath("/aluno/cronograma");
+  revalidatePath("/aluno/copiloto");
+  revalidatePath("/aluno/briefing");
   return { ok: true };
 }

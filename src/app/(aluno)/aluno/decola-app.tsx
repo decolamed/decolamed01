@@ -220,10 +220,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           prova: b.data_prova || "",
           inicio: b.inicio_estudos || "",
           dias: b.dias_estuda?.length || 5,
-          horas: Math.round(b.horas_por_dia_semana || 3)
+          horas: Math.round(b.horas_por_dia_semana || 3),
+          // Sem padrão: escolher um idioma por conta própria entregaria
+          // metade do conteúdo errado a quem nunca respondeu a pergunta.
+          idioma: (b as { idioma_prova?: string | null }).idioma_prova || ""
         };
       }
-      return { prova: "", inicio: "", dias: 5, horas: 3 };
+      return { prova: "", inicio: "", dias: 5, horas: 3, idioma: "" };
     })(this),
     chat: null,
     chatInput: "",
@@ -1084,9 +1087,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           this.setState({ resetEmAndamento: false });
           return this.avisar(res.erro);
         }
-        // Recarrega para o app voltar com os dados já zerados — manter o
-        // estado antigo em memória mostraria progresso que não existe mais.
-        if (typeof window !== "undefined") window.location.reload();
+        // Vai direto para o briefing, com navegação de página inteira.
+        //
+        // Duas razões. A primeira: o reset apaga também o briefing, então a
+        // próxima coisa que o aluno precisa fazer é montar a nova jornada —
+        // é o passo 4 do que foi pedido. A segunda: só uma navegação
+        // completa descarta o estado que este componente guarda em memória
+        // (missões, recomendações, progresso, sentimentos). Um reload de
+        // /aluno traria a mesma tela com os cartões antigos ainda montados,
+        // que é exatamente a impressão de "o reset não concluiu".
+        if (typeof window !== "undefined") window.location.href = "/aluno/briefing";
       })
       .catch(() => {
         this.setState({ resetEmAndamento: false });
@@ -3880,6 +3890,42 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         row("Início dos estudos", dateInp("inicio")),
         row("Dias por semana", step("dias", 1, 7, " dias")),
         row("Horas por dia", step("horas", 1, 12, "h")),
+
+        // Idioma da prova. A mesma pergunta existe no briefing de primeiro
+        // acesso (briefing-wizard.tsx) e precisa existir aqui também: é por
+        // esta tela que o aluno recalibra o voo, e trocar de Inglês para
+        // Espanhol tem de ser possível sem passar pelo onboarding de novo.
+        h("div", { key: "lbi", style: { fontSize: 12.5, fontWeight: 700, color: C.sub, margin: "14px 0 4px" } }, "Qual idioma você fará na prova?"),
+        h("div", { key: "lbi2", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginBottom: 9 } }, "Você recebe questões, flashcards e missões apenas do idioma escolhido."),
+        h(
+          "div",
+          { key: "idi", style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 4 } },
+          [
+            { valor: "ingles", rotulo: "Inglês" },
+            { valor: "espanhol", rotulo: "Espanhol" }
+          ].map((op) =>
+            h(
+              "div",
+              {
+                key: op.valor,
+                onClick: () => save({ ...B, idioma: op.valor }),
+                style: {
+                  padding: "12px 10px",
+                  borderRadius: 13,
+                  textAlign: "center",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  background: B.idioma === op.valor ? C.orange : C.card,
+                  color: B.idioma === op.valor ? "#fff" : C.txt,
+                  border: "1px solid " + (B.idioma === op.valor ? C.orange : C.line)
+                }
+              },
+              op.rotulo
+            )
+          )
+        ),
+
         h("div", { key: "lb", style: { fontSize: 12.5, fontWeight: 700, color: C.sub, margin: "10px 0 8px" } }, "Como você se sente em cada matéria?"),
         h("div", { key: "lb2", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginBottom: 10 } }, "Toque para alternar: Domínio (facilidade) → Atenção → Turbulência (dificuldade). O algoritmo usa isso para priorizar seu cronograma."),
         h(
@@ -3970,6 +4016,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     fd.set("inicio_estudos", B.inicio || "");
     fd.set("dias_por_semana", String(B.dias || 5));
     fd.set("horas_por_dia", String(B.horas || 3));
+    fd.set("idioma_prova", B.idioma || "");
     Object.entries(this.state.feels as Record<string, string>).forEach(([materia, sentimento]) => {
       fd.set("sentimento_" + materia, sentimento);
     });

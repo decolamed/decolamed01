@@ -21,6 +21,7 @@ interface Props {
     inicio_estudos: string | null;
     horas_por_dia_semana: number | null;
     dias_estuda: string[] | null;
+    idioma_prova: string | null;
     sentimentos: Record<string, Sentimento> | null;
   } | null;
   erro?: string;
@@ -42,6 +43,14 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
   const [inicioEstudos, setInicioEstudos] = useState(briefingInicial?.inicio_estudos ?? "");
   const [dias, setDias] = useState(briefingInicial?.dias_estuda?.length ?? 5);
   const [horas, setHoras] = useState(briefingInicial?.horas_por_dia_semana ?? 3);
+  // Idioma da prova: sem resposta, a plataforma não sabe se entrega Inglês
+  // ou Espanhol e acaba misturando os dois. Começa vazio de propósito — não
+  // há padrão sensato aqui, é escolha do aluno.
+  const [idioma, setIdioma] = useState<"" | "ingles" | "espanhol">(
+    briefingInicial?.idioma_prova === "ingles" || briefingInicial?.idioma_prova === "espanhol"
+      ? briefingInicial.idioma_prova
+      : ""
+  );
   const [sentimentos, setSentimentos] = useState<Record<string, Sentimento>>(
     () => {
       const inicial: Record<string, Sentimento> = {};
@@ -57,7 +66,9 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
     setSentimentos((s) => ({ ...s, [materia]: PROXIMO[s[materia] ?? "Atenção"] }));
   }
 
-  const podeAvancar = step === 0 || (step === 1 && Boolean(dataProva));
+  // O idioma entra na condição de avanço junto com a data da prova: são os
+  // dois dados sem os quais a rota não pode ser montada corretamente.
+  const podeAvancar = step === 0 || (step === 1 && Boolean(dataProva) && Boolean(idioma));
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white">
@@ -124,6 +135,36 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
               </LinhaBriefing>
             </div>
 
+            {/* Idioma da prova. A prova traz questões de língua estrangeira e
+                o aluno faz apenas uma das duas — a escolha define qual
+                conteúdo ele recebe em questões, flashcards e cronograma. */}
+            <p className="mt-6 text-xs font-bold uppercase tracking-wide text-navy-dark/70">
+              Qual idioma você fará na prova?
+            </p>
+            <p className="mt-1 text-xs text-navy-dark/50">
+              Você recebe conteúdo apenas do idioma escolhido. Dá para mudar depois em Recalibrar Voo.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {([
+                { valor: "ingles", rotulo: "Inglês" },
+                { valor: "espanhol", rotulo: "Espanhol" }
+              ] as const).map((op) => (
+                <button
+                  key={op.valor}
+                  type="button"
+                  onClick={() => setIdioma(op.valor)}
+                  aria-pressed={idioma === op.valor}
+                  className={`rounded-xl border p-3 text-sm font-bold transition ${
+                    idioma === op.valor
+                      ? "border-orange bg-orange text-white"
+                      : "border-navy/10 bg-white text-navy-dark hover:bg-navy/5"
+                  }`}
+                >
+                  {op.rotulo}
+                </button>
+              ))}
+            </div>
+
             <p className="mt-6 text-xs font-bold uppercase tracking-wide text-navy-dark/70">
               Como você se sente em cada matéria?
             </p>
@@ -164,6 +205,7 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
               fd.set("inicio_estudos", inicioEstudos);
               fd.set("dias_por_semana", String(dias));
               fd.set("horas_por_dia", String(horas));
+              fd.set("idioma_prova", idioma);
               Object.entries(sentimentos).forEach(([m, s]) => fd.set(`sentimento_${m}`, s));
               await salvarBriefing(fd);
             }}

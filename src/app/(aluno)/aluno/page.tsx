@@ -5,6 +5,7 @@ import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
+import { filtrarPorIdioma, normalizarIdioma, textoAdaptadoAoIdioma } from "@/lib/site/idioma-aluno";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO, somarDias } from "@/lib/site/data";
@@ -105,6 +106,7 @@ export default async function AlunoHomePage() {
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
     supabase.from("questoes").select("*").eq("ativo", true).order("materia").order("created_at"),
     supabase.from("flashcards").select("*").eq("ativo", true).order("ordem", { ascending: true, nullsFirst: false }),
+
     supabase.from("simulados").select("*").eq("ativo", true),
     // Sem resposta_correta: essas linhas viram props de um Client Component
     // (o app do aluno inteiro), e tudo que vai pra props chega ao HTML/JS do
@@ -171,6 +173,10 @@ export default async function AlunoHomePage() {
   // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
   // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
   // aula já corrigida pelo admin em "Cursos e Aulas".
+  // Idioma escolhido no briefing. Governa tudo que é de língua estrangeira
+  // daqui pra baixo: acervo, cronograma e textos.
+  const idiomaAluno = normalizarIdioma((briefingData as { idioma_prova?: string | null } | null)?.idioma_prova);
+
   const diasResolvidos = await resolverCronograma(
     ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
   );
@@ -180,11 +186,26 @@ export default async function AlunoHomePage() {
   // até a prova recebia a mesma trilha de 40 dias do Plano Decolando e
   // metade do conteúdo caía depois da prova. O Decolando não é afetado — ver
   // lib/trilha/ajuste-voo-guiado.ts.
-  const { dias: todosDias, compactado: cronogramaCompactado } = ajustarCronogramaAoAluno(diasResolvidos, {
+  const { dias: diasAjustados, compactado: cronogramaCompactado } = ajustarCronogramaAoAluno(diasResolvidos, {
     temCopiloto,
     briefing: briefingData as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
     hojeStr
   });
+
+  // Personalização por idioma no cronograma (item 15.4). O cronograma-base é
+  // o mesmo para todos e traz itens genéricos como "5 questões de
+  // Inglês/Espanhol": aqui o item some para quem não faz aquele idioma, e o
+  // texto genérico passa a citar só o idioma do aluno — o rótulo acompanha o
+  // conteúdo que ele de fato vai abrir.
+  const todosDias = idiomaAluno
+    ? diasAjustados.map((dia) => ({
+        ...dia,
+        itens: filtrarPorIdioma(dia.itens ?? [], idiomaAluno).map((item) => ({
+          ...item,
+          titulo: textoAdaptadoAoIdioma(item.titulo, idiomaAluno)
+        }))
+      }))
+    : diasAjustados;
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
@@ -230,8 +251,12 @@ export default async function AlunoHomePage() {
       whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
       dados={{
         temCopiloto,
-        questoes: (questoesData as Questao[]) ?? [],
-        flashcards: (flashcardsData as Flashcard[]) ?? [],
+        // Filtrados pelo idioma escolhido no briefing: quem faz Inglês não
+        // recebe questão nem flashcard de Espanhol em lugar nenhum do app.
+        // Quem ainda não respondeu continua vendo os dois — ver
+        // lib/site/idioma-aluno.ts.
+        questoes: filtrarPorIdioma((questoesData as Questao[]) ?? [], idiomaAluno),
+        flashcards: filtrarPorIdioma((flashcardsData as Flashcard[]) ?? [], idiomaAluno),
         simulados: (simuladosData as Simulado[]) ?? [],
         simuladoQuestoesCount: (simuladoQuestoesData ?? []).reduce((acc: Record<string, number>, r: any) => {
           acc[r.simulado_id] = (acc[r.simulado_id] ?? 0) + 1;
