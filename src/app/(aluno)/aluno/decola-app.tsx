@@ -17,7 +17,7 @@ import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
-import { mesmaMateria, materiaCanonica } from "@/lib/site/materia-canonica";
+import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -64,6 +64,11 @@ interface DecolaAppDados {
   // Dias já passados do cronograma. Ficam visíveis (recolhidos) para o aluno
   // consultar e concluir o que ficou para trás.
   trilhaAnteriores: TrilhaDia[];
+  // O cronograma-base foi projetado na janela real deste aluno (Voo Guiado
+  // com menos dias até a prova do que a trilha original tem). Serve para a
+  // tela avisar que os dias vêm agrupados — sem o aviso, o aluno acharia que
+  // sumiu conteúdo.
+  cronogramaCompactado?: boolean;
   progressoItens: Record<string, AlunoProgressoItem>;
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
@@ -237,6 +242,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // automático, mas nada indicava isso na tela.
     notaStatus: null as null | "salvando" | "salvo",
     errSent: false,
+    // Gravação em curso: trava o botão para não gerar relato duplicado e
+    // impede que a tela de sucesso apareça antes da confirmação do banco.
+    errEnviando: false,
     errText: "",
     errCat: "Questão",
     tutStep: 0,
@@ -1010,9 +1018,30 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       }
       this.montarRevisao(alvo, m.assunto || alvo);
     } else if (m.tipo === "aula") {
-      const conteudo = m.ref_id ? this.props.dados.conteudos.find((c) => c.id === m.ref_id) : null;
+      // Ordem de resolução, da mais precisa para a mais tolerante:
+      //
+      //   1. o ref_id gravado pelo Copiloto (o caminho normal desde que
+      //      resolverConteudoMissao() passou a preenchê-lo);
+      //   2. a aula com o mesmo título — cobre as missões antigas, criadas
+      //      quando o ref_id ficava nulo;
+      //   3. qualquer aula da mesma matéria.
+      //
+      // Antes só o passo 1 existia, e como TODAS as missões de aula tinham
+      // ref_id nulo, o clique caía sempre em "Esta aula não está mais
+      // disponível" — a aula existia, o vínculo é que nunca foi gravado.
+      const aulas = this.props.dados.conteudos.filter((c) => c.url);
+      const porTitulo = (t: string) =>
+        aulas.find((c) => c.titulo === t) ??
+        aulas.find((c) => t.includes(c.titulo)) ??
+        null;
+      const conteudo =
+        (m.ref_id ? aulas.find((c) => c.id === m.ref_id) : null) ??
+        porTitulo(m.titulo) ??
+        (m.materia ? aulas.find((c) => mesmaMateria(c.materia, m.materia)) : null);
+
       if (conteudo) this.abrirAula(conteudo.id, conteudo.titulo, conteudo.url || "", "mapa");
-      else this.avisar("Esta aula não está mais disponível. Veja as aulas atuais em Estudos.");
+      else if (m.materia) this.avisar(`Ainda não há aulas de ${m.materia} publicadas.`);
+      else this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "mapa" });
     } else this.nav("estudos");
   }
   toggleMissao(id: string) {
@@ -1104,9 +1133,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       });
     });
     this.missoesHoje().forEach((m) => list.push(this.itemDeMissao(m)));
+
+    // A revisão sugerida pelo Copiloto é o único item da sequência que não
+    // nasce de uma linha do banco — ela é derivada do desempenho a cada
+    // render. Sem uma chave de progresso ela ficava com `done: false` fixo e
+    // `toggle: null`: o aluno fazia a revisão e ela reaparecia intacta no
+    // dia seguinte, sem jeito de marcar. Agora usa a mesma trilha de
+    // progresso dos demais itens (aluno_progresso_itens), então some da
+    // pendência e permanece marcada entre sessões.
     const pr0 = this.priorities();
-    if (pr0.length) list.push({ id: "rev-copiloto", ic: "bot", t: "Revisão do Copiloto · " + pr0[0].tema, d: "Maior ganho de nota agora · " + pr0[0].why, ia: true, done: false, act: () => this.startReview(), toggle: null });
+    if (pr0.length) {
+      const chave = this.chaveDaRevisaoDoCopiloto(pr0[0].mat, this.props.dados.hojeStr);
+      list.push({
+        id: "rev-copiloto",
+        ic: "bot",
+        t: "Revisão do Copiloto · " + pr0[0].tema,
+        d: "Maior ganho de nota agora · " + pr0[0].why,
+        ia: true,
+        done: this.estaConcluido(chave),
+        act: () => this.startReview(),
+        toggle: () => this.toggleItemGenerico(chave)
+      });
+    }
     return list;
+  }
+
+  /**
+   * Chave de progresso da revisão diária do Copiloto.
+   *
+   * Inclui a data para que a revisão de hoje não herde a marcação de ontem —
+   * cada dia é uma tarefa nova — e a matéria para que trocar o foco do
+   * Copiloto gere uma pendência nova em vez de reaproveitar a anterior.
+   */
+  chaveDaRevisaoDoCopiloto(materia: string, data: string): string {
+    return `revisao-copiloto:${data}:${chaveMateria(materia)}`;
   }
   nav(screen: string, extra?: any) {
     this.setState({ screen, practice: false, reviewMode: false, revFinished: false, moreOpen: false, notifOpen: false, simView: null, ...extra });
@@ -2830,8 +2890,24 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // registrarResposta() — mesma checagem segura da prática normal.
   montarRevisao(materia: string, tema: string) {
     const pool = this.props.dados.questoes.map((q) => this.mapQuestao(q));
-    const mesmoAssunto = pool.filter((q) => q.tema === tema);
-    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : pool.filter((q) => mesmaMateria(q.materia, materia));
+
+    // A matéria é o primeiro filtro, sempre.
+    //
+    // Antes o assunto era procurado no acervo INTEIRO (`q.tema === tema`,
+    // sem olhar a matéria) e só se achasse menos de três é que caía para a
+    // matéria. Como o mesmo assunto existe em matérias diferentes —
+    // "Interpretação de Texto" e "Gramática · Verbos" aparecem em
+    // Linguagens, Inglês e Espanhol —, uma revisão intitulada "Física"
+    // podia abrir com questões de Espanhol. O título vinha da recomendação
+    // do Copiloto e as questões vinham de outro lugar: os dois lados da
+    // cadeia não estavam amarrados.
+    const daMateria = materia ? pool.filter((q) => mesmaMateria(q.materia, materia)) : pool;
+    const mesmoAssunto = daMateria.filter((q) => q.tema === tema);
+
+    // Dentro da matéria certa, prefere o assunto exato; se houver pouca
+    // coisa daquele assunto, completa com o resto da MESMA matéria.
+    const base = mesmoAssunto.length >= 3 ? mesmoAssunto : daMateria;
+
     const embaralhado = [...base].sort(() => Math.random() - 0.5).slice(0, 5);
     this.setState({ reviewMode: true, revPool: embaralhado, revIdx: 0, revPicked: null, revDone: false, revResult: null, revScore: 0, revFinished: false });
   }
@@ -3762,7 +3838,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   () => this.nav("tutorial", { tutStep: 0 }),
                   () => window.open(this.props.whatsappSuporte, "_blank", "noopener,noreferrer"),
                   () => this.setState({ screen: "tutorial", tutStep: 0 }),
-                  () => this.setState({ errOpen: true, errSent: false, errText: "", errCat: "Outro" })
+                  () => this.setState({ errOpen: true, errSent: false, errEnviando: false, errText: "", errCat: "Outro" })
                 ][i],
                 style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 4 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
@@ -4175,6 +4251,27 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 ])
               ])
             ])
+          )
+        : null,
+      // Rota ajustada ao tempo real (Voo Guiado). Sem este aviso, um aluno
+      // que vê "Dia 3 de 20" onde a trilha original tem 40 dias concluiria
+      // que perdeu material — quando na verdade os dias foram agrupados
+      // para caber até a data da prova, sem descartar nada.
+      this.props.dados.cronogramaCompactado
+        ? h(
+            "div",
+            {
+              key: "avisoCompacto",
+              style: { margin: "12px 18px 0", padding: "11px 14px", borderRadius: 13, background: C.chip, display: "flex", gap: 9, alignItems: "flex-start" }
+            },
+            [
+              I("bot", 15, C.orange),
+              h(
+                "span",
+                { key: "t", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.5 } },
+                "Sua rota foi ajustada ao tempo que você tem até a prova: os dias do cronograma foram agrupados para caber na sua janela, respeitando as horas por dia que você informou. Nenhum conteúdo foi removido."
+              )
+            ]
           )
         : null,
       // Dias já passados, recolhidos atrás de um toque. Ficam acessíveis para
@@ -4855,7 +4952,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const { C, h, I } = this.ui();
     return h(
       "div",
-      { key: "erri", onClick: () => this.setState({ errOpen: true, errSent: false, errText: "" }), style: { display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "9px 0", cursor: "pointer", color: C.faint, fontSize: 11, fontWeight: 800 } },
+      { key: "erri", onClick: () => this.setState({ errOpen: true, errSent: false, errEnviando: false, errText: "" }), style: { display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "9px 0", cursor: "pointer", color: C.faint, fontSize: 11, fontWeight: 800 } },
       [I("alert", 13, C.faint), label || "Comunicar erro nesta questão"]
     );
   }
@@ -4885,7 +4982,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 h(
                   "div",
                   { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 6, lineHeight: 1.6 } },
-                  "Seu comunicado foi enviado ao e-mail configurado pela equipe e salvo no painel administrativo. Obrigado por ajudar a melhorar a Decola Med, piloto!"
+                  // Antes esta frase dizia que o relato tinha sido enviado
+                  // "ao e-mail configurado pela equipe". Não existe nenhum
+                  // campo para cadastrar esse e-mail e nenhum e-mail é
+                  // disparado — a mensagem prometia um canal inexistente. O
+                  // destino real é a fila em /admin/relatos, e é isso que o
+                  // aluno passa a ler.
+                  "Seu comunicado foi registrado na fila de atendimento da equipe. Obrigado por ajudar a melhorar a Decola Med, piloto!"
                 ),
                 btn("FECHAR", () => this.setState({ errOpen: false }), { marginTop: 16 })
               ])
@@ -4913,34 +5016,42 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 ...auto.map((r, i) => h("div", { key: i, style: { display: "flex", gap: 8, fontSize: 10.5, fontWeight: 600, color: C.sub, padding: "2px 0" } }, [h("span", { key: "a", style: { fontWeight: 800, color: C.txt } }, r[0] + ":"), r[1]]))
               ]),
               btn(
-                "ENVIAR RELATO",
+                S.errEnviando ? "ENVIANDO..." : "ENVIAR RELATO",
                 () => {
-                  if (!S.errText.trim()) return;
+                  if (!S.errText.trim() || S.errEnviando) return;
                   const texto = S.errText;
                   const cat = S.errCat;
                   const tela = S.screen;
-                  this.setState({ errSent: true });
+
                   // No modo demonstração não existe relato de verdade pra
                   // registrar (quem está vendo não é um aluno de verdade).
-                  if (!this.props.demoMode) {
-                    // A tela mostra "enviado" antes da resposta (a UX do
-                    // protótipo original), mas se a gravação falhar o aluno
-                    // PRECISA saber: antes o erro só ia para o console e o
-                    // relato se perdia com o aluno achando que tinha enviado.
-                    enviarRelatoErro(texto, cat, tela)
-                      .then((res) => {
-                        if (!res.ok) {
-                          this.setState({ errSent: false });
-                          this.avisar("Não foi possível enviar seu relato. Tente de novo.");
-                        }
-                      })
-                      .catch(() => {
-                        this.setState({ errSent: false });
-                        this.avisar("Não foi possível enviar seu relato. Tente de novo.");
-                      });
+                  if (this.props.demoMode) {
+                    this.setState({ errSent: true });
+                    return;
                   }
+
+                  // "Enviado" só aparece DEPOIS que o banco confirma a
+                  // gravação. Antes a tela de sucesso subia junto com a
+                  // chamada: numa falha de rede o aluno via "Relato
+                  // enviado!" por um instante e nada chegava ao painel — o
+                  // exato relato de "confirma o envio mas o admin não
+                  // recebe". Agora o que o aluno lê corresponde ao que
+                  // existe no banco.
+                  this.setState({ errEnviando: true });
+                  enviarRelatoErro(texto, cat, tela)
+                    .then((res) => {
+                      if (res.ok) this.setState({ errSent: true, errEnviando: false });
+                      else {
+                        this.setState({ errEnviando: false });
+                        this.avisar("Não foi possível enviar seu relato. Tente de novo.");
+                      }
+                    })
+                    .catch(() => {
+                      this.setState({ errEnviando: false });
+                      this.avisar("Não foi possível enviar seu relato. Tente de novo.");
+                    });
                 },
-                { marginTop: 14, opacity: S.errText.trim() ? 1 : 0.45 }
+                { marginTop: 14, opacity: S.errText.trim() && !S.errEnviando ? 1 : 0.45 }
               )
             ]
       )

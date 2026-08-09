@@ -4,6 +4,7 @@ import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
+import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO, somarDias } from "@/lib/site/data";
@@ -170,9 +171,20 @@ export default async function AlunoHomePage() {
   // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
   // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
   // aula já corrigida pelo admin em "Cursos e Aulas".
-  const todosDias = await resolverCronograma(
+  const diasResolvidos = await resolverCronograma(
     ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
   );
+
+  // Plano Voo Guiado: projeta o cronograma-base na janela real do aluno
+  // (início → prova, só nos dias que ele estuda). Sem isto, quem tem 20 dias
+  // até a prova recebia a mesma trilha de 40 dias do Plano Decolando e
+  // metade do conteúdo caía depois da prova. O Decolando não é afetado — ver
+  // lib/trilha/ajuste-voo-guiado.ts.
+  const { dias: todosDias, compactado: cronogramaCompactado } = ajustarCronogramaAoAluno(diasResolvidos, {
+    temCopiloto,
+    briefing: briefingData as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
+    hojeStr
+  });
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
@@ -239,6 +251,11 @@ export default async function AlunoHomePage() {
         trilhaHoje,
         trilhaProximos,
         trilhaAnteriores,
+        // O cronograma-base foi projetado na janela real deste aluno (Voo
+        // Guiado com menos dias até a prova do que a trilha tem). A tela usa
+        // isto para explicar por que os dias vêm agrupados, em vez de deixar
+        // o aluno achando que perdeu conteúdo.
+        cronogramaCompactado,
         // dia_numero de hoje: é o que permite converter a régua relativa do
         // cronograma ("Dia 1", "Dia 2") em datas de calendário na tela.
         diaTrilhaHoje,

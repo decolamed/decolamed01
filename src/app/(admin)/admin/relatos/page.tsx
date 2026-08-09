@@ -18,10 +18,19 @@ export default async function AdminRelatosPage() {
   // contadores e para o filtro funcionarem. Antes havia um .eq("status",
   // "pendente") aqui, e por isso marcar um relato como resolvido o fazia
   // sumir — na prática, equivalia a apagar.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("relatos_erro")
     .select("id, mensagem, pagina, status, created_at, profiles(nome, email)")
     .order("created_at", { ascending: false });
+
+  // A consulta usa o vínculo `profiles(...)`, que depende da chave
+  // estrangeira relatos_erro.aluno_id → profiles.id. Se esse vínculo se
+  // perder, o PostgREST devolve erro e `data` vem nulo: a tela mostraria
+  // "nenhum relato" com a fila cheia no banco. Um erro registrado é
+  // diagnosticável; uma lista vazia em silêncio parece "o aluno não enviou".
+  if (error) {
+    console.error("Falha ao carregar a fila de relatos:", error.message);
+  }
 
   const relatos: RelatoExibicao[] = (data ?? []).map((r: any) => {
     // A categoria vem embutida no início da mensagem como "[Questão] texto…".
