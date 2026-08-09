@@ -28,7 +28,11 @@ export const MATERIAS_OFICIAIS = [
   "Física",
   "Geografia",
   "História",
-  "Inglês/Espanhol",
+  // Inglês e Espanhol são matérias separadas de propósito: `materia` é o
+  // critério de seleção de conteúdo, então um único rótulo "Inglês/Espanhol"
+  // entregava questão de Espanhol para quem estuda Inglês.
+  "Inglês",
+  "Espanhol",
   "Matemática",
   "Linguagens",
   "Química",
@@ -123,9 +127,14 @@ const TERMOS: Record<MateriaOficial, string[]> = {
     "biomas brasileiros", "desenvolvimento sustentavel", "impactos ambientais",
     "problemas ambientais", "agronegocio", "industrializacao", "blocos economicos"
   ],
-  "Inglês/Espanhol": [
-    "ingles", "espanhol", "english", "spanish", "reading", "vocabulary", "verb tenses",
-    "present perfect", "simple past", "phrasal verb", "false friends", "interpretacao em ingles"
+  "Inglês": [
+    "ingles", "english", "reading comprehension", "verb tenses", "present perfect",
+    "simple past", "phrasal verb", "false friends", "interpretacao em ingles",
+    "lingua inglesa", "passive voice", "reported speech", "modal verbs", "if clauses"
+  ],
+  "Espanhol": [
+    "espanhol", "espanol", "spanish", "lingua espanhola", "muy e mucho",
+    "preterito imperfecto", "interpretacao em espanhol", "pronomes complementos"
   ],
   Redação: ["redacao", "dissertativo", "argumentativo", "proposta de intervencao", "competencia"]
 };

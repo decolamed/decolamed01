@@ -40,11 +40,9 @@ export async function getMateriasDoConteudo(): Promise<string[]> {
 
   // Só questões e flashcards, de propósito: é exatamente por esses nomes
   // que o Copiloto procura o sentimento (`sentimentos[questoes.materia]`).
-  // `materias_peso` ficou de fora porque serve a outra finalidade (peso na
-  // nota) e hoje tem nomes agrupados como "Inglês/Espanhol" — incluí-la
-  // faria o aluno ver "Inglês", "Espanhol" E "Inglês/Espanhol" na mesma
-  // lista, e a autoavaliação do nome agrupado não casaria com questão
-  // nenhuma. Ver o aviso de nomes divergentes em /admin/copiloto/pesos.
+  // `materias_peso` serve a outra finalidade (peso na nota) e fica de fora;
+  // o aviso de nomes divergentes em /admin/copiloto/pesos é quem cobra que
+  // os dois conjuntos continuem batendo.
   const [{ data: questoes }, { data: flashcards }] = await Promise.all([
     supabase.from("questoes").select("materia").eq("ativo", true),
     supabase.from("flashcards").select("materia").eq("ativo", true)

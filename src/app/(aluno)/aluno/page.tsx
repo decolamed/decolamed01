@@ -29,7 +29,20 @@ import type {
   ImagemQuestao
 } from "@/types/database";
 
-const POOL_LIMITE = 60;
+// Antes existia aqui um `POOL_LIMITE = 60` aplicado a questões e flashcards.
+//
+// Era a causa de três sintomas que pareciam separados: o aluno via 60
+// flashcards de 352; o Banco de Questões mostrava "Biologia — 28" quando há
+// 82; e Química e Linguagens simplesmente não apareciam como matéria. Como
+// o corte pegava as 60 primeiras linhas numa ordem que o Postgres não
+// garante, matérias inteiras ficavam de fora e as contagens exibidas eram
+// as do recorte, não as do banco.
+//
+// Sem corte, o payload medido é 542 kB de questões e 57 kB de flashcards
+// (texto cru, antes do gzip) — cabe folgado. Se o banco crescer a alguns
+// milhares de questões, a saída é paginar por matéria sob demanda, nunca
+// voltar a truncar em silêncio: truncar aqui não deixa rastro nenhum na
+// tela, que é o que tornou esse defeito tão difícil de enxergar.
 
 export default async function AlunoHomePage() {
   // Camada 2 de proteção (a camada 1 é o middleware): garante que mesmo que
@@ -89,8 +102,8 @@ export default async function AlunoHomePage() {
     supabase.from("configuracoes").select("valor").eq("chave", "site.contato.whatsapp").maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "redacao.whatsapp").maybeSingle(),
     supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
-    supabase.from("questoes").select("*").eq("ativo", true).limit(POOL_LIMITE),
-    supabase.from("flashcards").select("*").eq("ativo", true).limit(POOL_LIMITE),
+    supabase.from("questoes").select("*").eq("ativo", true).order("materia").order("created_at"),
+    supabase.from("flashcards").select("*").eq("ativo", true).order("ordem", { ascending: true, nullsFirst: false }),
     supabase.from("simulados").select("*").eq("ativo", true),
     // Sem resposta_correta: essas linhas viram props de um Client Component
     // (o app do aluno inteiro), e tudo que vai pra props chega ao HTML/JS do

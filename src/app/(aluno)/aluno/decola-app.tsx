@@ -17,7 +17,7 @@ import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
-import { mesmaMateria } from "@/lib/site/materia-canonica";
+import { mesmaMateria, materiaCanonica } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
   Questao,
@@ -2531,12 +2531,24 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ]),
           h("div", { key: "s", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 4 } }, "Todas as questões cadastradas, organizadas por disciplina"),
           ...(function (self) {
+            // Contagem calculada aqui, a cada render, a partir do acervo
+            // real — não há número guardado em lugar nenhum. O que fazia a
+            // tela mostrar "Biologia — 28" com 82 cadastradas era o corte de
+            // 60 linhas na consulta (ver aluno/page.tsx), não a contagem.
+            //
+            // Agrupa pelo nome canônico para que "Português" e "Linguagens"
+            // (ou "Literatura") não virem duas linhas com o acervo partido
+            // entre elas.
             const qs = self.data().questions;
             const mats: Record<string, number> = {};
             qs.forEach((q) => {
-              mats[q.materia] = (mats[q.materia] || 0) + 1;
+              const nome = materiaCanonica(q.materia);
+              if (!nome) return;
+              mats[nome] = (mats[nome] || 0) + 1;
             });
-            return Object.keys(mats).map((m, i) =>
+            return Object.keys(mats)
+              .sort((a, b) => a.localeCompare(b, "pt-BR"))
+              .map((m, i) =>
               h(
                 "div",
                 {

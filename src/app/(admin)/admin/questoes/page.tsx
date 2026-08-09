@@ -2,7 +2,13 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { QuestoesManager } from "./questoes-manager";
+import { materiasUnicas } from "@/lib/site/materia-canonica";
 import type { Questao } from "@/types/database";
+
+// Mesma razão do /admin/flashcards: os totais por matéria exibidos aqui
+// precisam ser os do banco neste instante, não os de uma versão em cache.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function AdminQuestoesPage() {
   await requireAdmin();
@@ -15,7 +21,9 @@ export default async function AdminQuestoesPage() {
     getNomeVestibular()
   ]);
   const questoes = (data as Questao[]) ?? [];
-  const materiasExistentes = Array.from(new Set(questoes.map((q) => q.materia))).sort();
+  const materiasExistentes = materiasUnicas(questoes.map((q) => q.materia)).sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
+  );
 
   // Onde cada questão já está sendo usada — pra evitar reaproveitar sem
   // querer (ou pra confirmar de propósito) a mesma questão em vários

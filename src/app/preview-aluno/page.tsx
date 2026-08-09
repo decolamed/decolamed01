@@ -7,7 +7,6 @@ import { textoConfig } from "@/lib/site/configuracoes";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
 
-const POOL_LIMITE = 60;
 
 // Vitrine somente-leitura do app do aluno — usada pelo botão "Ver app do
 // aluno" do admin e "Demonstração grátis" do parceiro. Mostra conteúdo real
@@ -31,8 +30,12 @@ export default async function PreviewAlunoPage() {
     { data: linksData },
     { data: baseTemasData }
   ] = await Promise.all([
-    supabase.from("questoes").select("*").eq("ativo", true).limit(POOL_LIMITE),
-    supabase.from("flashcards").select("*").eq("ativo", true).limit(POOL_LIMITE),
+    // Sem teto: a vitrine precisa mostrar o mesmo acervo que o aluno vê.
+    // Um corte aqui faria o admin conferir uma versão reduzida da própria
+    // plataforma e concluir que faltam questões (ver o comentário em
+    // (aluno)/aluno/page.tsx).
+    supabase.from("questoes").select("*").eq("ativo", true).order("materia").order("created_at"),
+    supabase.from("flashcards").select("*").eq("ativo", true).order("ordem", { ascending: true, nullsFirst: false }),
     supabase.from("simulados").select("*").eq("ativo", true),
     supabase.from("simulado_questoes").select("simulado_id, ordem, questoes(id, enunciado, alternativas, materia, assunto, imagens)").order("ordem"),
     supabase.from("banners").select("*").eq("ativo", true).order("ordem"),
