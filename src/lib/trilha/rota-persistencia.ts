@@ -1,5 +1,6 @@
 import type { TrilhaDia } from "@/types/database";
 import { textoConfig } from "@/lib/site/configuracoes";
+import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import {
   assinaturaDosParametros,
   gerarRota,
@@ -85,27 +86,32 @@ export async function rotaDoAluno(
 async function contextoDaRota(
   supabase: ClienteSupabase
 ): Promise<{ simulados: SimuladoDisponivel[]; nomeVestibular: string | null }> {
-  const [{ data: simulados, error }, { data: marca }] = await Promise.all([
+  const [{ data: simulados, error }, { data: vinculos }, { data: marca }] = await Promise.all([
     supabase
       .from("simulados")
-      .select("id, titulo")
+      .select("id, titulo, redacao")
       .eq("ativo", true)
       .order("created_at", { ascending: true })
-      .order("id", { ascending: true })
-      .limit(2),
+      .order("id", { ascending: true }),
+    supabase.from("simulado_questoes").select("simulado_id"),
     supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle()
   ]);
 
   if (error) console.error("Rota: falha ao carregar simulados:", error.message);
 
+  // Só simulados que o aluno consegue de fato abrir — a mesma regra da aba
+  // Atividades. Reservar o dia para um simulado vazio mandaria o aluno para
+  // uma tela sem questões justamente no dia marcado para ele fazer a prova.
+  const comQuestoes = new Set(((vinculos as { simulado_id: string }[]) ?? []).map((v) => v.simulado_id));
+  const utilizaveis = (((simulados as (SimuladoDisponivel & { redacao?: unknown })[]) ?? [])
+    .filter((s) => disponivelParaAluno({ ativo: true, totalQuestoes: comQuestoes.has(s.id) ? 1 : 0, temRedacao: Boolean(s.redacao) }))
+    .slice(0, 2));
+
   // `textoConfig` desembrulha os valores jsonb escapados que existem no
   // banco desde antes da padronização.
   const nome = textoConfig((marca as { valor?: unknown } | null)?.valor).trim();
 
-  return {
-    simulados: (simulados as SimuladoDisponivel[]) ?? [],
-    nomeVestibular: nome || null
-  };
+  return { simulados: utilizaveis.map((s) => ({ id: s.id, titulo: s.titulo })), nomeVestibular: nome || null };
 }
 
 /**

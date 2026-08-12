@@ -6,6 +6,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, GhostButton, Toast, useToast } from "@/components/admin/interactive";
 import { criarAtividade, alternarAtivoAtividade, excluirAtividade } from "./actions";
+import { motivoIndisponivel } from "@/lib/site/avaliacoes";
 import type { Atividade } from "@/types/database";
 
 const GABARITO_LABEL: Record<string, string> = { imediato: "Gabarito imediato", apos_envio: "Gabarito após o envio" };
@@ -51,6 +52,12 @@ export function AtividadesManager({ atividades, totalQuestoesPorId }: { atividad
       <Card className="!p-0 sm:!px-[18px]">
         {atividades.map((a) => {
           const total = totalQuestoesPorId[a.id] ?? 0;
+          // Mesma regra da aba Atividades do aluno — ver lib/site/avaliacoes.ts.
+          const motivo = motivoIndisponivel({
+            ativo: a.ativo,
+            totalQuestoes: total,
+            temRedacao: Boolean((a as { redacao?: unknown }).redacao)
+          });
           return (
             <div key={a.id} className="flex flex-wrap items-center gap-3 border-b border-navy-dark/10 py-3.5 last:border-0">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-blue-soft text-navy-dark">
@@ -61,9 +68,14 @@ export function AtividadesManager({ atividades, totalQuestoesPorId }: { atividad
                 <p className="text-xs font-semibold text-navy-dark/50">
                   {total} questões · {GABARITO_LABEL[a.gabarito_modo]} · {a.tempo_limite_minutos ? `${a.tempo_limite_minutos} min` : "sem limite de tempo"} · peso {a.peso_facape}x
                 </p>
+                {motivo && a.ativo && <p className="mt-1 text-xs font-bold text-orange-dark">⚠ {motivo}</p>}
               </div>
-              <span className={`text-[10px] font-extrabold ${a.ativo ? "text-green" : "text-navy-dark/35"}`}>
-                {a.ativo ? "Ativa" : "Desativada"}
+              <span
+                className={`text-[10px] font-extrabold ${
+                  motivo ? (a.ativo ? "text-orange-dark" : "text-navy-dark/35") : "text-green"
+                }`}
+              >
+                {!a.ativo ? "Desativada" : motivo ? "Ativa (invisível)" : "Ativa"}
               </span>
               <Toggle on={a.ativo} onClick={() => alternar(a.id, a.ativo)} />
               <a href={`/admin/atividades/${a.id}`}>

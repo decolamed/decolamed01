@@ -6,6 +6,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, GhostButton, Toast, useToast } from "@/components/admin/interactive";
 import { criarSimulado, alternarAtivoSimulado, duplicarSimulado, excluirSimulado } from "./actions";
+import { motivoIndisponivel } from "@/lib/site/avaliacoes";
 import type { Simulado } from "@/types/database";
 
 export function SimuladosManager({ simulados, totalQuestoesPorId }: { simulados: Simulado[]; totalQuestoesPorId: Record<string, number> }) {
@@ -56,6 +57,13 @@ export function SimuladosManager({ simulados, totalQuestoesPorId }: { simulados:
       <Card className="!p-0 sm:!px-[18px]">
         {simulados.map((s) => {
           const total = totalQuestoesPorId[s.id] ?? 0;
+          // A mesma regra que a aba Atividades do aluno aplica. Sem isto o
+          // painel dizia "Ativo" para um simulado que o aluno nunca via.
+          const motivo = motivoIndisponivel({
+            ativo: s.ativo,
+            totalQuestoes: total,
+            temRedacao: Boolean((s as { redacao?: unknown }).redacao)
+          });
           return (
             <div key={s.id} className="flex flex-wrap items-center gap-3 border-b border-navy-dark/10 py-3.5 last:border-0">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-blue-soft text-navy-dark">
@@ -66,9 +74,16 @@ export function SimuladosManager({ simulados, totalQuestoesPorId }: { simulados:
                 <p className="text-xs font-semibold text-navy-dark/50">
                   {total} questões · {s.tempo_minutos} min · nota calculada pelos pesos oficiais
                 </p>
+                {motivo && s.ativo && (
+                  <p className="mt-1 text-xs font-bold text-orange-dark">⚠ {motivo}</p>
+                )}
               </div>
-              <span className={`text-[10px] font-extrabold ${s.ativo ? "text-green" : "text-navy-dark/35"}`}>
-                {s.ativo ? "Ativo" : "Desativado"}
+              <span
+                className={`text-[10px] font-extrabold ${
+                  motivo ? (s.ativo ? "text-orange-dark" : "text-navy-dark/35") : "text-green"
+                }`}
+              >
+                {!s.ativo ? "Desativado" : motivo ? "Ativo (invisível)" : "Ativo"}
               </span>
               <Toggle on={s.ativo} onClick={() => alternar(s.id, s.ativo)} />
               <a href={`/admin/simulados/${s.id}`}>

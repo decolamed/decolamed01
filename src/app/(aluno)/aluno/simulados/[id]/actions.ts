@@ -199,7 +199,7 @@ export async function submeterSimulado(
     desempenhoJson[d.materia] = { peso: d.peso, acertos: d.acertos, total: d.total, precisao: d.precisao };
   });
 
-  await supabase.from("simulado_tentativas").insert({
+  const { error: erroTentativa } = await supabase.from("simulado_tentativas").insert({
     aluno_id: profile.id,
     simulado_id: simuladoId,
     respostas,
@@ -215,6 +215,14 @@ export async function submeterSimulado(
     valor_total_simulado: valorTotal,
     finalizado_em: new Date().toISOString()
   });
+
+  // A gravação da tentativa é o que alimenta ranking, Raio-X, desempenho e o
+  // próprio Copiloto. Falhar em silêncio aqui significa o aluno ver a nota na
+  // tela e o resultado não existir em lugar nenhum depois.
+  if (erroTentativa) {
+    console.error("Falha ao gravar a tentativa de simulado:", erroTentativa.message);
+    throw new Error("Não foi possível registrar o resultado do seu simulado. Tente enviar de novo.");
+  }
 
   rodarCopiloto({ alunoId: profile.id, ultimaAcao: "simulado" }).catch((e) =>
     console.error("[copiloto] falha no ponto de entrada de simulado:", e)

@@ -16,6 +16,7 @@ import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel"
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
 import { tituloDaProva } from "@/lib/trilha/rota";
+import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
@@ -709,13 +710,25 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       subjects,
       ranking: P.ranking.map((r, i) => ({ p: i + 1, n: r.nome, xp: String(r.xp), me: r.aluno_id === this.props.alunoId, id: r.aluno_id })),
       badges: this.badgesReais(),
-      sims: P.simulados.map((s) => ({
+      // Mesma regra da aba Atividades (lib/site/avaliacoes.ts): um simulado
+      // sem questões e sem redação não é ofertado em lugar nenhum. Antes esta
+      // lista mostrava simulados vazios que a aba Atividades escondia — duas
+      // telas do mesmo app discordando sobre o que existe.
+      sims: P.simulados
+        .filter((s) =>
+          disponivelParaAluno({
+            ativo: true,
+            totalQuestoes: contagemPorSimulado[s.id] ?? 0,
+            temRedacao: Boolean((s as { redacao?: unknown }).redacao)
+          })
+        )
+        .map((s) => ({
         id: s.id,
         t: s.titulo,
         q: contagemPorSimulado[s.id] ?? 0,
         lvl: nivelPorTotal(contagemPorSimulado[s.id] ?? 0),
         time: s.tempo_minutos >= 60 ? Math.round(s.tempo_minutos / 60) + "h" : s.tempo_minutos + "min"
-      })),
+        })),
       simHist: P.tentativas
         .filter((t) => t.finalizado_em)
         .map((t) => {
