@@ -16,6 +16,7 @@ import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel"
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
 import { tituloDaProva } from "@/lib/trilha/rota";
+import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
@@ -1018,7 +1019,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             : "Ainda não há questões cadastradas."
         );
       }
-      this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
+      // Mesma regra da atividade do cronograma: sessão fechada, não o banco.
+      this.irParaRota("/aluno/sessao/" + encodeURIComponent(chaveSessaoMissao(m.id)));
     } else if (m.tipo === "flashcards") {
       const pool = flashcardsDa(m.materia);
       if (pool.length === 0) {
@@ -1161,7 +1163,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         d: dia!.titulo,
         ia: false,
         done: this.estaConcluido(chave),
-        act: () => this.abrirItemTrilha(item),
+        act: () => this.abrirItemTrilha(item, dia!.dia_numero, i),
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
@@ -1291,7 +1293,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // referência esperada (ex.: um "simulado" sem ref_id, que existia no
   // cronograma antigo) caem na LISTA daquele tipo em vez de abrir uma tela
   // quebrada — nenhum item pode virar um clique que não faz nada.
-  abrirItemTrilha(item: TrilhaItem) {
+  abrirItemTrilha(item: TrilhaItem, diaNumero?: number, indice?: number) {
     if (item.tipo === "aula") {
       if (!item.url) return this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "plano" });
       // Todas as aulas do mesmo dia viram a playlist do player.
@@ -1303,7 +1305,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       if (!item.url) return this.nav("conteudo", { contTitle: item.tipo === "pdf" ? "PDFs" : "Links úteis", contTipo: item.tipo, contBack: "plano" });
       this.openBrowser(item.titulo, item.url, "plano");
     } else if (item.tipo === "questoes") {
-      this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
+      // Atividade diária = sessão fechada de N questões, numa rota própria.
+      // Antes isto abria a tela de prática com `qMateria`, e `qList()`
+      // devolvia TODAS as questões da matéria — "1 / 82" no cabeçalho. Ver
+      // lib/trilha/sessao-questoes.ts.
+      if (diaNumero == null || indice == null) {
+        // Sem a posição não há como identificar a atividade; o Banco de
+        // Questões continua sendo o destino honesto nesse caso.
+        return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
+      }
+      this.irParaRota("/aluno/sessao/" + encodeURIComponent(chaveSessaoTrilha(diaNumero, indice)));
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
       if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, item.materia))), false);
@@ -2578,7 +2589,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         d: item.materia || dia.titulo || "",
         ia: false,
         done: this.estaConcluido(chave),
-        act: () => this.abrirItemTrilha(item),
+        act: () => this.abrirItemTrilha(item, dia.dia_numero, i),
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
@@ -4162,10 +4173,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         ),
         h(
           "div",
-          { key: "t", onClick: () => this.abrirItemTrilha(item), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
+          { key: "t", onClick: () => this.abrirItemTrilha(item, diaNumero, i), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
           item.titulo
         ),
-        h("div", { key: "go", onClick: () => this.abrirItemTrilha(item), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
+        h("div", { key: "go", onClick: () => this.abrirItemTrilha(item, diaNumero, i), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
       ]
     );
   }

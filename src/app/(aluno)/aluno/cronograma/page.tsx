@@ -8,6 +8,7 @@ import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
 import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
+import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { nomeDoDiaDaSemana, dataBR } from "@/lib/site/data";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
@@ -20,15 +21,19 @@ const ICONE_TRILHA = ICONE_TIPO;
 // a lista fica só de leitura; com isso o aluno toca no item e vai direto pra
 // aula/atividade/simulado/redação real.
 function montarHref(
-  tipo: string,
-  refId: string | null,
+  missao: { id: string; tipo: string; ref_id: string | null },
   urlsAula: Map<string, string>
 ): string | null {
-  switch (tipo) {
+  const refId = missao.ref_id;
+  switch (missao.tipo) {
     case "aula":
       return refId ? urlsAula.get(refId) ?? null : null;
     case "questoes":
-      return refId ? `/aluno/atividades/${refId}` : "/aluno/questoes";
+      // Sem atividade cadastrada, a missão vira uma sessão fechada de
+      // questões — não mais o Banco de Questões inteiro.
+      return refId
+        ? `/aluno/atividades/${refId}`
+        : `/aluno/sessao/${encodeURIComponent(chaveSessaoMissao(missao.id))}`;
     case "simulado":
       return refId ? `/aluno/simulados/${refId}` : "/aluno/simulados";
     case "flashcards":
@@ -41,14 +46,17 @@ function montarHref(
 // Item da trilha já traz a URL da aula/pdf/link direto (sem precisar de
 // join com conteudos_biblioteca/links_externos), então o link é bem mais
 // simples que o do Copiloto.
-function montarHrefTrilha(item: TrilhaItem): string | null {
+function montarHrefTrilha(item: TrilhaItem, diaNumero: number, indice: number): string | null {
   switch (item.tipo) {
     case "aula":
     case "pdf":
     case "link":
       return item.url;
     case "questoes":
-      return item.materia ? `/aluno/questoes?materia=${encodeURIComponent(item.materia)}` : "/aluno/questoes";
+      // Sessão fechada de N questões, não o Banco de Questões filtrado. O
+      // link antigo (`/aluno/questoes?materia=Biologia`) abria o acervo
+      // inteiro da matéria — ver lib/trilha/sessao-questoes.ts.
+      return `/aluno/sessao/${encodeURIComponent(chaveSessaoTrilha(diaNumero, indice))}`;
     case "flashcards":
       return item.materia ? `/aluno/flashcards?materia=${encodeURIComponent(item.materia)}` : "/aluno/flashcards";
     case "simulado":
@@ -176,7 +184,7 @@ export default async function AlunoCronogramaPage() {
     const { data: conteudos } = await supabase.from("conteudos_biblioteca").select("id, url").in("id", idsAula);
     (conteudos ?? []).forEach((c) => c.url && urlsAula.set(c.id, c.url));
   }
-  const missoes = (missoesBrutas ?? []).map((m) => ({ ...m, href: montarHref(m.tipo, m.ref_id, urlsAula) }));
+  const missoes = (missoesBrutas ?? []).map((m) => ({ ...m, href: montarHref(m, urlsAula) }));
 
   const semNada = !diaTrilha && missoes.length === 0;
 
@@ -242,7 +250,7 @@ export default async function AlunoCronogramaPage() {
               </p>
             )}
             {diaTrilha.itens.map((item, i) => {
-              const href = montarHrefTrilha(item);
+              const href = montarHrefTrilha(item, diaTrilha!.dia_numero, i);
               const feito = itemConcluido(diaTrilha!.dia_numero, i, item);
               const conteudo = (
                 <>
@@ -367,7 +375,7 @@ export default async function AlunoCronogramaPage() {
                       <p className="text-sm text-navy-dark/50">Dia livre.</p>
                     )}
                     {itensDoDia.map((item, i) => {
-                      const href = montarHrefTrilha(item);
+                      const href = montarHrefTrilha(item, d.dia_numero, i);
                       const feito = itemConcluido(d.dia_numero, i, item);
                       const linha = (
                         <>
