@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { gerarTextoGemini } from "@/lib/gemini/client";
 import { produzirMaterialSobDemanda } from "@/lib/copiloto/producao-sob-demanda";
 import { hojeISO, somarDias, diaDaSemana, diffDias } from "@/lib/site/data";
-import { chaveDeItemTrilha, minutosDoItem, itemReagendavel } from "@/lib/trilha/progresso";
+import { chaveDeAula, chaveDeItemTrilha, minutosDoItem, itemReagendavel } from "@/lib/trilha/progresso";
 import {
   distribuirPendencias, selecionarPendencias, importanciaDe, motivoRemarcacao, chaveDoMotivo,
   type Pendencia, type DiaAlvo
@@ -72,6 +72,8 @@ interface MissaoAgendada {
   materia: string;
   assunto: string | null;
   tipo: string;
+  /** Conteúdo real que a missão abre — usado para não repetir a mesma aula. */
+  ref_id: string | null;
   duracao_minutos: number;
   duracao_estimada_min: number;
   prioridade: number;
@@ -106,6 +108,9 @@ interface DadosAluno {
   checkinsNaoAplicados: Array<{
     id: string; resposta_valor: string; resposta_acao: Record<string, unknown>;
   }>;
+  // Chaves de `aluno_progresso_itens` já concluídas. Governa duas coisas:
+  // não remarcar pendência cumprida e não recomendar conteúdo já feito.
+  concluidas: Set<string>;
   // Quanto conteúdo ATIVO existe por matéria. Sem isso o Copiloto criava
   // missão de "Flashcards de Português" contando as revisões que o aluno já
   // tinha feito — o que não diz nada sobre os flashcards ainda existirem. O
@@ -172,7 +177,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   // datava as missões geradas à noite no dia seguinte.
   const hojeStr = hojeISO();
 
-  const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR] = await Promise.all([
+  const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR, progressoR] = await Promise.all([
     supabase.from("respostas_aluno")
       .select("correta, created_at, questoes(materia, assunto)")
       .eq("aluno_id", ctx.alunoId)
@@ -194,6 +199,14 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
       .eq("aluno_id", ctx.alunoId)
       .eq("respondida", true)
       .eq("aplicada", false),
+    // O que o aluno JÁ concluiu. Sem isto o Copiloto recomendava de volta a
+    // aula que ele acabou de assistir — "evitando repetir atividades
+    // desnecessariamente" só valia para as pendências, não para o conteúdo
+    // novo.
+    supabase.from("aluno_progresso_itens")
+      .select("chave")
+      .eq("aluno_id", ctx.alunoId)
+      .eq("concluida", true),
   ]);
 
   const pesosLista = (pesosR.data ?? []) as { materia: string; peso: number; qtd_questoes: number }[];
@@ -250,7 +263,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
 
     const { data: missoes } = await supabase
       .from("aluno_missoes")
-      .select("id, data, titulo, materia, assunto, tipo, duracao_minutos, duracao_estimada_min, prioridade, origem, concluida")
+      .select("id, data, titulo, materia, assunto, tipo, ref_id, duracao_minutos, duracao_estimada_min, prioridade, origem, concluida")
       .eq("aluno_id", ctx.alunoId)
       .gte("data", hojeStr)
       .lte("data", briefing.dataProva)
@@ -261,21 +274,25 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     diasOcupados = new Set(missoesAgendadas.map((m) => m.data)).size;
     totalMissoesPadrao = missoesAgendadas.filter((m) => m.origem === "admin").length;
 
-    // Calcular dias de estudo livres
-    if (diasRestantes > 0) {
-      const MAPA_DIA: Record<number, string> = { 0:"dom",1:"seg",2:"ter",3:"qua",4:"qui",5:"sex",6:"sab" };
-      const diasEstudaSet = new Set(briefing.diasEstuda);
-      const datasComMissao = new Set(missoesAgendadas.map((m) => m.data));
-      for (let d = 1; d <= diasRestantes; d++) {
-        const iso = somarDias(hojeISO(), d);
-        if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-        if (!datasComMissao.has(iso)) diasLivres++;
-      }
-    }
   }
 
   const config = await carregarConfigCopiloto();
   const cronograma = await carregarCronogramaDoAluno(ctx.alunoId);
+
+  // A agenda vem ANTES da detecção de modo de propósito: é ela que sabe
+  // quanto tempo cada dia ainda tem, e "dias livres" passou a significar
+  // dias com folga real — não dias sem missão. Ver contarDiasComFolga().
+  const agenda = montarAgenda({
+    minutosPorDia: (briefing?.horasPorDia ?? 2) * 60,
+    cargaDoCronograma: cronograma.cargaPorData,
+    missoes: missoesAgendadas.map((m) => ({
+      data: m.data,
+      minutos: m.duracao_estimada_min || m.duracao_minutos
+    })),
+    bloqueadas: cronograma.datasBloqueadas
+  });
+
+  diasLivres = contarDiasComFolga({ diasRestantes, briefing, agenda } as DadosAluno);
   const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao, config);
   const checkinsNaoAplicados = (checkinsR.data ?? []).map((c: any) => ({
     id: c.id,
@@ -288,17 +305,10 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     materias, briefing, modo, diasRestantes, diasLivres, diasOcupados,
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
+    concluidas: new Set(((progressoR.data ?? []) as { chave: string }[]).map((p) => p.chave)),
     diaTrilhaHoje: cronograma.diaHoje,
     cronograma,
-    agenda: montarAgenda({
-      minutosPorDia: (briefing?.horasPorDia ?? 2) * 60,
-      cargaDoCronograma: cronograma.cargaPorData,
-      missoes: missoesAgendadas.map((m) => ({
-        data: m.data,
-        minutos: m.duracao_estimada_min || m.duracao_minutos
-      })),
-      bloqueadas: cronograma.datasBloqueadas
-    }),
+    agenda,
     config,
   };
 }
@@ -478,6 +488,17 @@ function tipoComConteudo(
 }
 
 /**
+ * Índice estável a partir de um texto — substitui `Math.random()` onde a
+ * escolha precisa ser reproduzível entre execuções.
+ */
+function indiceEstavel(semente: string, tamanho: number): number {
+  if (tamanho <= 0) return 0;
+  let h = 0;
+  for (let i = 0; i < semente.length; i++) h = (h * 31 + semente.charCodeAt(i)) >>> 0;
+  return h % tamanho;
+}
+
+/**
  * Resolve o conteúdo concreto de uma missão: título e, quando o tipo exige,
  * o `ref_id` do registro real.
  *
@@ -506,9 +527,26 @@ function resolverConteudoMissao(
 
   if (tipo === "aula") {
     const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
-    // Rotaciona pela lista para não indicar sempre a mesma primeira aula da
-    // matéria a todos os alunos.
-    const escolhida = inv.aulas[Math.floor(Math.random() * inv.aulas.length)];
+
+    // Fora as que o aluno já concluiu e as que já estão agendadas para ele.
+    // A escolha era `Math.random()` sobre a lista inteira: o Copiloto podia
+    // mandar de volta a aula assistida ontem, ou a mesma aula duas vezes na
+    // mesma execução — e, por ser aleatória, duas rodadas seguidas com os
+    // mesmos dados produziam missões diferentes.
+    const jaAgendadas = new Set(
+      dados.missoesAgendadas.filter((m) => m.tipo === "aula" && m.ref_id).map((m) => m.ref_id as string)
+    );
+    const candidatas = inv.aulas.filter((a) => {
+      if (jaAgendadas.has(a.id)) return false;
+      const chave = chaveDeAula(a.id, a.url);
+      return !chave || !dados.concluidas.has(chave);
+    });
+    // Todas já vistas: melhor reapresentar do que não ter missão nenhuma —
+    // rever uma aula é uma revisão legítima.
+    const pool = candidatas.length > 0 ? candidatas : inv.aulas;
+    // Determinístico: a mesma entrada produz sempre a mesma saída, o que
+    // torna a rodada do motor reproduzível e depurável.
+    const escolhida = pool[indiceEstavel(dados.alunoId + "|" + materia, pool.length)];
     if (!escolhida) return null;
     return {
       tipo: "aula",
@@ -582,10 +620,32 @@ function calcularGEN(p: {
 function genMateria(materia: string, dados: DadosAluno): number {
   const m = dados.materias.get(materia);
   if (!m) return 0;
+
   let a = 0, e = 0, t = 0;
   dados.respostas.filter((r) => mesmaMateria(r.materia, materia)).forEach((r) => {
     t++; if (r.correta) a++; else e++;
   });
+
+  // O desempenho nos SIMULADOS entra na mesma conta.
+  //
+  // `dados.tentativas` era carregado e nunca usado: um aluno que zerasse
+  // Biologia num simulado, mas não tivesse respondido questões avulsas dessa
+  // matéria, chegava aqui com a precisão neutra de 50% — o erro mais
+  // significativo que ele podia cometer não influenciava a adaptação em nada.
+  // O simulado é a medida mais próxima da prova real; ignorá-lo era o oposto
+  // de adaptar ao desempenho.
+  dados.tentativas.forEach((tent) => {
+    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
+      if (!mesmaMateria(mat, materia)) return;
+      const total = Number((d as { total?: number }).total ?? 0);
+      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
+      if (!Number.isFinite(total) || total <= 0) return;
+      t += total;
+      a += acertos;
+      e += Math.max(0, total - acertos);
+    });
+  });
+
   const precisao = t > 0 ? (a / t) * 100 : 50;
   const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
   return calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: e, diasRestantes: dados.diasRestantes, sentimento });
@@ -607,16 +667,17 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   if (scores.length === 0) return 0;
 
   // Construir lista de dias livres ordenados
-  const hoje = new Date();
   const MAPA_DIA: Record<number, string> = { 0:"dom",1:"seg",2:"ter",3:"qua",4:"qui",5:"sex",6:"sab" };
   const diasEstudaSet = new Set(dados.briefing?.diasEstuda ?? []);
-  const datasComMissao = new Set(dados.missoesAgendadas.map((m) => m.data));
   const diasLivresOrdenados: string[] = [];
   const dr = dados.diasRestantes ?? 0;
   for (let d = 1; d <= dr; d++) {
     const iso = somarDias(hojeISO(), d);
     if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-    if (!datasComMissao.has(iso)) diasLivresOrdenados.push(iso);
+    // Mesma definição usada em contarDiasComFolga: dia livre é dia com tempo
+    // sobrando, não dia sem missão. Um dia sem missão mas com o cronograma
+    // cheio não tem espaço nenhum a oferecer.
+    if (dados.agenda.livreEm(iso) >= 25) diasLivresOrdenados.push(iso);
   }
 
   if (diasLivresOrdenados.length === 0) return 0;
@@ -677,6 +738,12 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   // decide isso é a agenda, que já conta o conteúdo do cronograma daquele dia
   // e o que foi criado antes nesta mesma execução.
   const datasDisponiveis = capacidade.map((d) => d.data);
+  // matéria+tipo já colocados em cada data, para não duplicar no mesmo dia.
+  const jaNoDia = new Map<string, Set<string>>();
+  dados.missoesAgendadas.forEach((m) => {
+    if (!jaNoDia.has(m.data)) jaNoDia.set(m.data, new Set());
+    jaNoDia.get(m.data)!.add(`${chaveMateria(m.materia)}|${m.tipo}`);
+  });
   const missoes: Record<string, unknown>[] = [];
   for (const item of intercalada) {
     // Resolve o conteúdo ANTES de reservar o tempo do dia: uma matéria sem
@@ -686,9 +753,16 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
 
     const min = dados.config.duracaoPorTipo[conteudo.tipo] ?? DURACAO_TIPO[conteudo.tipo] ?? 40;
     // Não cabe hoje → vai para o próximo dia com espaço. Nunca estoura o dia.
-    const data = dados.agenda.primeiraDataComEspaco(datasDisponiveis, min);
+    // Também não repete a mesma matéria+tipo no mesmo dia: "Questões de
+    // Biologia" duas vezes na terça é ruído, não reforço — quando isso
+    // acontece, a missão vai para o próximo dia disponível.
+    const marca = `${chaveMateria(item.materia)}|${conteudo.tipo}`;
+    const candidatas = datasDisponiveis.filter((d) => !jaNoDia.get(d)?.has(marca));
+    const data = dados.agenda.primeiraDataComEspaco(candidatas, min);
     if (!data) break; // acabou a capacidade da janela até a prova
     dados.agenda.reservar(data, min);
+    if (!jaNoDia.has(data)) jaNoDia.set(data, new Set());
+    jaNoDia.get(data)!.add(marca);
     const dia = { data };
     const sc = scores.find((x) => mesmaMateria(x.mat, item.materia))!;
     missoes.push({
@@ -999,6 +1073,7 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
       materia: p.materia ?? "",
       assunto: null,
       tipo: p.tipo,
+      ref_id: null,
       duracao_minutos: p.minutos,
       duracao_estimada_min: p.minutos,
       prioridade: p.importancia >= 15 ? 3 : 2,
@@ -1018,23 +1093,36 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   return reagendadas;
 }
 
-// Recalcula dias livres/ocupados a partir de `missoesAgendadas`. Mesma conta
-// de `carregarDados`, extraída porque agora precisa rodar de novo depois que
-// o reagendamento de pendências ocupa dias que antes estavam vazios — é isso
-// que decide qual cenário o motor vai executar em seguida.
+// Recalcula dias livres/ocupados. Roda de novo depois que o reagendamento de
+// pendências ocupa dias que antes estavam vazios — é isso que decide qual
+// cenário o motor executa em seguida.
+//
+// "Dia livre" passou a significar DIA COM FOLGA REAL, e não "dia sem missão".
+// A conta antiga olhava só `aluno_missoes`: um aluno cujo cronograma preenche
+// todas as tardes até o limite de horas aparecia com 19 dias livres, o motor
+// entrava em modo generoso e tentava encher dias que já estavam cheios. Além
+// de errar o modo, isso mascarava o cenário 2, que é o que deveria rodar.
 function recontarOcupacao(dados: DadosAluno): void {
   const datasComMissao = new Set(dados.missoesAgendadas.map((m) => m.data));
   dados.diasOcupados = datasComMissao.size;
-  dados.diasLivres = 0;
-  if (!dados.diasRestantes || dados.diasRestantes <= 0) return;
+  dados.diasLivres = contarDiasComFolga(dados);
+}
+
+/** Dias de estudo, daqui até a prova, que ainda têm tempo sobrando. */
+function contarDiasComFolga(dados: DadosAluno): number {
+  if (!dados.diasRestantes || dados.diasRestantes <= 0) return 0;
   const MAPA_DIA: Record<number, string> = { 0: "dom", 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sab" };
   const diasEstudaSet = new Set(dados.briefing?.diasEstuda ?? []);
   const hoje = hojeISO();
+  let livres = 0;
   for (let d = 1; d <= dados.diasRestantes; d++) {
     const iso = somarDias(hoje, d);
     if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-    if (!datasComMissao.has(iso)) dados.diasLivres++;
+    // A menor missão que o motor cria tem ~25 min; um resto menor que isso
+    // não é folga utilizável.
+    if (dados.agenda.livreEm(iso) >= 25) livres++;
   }
+  return livres;
 }
 
 // ============================================================================
@@ -1443,11 +1531,29 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     lista.push({ materia, assunto, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipo, urgencia: gen > 15 ? 3 : gen > 6 ? 2 : 1, descricao: gerarDescricao({ assunto, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
 
-  // Por matéria
+  // Por matéria — questões avulsas, atividades E simulados.
+  //
+  // A recomendação de matéria olhava só `respostas_aluno`. Um aluno com
+  // desempenho ruim num simulado inteiro de Química não gerava recomendação
+  // nenhuma se não tivesse respondido questões avulsas dessa matéria.
   const porMat = new Map<string, { a: number; e: number; t: number }>();
-  dados.respostas.forEach((r) => {
-    const c = porMat.get(r.materia) ?? { a: 0, e: 0, t: 0 };
-    c.t++; if (r.correta) c.a++; else c.e++; porMat.set(r.materia, c);
+  const somarMateria = (materia: string, acertos: number, total: number) => {
+    if (!materia || total <= 0) return;
+    const c = porMat.get(materia) ?? { a: 0, e: 0, t: 0 };
+    c.t += total;
+    c.a += acertos;
+    c.e += Math.max(0, total - acertos);
+    porMat.set(materia, c);
+  };
+  dados.respostas.forEach((r) => somarMateria(r.materia, r.correta ? 1 : 0, 1));
+  dados.tentativas.forEach((tent) => {
+    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
+      const total = Number((d as { total?: number }).total ?? 0);
+      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
+      // Casa com a chave canônica para "Português" antigo cair em "Linguagens".
+      const alvo = [...porMat.keys()].find((k) => mesmaMateria(k, mat)) ?? mat;
+      somarMateria(alvo, acertos, total);
+    });
   });
   for (const [materia, d] of porMat) {
     if (d.t < 10 || d.e < cfg.errosMinGatilho) continue;
