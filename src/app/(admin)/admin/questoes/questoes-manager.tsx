@@ -7,7 +7,7 @@ import { Chip, Toast, useToast, PrimaryButton, GhostButton, TextInput, TextArea,
 import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
 import { ROTULO_MODALIDADE, rotuloModalidade } from "@/lib/site/filtro-questoes";
-import { materiaCanonica } from "@/lib/site/materia-canonica";
+import { materiaCanonica, mesmaMateria } from "@/lib/site/materia-canonica";
 import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, alternarAtivoQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
@@ -121,7 +121,10 @@ export function QuestoesManager({
 
   const termo = busca.trim().toLowerCase();
   const lista = questoes.filter((q) => {
-    if (filtro !== "Todas" && q.materia !== filtro) return false;
+    // mesmaMateria e não `!==`: um registro gravado como "Português"
+    // desapareceria do filtro "Linguagens" e o admin concluiria que a
+    // questão sumiu do banco.
+    if (filtro !== "Todas" && !mesmaMateria(q.materia, filtro)) return false;
     if (filtroProva !== "Todas" && (q.prova_nome ?? "") !== filtroProva) return false;
     if (filtroAno !== "Todos" && String(q.ano ?? "") !== filtroAno) return false;
     if (filtroAssunto !== "Todos" && (q.assunto ?? "") !== filtroAssunto) return false;

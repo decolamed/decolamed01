@@ -151,7 +151,12 @@ export default async function AdminPesosPage({
           colunas={[
             { titulo: "Matéria", principal: true, celula: (p) => p.materia },
             { titulo: "Peso", celula: (p) => p.peso, className: "text-center" },
-            { titulo: "Qtd. Questões", celula: (p) => p.qtd_questoes, className: "text-center" },
+            // "Qtd. Questões" era ambíguo ao lado de um banco com centenas de
+            // questões: este número é a composição da PROVA (quantas questões da
+            // disciplina o vestibular cobra), não o tamanho do acervo. É ele que
+            // define a relevância no algoritmo — trocar um pelo outro distorce
+            // toda a priorização do Copiloto.
+            { titulo: "Questões na prova", celula: (p) => p.qtd_questoes, className: "text-center" },
             { titulo: "Pontos Potenciais", celula: (p) => p.peso * p.qtd_questoes, className: "text-center font-bold" },
             {
               titulo: "Relevância %",

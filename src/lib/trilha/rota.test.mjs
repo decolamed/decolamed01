@@ -386,3 +386,112 @@ test("todo o conteúdo continua na rota mesmo com prova e véspera reservadas", 
     )
   );
 });
+
+// ============================================================================
+// CENÁRIO OBRIGATÓRIO DA AUDITORIA — 12/08/2026 → 31/08/2026
+//
+// Um único teste que verifica de uma vez tudo que o pedido lista: datas,
+// número de dias, Dia 1, Dia 2, missão atual, simulados e revisão. Se
+// qualquer um dos conceitos voltar a se misturar, este teste cai.
+// ============================================================================
+test("AUDITORIA — rota de 12/08/2026 a 31/08/2026, ponto a ponto", () => {
+  const p = parametrosDoBriefing(
+    {
+      data_prova: "2026-08-31",
+      inicio_estudos: "2026-08-12",
+      dias_estuda: TODOS_OS_DIAS,
+      horas_por_dia_semana: 3
+    },
+    "2026-08-12"
+  );
+  const rota = gerarRota(template(40), p, { nomeVestibular: "FACAPE" });
+  const { dias } = rota;
+  const estudo = diasDeEstudoDaRota(dias);
+
+  // --- datas ---------------------------------------------------------
+  assert.equal(dias[0].scheduledDate, "2026-08-12", "a rota começa na data informada");
+  assert.equal(
+    dias.filter((d) => d.scheduledDate < "2026-08-12").length,
+    0,
+    "nenhuma data anterior ao início (o bug das atividades em julho)"
+  );
+  // Datas estritamente crescentes, sem repetição.
+  dias.forEach((d, i) => {
+    if (i === 0) return;
+    assert.ok(d.scheduledDate > dias[i - 1].scheduledDate, `data fora de ordem no dia ${d.routeDay}`);
+  });
+
+  // --- número de dias ------------------------------------------------
+  assert.equal(estudo.length, 19, "19 dias de estudo");
+  assert.equal(dias.length, 20, "19 de estudo + o dia da prova");
+
+  // --- Dia 1 e Dia 2 -------------------------------------------------
+  assert.equal(dias[0].routeDay, 1);
+  assert.equal(dias[1].routeDay, 2, "o segundo dia é o Dia 2 — nunca o Dia 22");
+  estudo.forEach((d, i) => assert.equal(d.routeDay, i + 1, "numeração 1..19 sem buraco"));
+
+  // Nenhum número do template escapa para o que o aluno lê.
+  dias.forEach((d) => {
+    assert.ok(!/Dia \d+ do template/.test(d.titulo), `título expõe o template: ${d.titulo}`);
+    assert.ok(!d.titulo.includes(" + Dia "), `título expõe o agrupamento: ${d.titulo}`);
+  });
+
+  // --- missão atual --------------------------------------------------
+  assert.equal(diaAtualDaRota(dias, "2026-08-12").routeDay, 1, "em 12/08 o aluno está no Dia 1");
+  assert.equal(diaAtualDaRota(dias, "2026-08-13").routeDay, 2, "em 13/08 avança para o Dia 2");
+  assert.equal(diaAtualDaRota(dias, "2026-08-31").tipo, "prova", "no dia da prova, o evento");
+  // Nada de dia anterior no primeiro dia: o "21 dias anteriores" nascia daqui.
+  assert.equal(estudo.filter((d) => d.scheduledDate < "2026-08-12").length, 0);
+
+  // --- simulados -----------------------------------------------------
+  const sims = dias.filter((d) => d.tipo === "simulado");
+  assert.equal(sims.length, 2, "exatamente 2 simulados");
+  assert.ok(sims[1].scheduledDate <= "2026-08-24", `simulado 2 em ${sims[1].scheduledDate}, limite 24/08`);
+  assert.ok(sims[0].scheduledDate < sims[1].scheduledDate, "os dois em dias diferentes");
+
+  // --- revisão e fechamento ------------------------------------------
+  assert.ok(
+    dias.some((d) => d.tipo === "revisao"),
+    "sobra tempo de revisão depois do simulado 2"
+  );
+  const ultimo = dias[dias.length - 1];
+  assert.equal(ultimo.tipo, "prova");
+  assert.equal(ultimo.scheduledDate, "2026-08-31");
+  assert.equal(ultimo.itens.length, 0, "o dia da prova não recebe conteúdo");
+  assert.equal(ultimo.titulo, "DIA DA PROVA — VESTIBULAR FACAPE");
+});
+
+test("AUDITORIA — regerar com os mesmos parâmetros não muda nada", () => {
+  // Uma rota antiga não pode contaminar a nova: a geração é determinística,
+  // então duas gerações seguidas têm de ser idênticas dia a dia.
+  const p = parametrosDoBriefing(
+    { data_prova: "2026-08-31", inicio_estudos: "2026-08-12", dias_estuda: TODOS_OS_DIAS, horas_por_dia_semana: 3 },
+    "2026-08-12"
+  );
+  const a = gerarRota(template(40), p, { nomeVestibular: "FACAPE" });
+  const b = gerarRota(template(40), p, { nomeVestibular: "FACAPE" });
+
+  assert.equal(a.assinatura, b.assinatura);
+  assert.deepEqual(
+    a.dias.map((d) => [d.routeDay, d.scheduledDate, d.tipo, d.titulo]),
+    b.dias.map((d) => [d.routeDay, d.scheduledDate, d.tipo, d.titulo])
+  );
+});
+
+test("AUDITORIA — mudar a data de início joga a rota inteira para frente", () => {
+  const base12 = parametrosDoBriefing(
+    { data_prova: "2026-08-31", inicio_estudos: "2026-08-12", dias_estuda: TODOS_OS_DIAS, horas_por_dia_semana: 3 },
+    "2026-08-10"
+  );
+  const base20 = parametrosDoBriefing(
+    { data_prova: "2026-08-31", inicio_estudos: "2026-08-20", dias_estuda: TODOS_OS_DIAS, horas_por_dia_semana: 3 },
+    "2026-08-10"
+  );
+  const r12 = gerarRota(template(40), base12);
+  const r20 = gerarRota(template(40), base20);
+
+  assert.notEqual(r12.assinatura, r20.assinatura, "a assinatura muda — a rota antiga é descartada");
+  assert.equal(r20.dias[0].scheduledDate, "2026-08-20");
+  assert.equal(r20.dias.filter((d) => d.scheduledDate < "2026-08-20").length, 0);
+  assert.ok(diasDeEstudoDaRota(r20.dias).length < diasDeEstudoDaRota(r12.dias).length);
+});

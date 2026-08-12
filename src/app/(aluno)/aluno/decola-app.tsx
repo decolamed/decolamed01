@@ -977,12 +977,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pr = this.priorities();
     return pr.length ? pr[0].tema : null;
   }
+  // O plano vem do servidor (matrícula → plano). Havia um fallback para
+  // `localStorage["dm-plan"]`, sobra da versão de demonstração: ninguém
+  // escrevia essa chave, mas um valor antigo no navegador podia decidir o
+  // plano do aluno se a prop falhasse. Fonte de verdade agora é só o banco.
   plan() {
-    let ls = null;
-    try {
-      ls = localStorage.getItem("dm-plan");
-    } catch (e) {}
-    return this.props.plano ?? ls ?? "decolando";
+    return this.props.plano ?? "decolando";
   }
   // Missões reais de hoje (tabela aluno_missoes, só para planos com
   // Copiloto — ver aluno/cronograma/page.tsx para o mesmo critério).
@@ -2059,8 +2059,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 I("plane", 22, "#F8935A")
               ),
               h("div", { key: "t", style: { flex: 1 } }, [
-                h("div", { key: "a", style: { fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,.65)", letterSpacing: ".08em", textTransform: "uppercase" } }, "Missão do Dia · Missão 6"),
-                h("div", { key: "b", style: { fontSize: 17, fontWeight: 900 } }, "Sistema Digestório"),
+                // "Missão do Dia · Missão 6" e "Sistema Digestório" estavam
+                // ESCRITOS AQUI, fixos, sobrevivendo desde a versão de
+                // demonstração sem banco. Era isso que o aluno via na tela
+                // inicial, independentemente da rota dele — nenhum dado
+                // errado, nenhuma consulta errada: um texto constante.
+                // Agora vêm da rota ativa, pela mesma fonte que o cronograma.
+                h("div", { key: "a", style: { fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,.65)", letterSpacing: ".08em", textTransform: "uppercase" } }, this.rotuloMissaoDoDia()),
+                h("div", { key: "b", style: { fontSize: 17, fontWeight: 900 } }, this.tituloMissaoDoDia()),
                 h("div", { key: "c", style: { fontSize: 10.5, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 2 } }, seq.length + " passos · toque para ver as próximas missões")
               ]),
               h("div", { key: "p", style: { textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 } }, [
@@ -2484,6 +2490,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // extrapolação era usada para TODO mundo, e é dela que vinham as datas
   // anteriores ao início do aluno — ela pressupõe que o aluno estuda todos
   // os dias, sem intervalo, desde a matrícula.
+
+  /**
+   * "Missão do Dia · Dia 2 de 19" — rótulo do cartão da tela inicial.
+   *
+   * Fonte única: o dia atual da rota, o mesmo número que o cronograma mostra.
+   * Sem rota (Plano Decolando), fica só "Missão do Dia".
+   */
+  rotuloMissaoDoDia(): string {
+    const dia = this.props.dados.diaTrilhaHoje;
+    const total = this.props.dados.totalDiasCronograma;
+    if (!dia) return "Missão do Dia";
+    return "Missão do Dia · Dia " + dia + (total ? " de " + total : "");
+  }
+
+  /** Título do dia atual da rota — nunca um tema escrito no código. */
+  tituloMissaoDoDia(): string {
+    const dia = this.props.dados.trilhaHoje;
+    if (dia?.titulo) return dia.titulo;
+    const primeira = this.missoesHoje()[0];
+    if (primeira?.titulo) return primeira.titulo;
+    return "Suas missões de hoje";
+  }
 
   /** Data YYYY-MM-DD de um dia do cronograma, ou null se não dá pra saber. */
   dataDoDia(diaNumero: number): string | null {
@@ -3899,7 +3927,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const save = (b: any) => {
       this.setState({ brief: b });
       try {
-        localStorage.setItem("dm-brief", JSON.stringify(b));
       } catch (e) {}
     };
     const row = (label: string, control: any) =>
@@ -3976,7 +4003,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   const f = { ...this.state.feels, [m]: nx };
                   this.setState({ feels: f });
                   try {
-                    localStorage.setItem("dm-feels", JSON.stringify(f));
                   } catch (e) {}
                 },
                 style: { display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 13, background: C.card, border: "1px solid " + C.line, cursor: "pointer" }
