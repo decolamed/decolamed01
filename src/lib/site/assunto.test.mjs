@@ -126,6 +126,16 @@ test("o nome da matéria sozinho não aproxima assuntos", () => {
   assert.ok(afinidadeDeAssunto("Biologia · Citologia", "Biologia · Genética") < AFINIDADE_MINIMA);
 });
 
+test("um termo genérico compartilhado não casa assuntos opostos", () => {
+  // "Funções Inorgânicas" e "Funções Orgânicas" só têm em comum a palavra
+  // "funções". Quem errou inorgânica não deve receber cards de orgânica.
+  assert.ok(
+    afinidadeDeAssunto("Reações Químicas · Oxirredução e Funções Inorgânicas", "Funções Orgânicas") < AFINIDADE_MINIMA
+  );
+  // Mas o candidato inteiro contido no assunto procurado continua valendo.
+  assert.equal(afinidadeDeAssunto("Físico-Química · Termoquímica e Combustão", "Termoquímica"), 1);
+});
+
 test("marcadores de continuidade não contam como tema", () => {
   assert.deepEqual(termosDoAssunto("Estequiometria · Continuação"), ["estequiometria"]);
   assert.deepEqual(termosDoAssunto("Radioatividade · Aprofundamento"), ["radioatividade"]);

@@ -90,12 +90,16 @@ export function termosDoAssunto(assunto: string | null | undefined): string[] {
 /**
  * O quanto dois assuntos falam da mesma coisa, de 0 a 1.
  *
- * A nota é a MAIOR das duas coberturas: quanto do assunto procurado aparece
- * no candidato, e quanto do candidato aparece no procurado. Os dois lados
- * importam porque os vocabulários têm tamanhos diferentes — o flashcard
- * "Termoquímica" (um termo) cobre inteiramente a questão "Físico-Química ·
- * Termoquímica e Combustão" (três termos), e é exatamente o material certo,
- * embora cubra só um terço dos termos dela.
+ * A base é quanto do assunto procurado aparece no candidato. Um candidato
+ * INTEIRAMENTE contido no procurado vale nota cheia: o flashcard
+ * "Termoquímica" (um termo) é exatamente o material da questão
+ * "Físico-Química · Termoquímica e Combustão", embora cubra só um terço dos
+ * termos dela.
+ *
+ * A contenção precisa ser total, e não parcial, senão um termo genérico
+ * compartilhado carrega o casamento sozinho: "Funções Orgânicas" cobria
+ * metade de si mesmo em "Oxirredução e Funções Inorgânicas" — só pelo
+ * "funções" — e virava revisão de orgânica para quem errou inorgânica.
  *
  * Termos que só diferem no final contam como iguais ("reacoes"/"reacao",
  * "organica"/"organicas") — plural e gênero não deveriam separar assunto.
@@ -115,8 +119,8 @@ export function afinidadeDeAssunto(procurado: string | null | undefined, candida
   };
 
   const doAlvoNoCandidato = a.filter((t) => b.some((o) => casa(t, o))).length / a.length;
-  const doCandidatoNoAlvo = b.filter((t) => a.some((o) => casa(t, o))).length / b.length;
-  return Math.max(doAlvoNoCandidato, doCandidatoNoAlvo);
+  const candidatoTodoCoberto = b.every((t) => a.some((o) => casa(t, o)));
+  return candidatoTodoCoberto ? 1 : doAlvoNoCandidato;
 }
 
 /**

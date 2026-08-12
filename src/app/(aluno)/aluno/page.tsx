@@ -53,7 +53,15 @@ import type {
 // e valer na hora.
 const MENSAGEM_RELATO_ERRO = "Reportar erro";
 
-export default async function AlunoHomePage() {
+export default async function AlunoHomePage({
+  searchParams
+}: {
+  // `?aula=<id>` abre uma videoaula direto no player ao carregar. É o que
+  // permite a revisão em vídeo do Copiloto levar à AULA, e não a uma lista.
+  // "Estudos" é uma tela dentro do app (um Client Component), não uma rota
+  // do Next — não existe `/aluno/estudos` para onde apontar.
+  searchParams?: { aula?: string };
+}) {
   // Camada 2 de proteção (a camada 1 é o middleware): garante que mesmo que
   // a rota seja alcançada por algum outro caminho, o conteúdo só renderiza
   // para quem tem matrícula ativa e dentro do prazo.
@@ -173,13 +181,13 @@ export default async function AlunoHomePage() {
   // para o aluno nunca ficar sem canal.
   const numeroWhatsappRedacao = textoConfig(configRedacao?.valor) || numeroWhatsapp;
 
-  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
-  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
-  // aula já corrigida pelo admin em "Cursos e Aulas".
   // Idioma escolhido no briefing. Governa tudo que é de língua estrangeira
   // daqui pra baixo: acervo, cronograma e textos.
   const idiomaAluno = normalizarIdioma((briefingData as { idioma_prova?: string | null } | null)?.idioma_prova);
 
+  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
+  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
+  // aula já corrigida pelo admin em "Cursos e Aulas".
   const diasResolvidos = await resolverCronograma(
     ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
   );
@@ -284,6 +292,7 @@ export default async function AlunoHomePage() {
       whatsappSuporte={montarLinkWhatsapp(numeroWhatsapp, "Olá! Preciso de ajuda com a plataforma Decola Med.")}
       whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
       whatsappErro={montarLinkWhatsapp(numeroWhatsapp, MENSAGEM_RELATO_ERRO)}
+      abrirAulaId={searchParams?.aula ?? null}
       dados={{
         temCopiloto,
         // Filtrados pelo idioma escolhido no briefing: quem faz Inglês não

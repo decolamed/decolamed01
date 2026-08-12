@@ -131,6 +131,10 @@ interface DecolaAppProps {
   // por isso nenhum número aparece aqui no cliente e trocar a configuração
   // no admin passa a valer sem tocar em código.
   whatsappErro: string;
+  // Id de `conteudos_biblioteca` para abrir no player assim que o app
+  // carrega. Chega por `/aluno?aula=<id>` — é assim que a revisão em vídeo
+  // do Copiloto abre a aula certa em vez de uma lista.
+  abrirAulaId?: string | null;
   dados: DecolaAppDados;
   // Vitrine somente-leitura usada em /preview-aluno (botão "Ver app do
   // aluno" do admin e "Demonstração grátis" do parceiro): mostra conteúdo
@@ -313,6 +317,17 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   _deferredInstallPrompt: any = null;
 
   componentDidMount() {
+    // Deep link de aula (`/aluno?aula=<id>`). Resolve pelo ID real do
+    // conteúdo — nunca pelo título, que não é identificador e muda quando o
+    // admin corrige o nome da aula.
+    if (this.props.abrirAulaId) {
+      const aula = this.props.dados.conteudos.find((c) => c.id === this.props.abrirAulaId && c.url);
+      if (aula) {
+        this.abrirAula(aula.id, aula.titulo, aula.url as string, "mapa");
+      } else {
+        this.avisar("Esta aula não está mais disponível.");
+      }
+    }
     this._r = () => this.setState({ w: window.innerWidth });
     window.addEventListener("resize", this._r);
     this._r();

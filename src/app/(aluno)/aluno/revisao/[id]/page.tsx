@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { porAfinidadeDeAssunto } from "@/lib/site/assunto";
@@ -71,7 +71,7 @@ export default async function RevisaoPage({ params }: { params: { id: string } }
             <p className="mt-1 font-display text-lg font-bold text-navy-dark">{video.titulo}</p>
             {rec.motivo && <p className="mt-2 text-sm text-navy-dark/60">{rec.motivo as string}</p>}
             <Link
-              href={`/aluno/estudos?abrir=${encodeURIComponent(video.id)}`}
+              href={`/aluno?aula=${encodeURIComponent(video.id)}`}
               className="mt-5 inline-block rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
             >
               Assistir agora
@@ -80,6 +80,14 @@ export default async function RevisaoPage({ params }: { params: { id: string } }
         </PaginaAluno>
       );
     }
+  }
+
+  // ---- Revisão em questões ----------------------------------------------
+  // Uma recomendação de PRATICAR não é uma revisão de flashcards. Sem isto ela
+  // caía no trecho de baixo e o aluno via "ainda não há flashcards deste
+  // assunto" — uma resposta sobre material que ele não tinha pedido.
+  if (rec.tipo === "questoes") {
+    redirect(`/aluno/questoes?materia=${encodeURIComponent(materia)}`);
   }
 
   // ---- Revisão em flashcards --------------------------------------------
