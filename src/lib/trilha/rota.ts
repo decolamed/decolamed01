@@ -54,7 +54,7 @@ export const DIAS_MINIMOS_APOS_SIMULADO_2 = 7;
 /** Quantos simulados toda rota precisa ter, independente do tamanho. */
 export const SIMULADOS_POR_ROTA = 2;
 
-export type TipoDiaRota = "estudo" | "simulado" | "revisao";
+export type TipoDiaRota = "estudo" | "simulado" | "revisao" | "descanso" | "prova";
 
 export interface DiaDaRota {
   /** Posição na rota do aluno, 1..N. É ISTO que a interface exibe. */
@@ -151,11 +151,20 @@ export function posicionarSimulados(datas: string[], dataProva: string): { indic
   return { indiceSim1, indiceSim2 };
 }
 
-function itemSimulado(ordem: number): TrilhaItem {
+/** Simulado real da plataforma, para o dia de simulado abrir de fato. */
+export interface SimuladoDisponivel {
+  id: string;
+  titulo: string;
+}
+
+function itemSimulado(ordem: number, simulado: SimuladoDisponivel | null): TrilhaItem {
   return {
     tipo: "simulado",
-    titulo: `Simulado ${ordem}`,
-    ref_id: null,
+    // Sem simulado cadastrado o item continua existindo — a rota promete dois
+    // simulados e é melhor o aluno ver o dia reservado (e cair na lista de
+    // simulados) do que a rota simplesmente não ter o dia.
+    titulo: simulado ? simulado.titulo : `Simulado ${ordem}`,
+    ref_id: simulado ? simulado.id : null,
     url: null,
     materia: null,
     duracao_minutos: 90
@@ -173,6 +182,22 @@ function itemRevisao(): TrilhaItem {
   } as unknown as TrilhaItem;
 }
 
+/** Como o dia da prova aparece no cronograma. */
+export function tituloDaProva(nomeVestibular?: string | null): string {
+  const nome = (nomeVestibular ?? "").trim();
+  // "vestibular" é o padrão genérico de `configuracoes` para quem ainda não
+  // cadastrou a instituição — concatenar daria "VESTIBULAR VESTIBULAR".
+  if (!nome || nome.toLowerCase() === "vestibular") return "DIA DA PROVA";
+  return `DIA DA PROVA — VESTIBULAR ${nome.toUpperCase()}`;
+}
+
+export const TITULO_VESPERA = "VÉSPERA DA PROVA — DESCANSO";
+
+/** Minutos de todo o conteúdo do template — base do cálculo da véspera. */
+function minutosDoTemplate(template: TrilhaDia[]): number {
+  return template.reduce((soma, d) => soma + (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0), 0);
+}
+
 /**
  * Gera a rota do aluno.
  *
@@ -180,7 +205,12 @@ function itemRevisao(): TrilhaItem {
  * não sorteia, não olha registro antigo, não depende de ordem de inserção.
  * Os mesmos parâmetros produzem sempre exatamente a mesma rota.
  */
-export function gerarRota(template: TrilhaDia[], p: ParametrosRota): Rota {
+export function gerarRota(
+  template: TrilhaDia[],
+  p: ParametrosRota,
+  opcoes: { simulados?: SimuladoDisponivel[]; nomeVestibular?: string | null } = {}
+): Rota {
+  const simulados = opcoes.simulados ?? [];
   const datas = datasDisponiveis(p);
   const assinatura = assinaturaDosParametros(p);
 
@@ -193,6 +223,38 @@ export function gerarRota(template: TrilhaDia[], p: ParametrosRota): Rota {
   if (indiceSim1 >= 0) reservados.set(indiceSim1, "simulado");
   reservados.set(indiceSim2, "simulado");
   for (let i = indiceSim2 + 1; i < datas.length; i++) reservados.set(i, "revisao");
+
+  // ---- Véspera da prova -------------------------------------------------
+  //
+  // O dia imediatamente anterior à prova vira descanso — mas só quando sobra
+  // tempo. A ordem de prioridade é a do pedido: a prova sempre aparece e
+  // nunca recebe conteúdo; depois vem distribuir todo o conteúdo; o descanso
+  // da véspera é a terceira prioridade, e numa janela curta ele cede lugar ao
+  // estudo em vez de espremer o conteúdo nos dias restantes.
+  //
+  // "Sobra tempo" não é um palpite: é o conteúdo do template cabendo nos dias
+  // de estudo que restariam, dentro das horas por dia que o aluno informou.
+  const ultimo = datas.length - 1;
+  const vesperaReal = somarDias(p.dataProva, -1);
+  const podeSerVespera = datas[ultimo] === vesperaReal && reservados.get(ultimo) !== "simulado";
+
+  if (podeSerVespera) {
+    if (reservados.get(ultimo) === "revisao") {
+      // O dia já era de revisão: não carrega conteúdo do template, então
+      // transformá-lo em descanso não tira nada de ninguém. É o caso comum
+      // nas janelas curtas, onde a reta final já é toda de revisão.
+      reservados.set(ultimo, "descanso");
+    } else if (!reservados.has(ultimo)) {
+      // Aqui a véspera é um dia de conteúdo. Só vira descanso se o template
+      // inteiro ainda couber nos dias restantes, dentro das horas por dia
+      // informadas — senão o descanso espremeria a matéria, e o pedido é
+      // explícito: distribuir o conteúdo vem antes do descanso.
+      const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i)).length;
+      if (diasDeConteudo > 0 && minutosDoTemplate(template) <= diasDeConteudo * p.minutosPorDia) {
+        reservados.set(ultimo, "descanso");
+      }
+    }
+  }
 
   // Dias que recebem conteúdo do template, na ordem do calendário.
   const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i));
@@ -237,7 +299,9 @@ export function gerarRota(template: TrilhaDia[], p: ParametrosRota): Rota {
 
     if (reservado === "simulado") {
       const ordem = indiceSim1 >= 0 && i === indiceSim1 ? 1 : 2;
-      const item = itemSimulado(ordem);
+      // Simulado real, escolhido por posição — determinístico como o resto.
+      const simulado = simulados[ordem - 1] ?? simulados[0] ?? null;
+      const item = itemSimulado(ordem, simulado);
       return {
         routeDay,
         scheduledDate: data,
@@ -262,6 +326,20 @@ export function gerarRota(template: TrilhaDia[], p: ParametrosRota): Rota {
       };
     }
 
+    // Véspera: sem itens de propósito. Um bloco "revisar tudo" aqui seria
+    // conteúdo com outro nome, e o pedido é descanso.
+    if (reservado === "descanso") {
+      return {
+        routeDay,
+        scheduledDate: data,
+        templateDays: [],
+        tipo: "descanso",
+        titulo: TITULO_VESPERA,
+        itens: [],
+        minutos: 0
+      };
+    }
+
     const conteudo = conteudoPorIndice.get(i) ?? { dias: [], minutos: 0 };
     const itens = conteudo.dias.flatMap((d) => d.itens ?? []);
     return {
@@ -278,7 +356,26 @@ export function gerarRota(template: TrilhaDia[], p: ParametrosRota): Rota {
     };
   });
 
+  // O DIA DA PROVA sempre entra, como último dia da rota e sem conteúdo
+  // nenhum — nem estudo, nem revisão, nem questões. Ele não é um dia de
+  // estudo: é o evento que fecha a rota, e o aluno precisa vê-lo no
+  // cronograma para saber que a contagem termina ali.
+  dias.push({
+    routeDay: dias.length + 1,
+    scheduledDate: p.dataProva,
+    templateDays: [],
+    tipo: "prova",
+    titulo: tituloDaProva(opcoes.nomeVestibular),
+    itens: [],
+    minutos: 0
+  });
+
   return { dias, parametros: p, assinatura };
+}
+
+/** Dias de estudo da rota — o dia da prova não conta como dia de estudo. */
+export function diasDeEstudoDaRota(dias: DiaDaRota[]): DiaDaRota[] {
+  return dias.filter((d) => d.tipo !== "prova");
 }
 
 /**
@@ -329,6 +426,53 @@ export function diaAtualDaRota(dias: DiaDaRota[], hoje: string): DiaDaRota | nul
   if (proximo) return proximo;
 
   return dias[dias.length - 1];
+}
+
+/**
+ * A rota no formato que as telas já consomem (`TrilhaDia`).
+ *
+ * `dia_numero` recebe o **routeDay** — o número da posição do aluno na sua
+ * própria rota. Não é maquiagem de tela: a partir daqui não existe mais
+ * nenhum caminho por onde o número do template chegue à interface. Os campos
+ * de origem seguem juntos, explicitamente nomeados, para diagnóstico e para
+ * o admin conseguir rastrear de onde veio o conteúdo do dia.
+ */
+export interface DiaDeCronograma extends TrilhaDia {
+  scheduled_date: string;
+  template_days: number[];
+  tipo_rota: TipoDiaRota;
+}
+
+export function cronogramaDeTela(rota: Rota): DiaDeCronograma[] {
+  return rota.dias.map((d) => ({
+    // `id` estável dentro da rota: as telas usam como key de lista.
+    id: `rota-${d.routeDay}`,
+    dia_numero: d.routeDay,
+    titulo: d.titulo,
+    itens: d.itens,
+    atividades: [],
+    updated_at: "",
+    scheduled_date: d.scheduledDate,
+    template_days: d.templateDays,
+    tipo_rota: d.tipo
+  }));
+}
+
+/**
+ * Mapa routeDay → data agendada.
+ *
+ * É a ponte da rota para o calendário. Antes a data saía de
+ * `hoje + (dia_numero − diaDeHoje)`, uma extrapolação que só acertava se o
+ * aluno estudasse todos os dias sem falhar um — e que produzia datas de
+ * julho num cronograma que começa em agosto. Agora a data não é calculada na
+ * tela: ela é lida da rota, onde foi decidida uma vez só.
+ */
+export function datasDaRota(rota: Rota): Record<number, string> {
+  const mapa: Record<number, string> = {};
+  rota.dias.forEach((d) => {
+    mapa[d.routeDay] = d.scheduledDate;
+  });
+  return mapa;
 }
 
 /**

@@ -5,8 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
-import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
+import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
+import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
+import { nomeDoDiaDaSemana, dataBR } from "@/lib/site/data";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
 
@@ -112,6 +114,10 @@ export default async function AlunoCronogramaPage() {
       .maybeSingle()
   ]);
 
+  // Dia do cronograma como esta tela o recebe: da rota (com data e tipo) no
+  // Voo Guiado, do template puro no Decolando.
+  type DiaDoCronograma = TrilhaDia & { scheduled_date?: string; tipo_rota?: string };
+
   const concluidas = new Set(((progresso as { chave: string }[]) ?? []).map((p) => p.chave));
   const itemConcluido = (diaNumero: number, indice: number, item: TrilhaItem) => {
     const chave = chaveDeItemTrilha(diaNumero, indice, item);
@@ -119,33 +125,49 @@ export default async function AlunoCronogramaPage() {
   };
 
   // ---- Dia de hoje no cronograma ----
+  //
+  // Esta tela e o painel (aluno/page.tsx) PRECISAM chegar ao mesmo dia. Antes
+  // cada uma derivava o seu por conta própria e elas divergiam. Agora as duas
+  // passam por `rotaDoAluno()` + `diaAtualDaRota()`, que é a fonte única.
   let diaAtual: number | null = null;
-  let diaTrilha: TrilhaDia | null = null;
-  let todosOsDias: TrilhaDia[] = [];
+  let diaTrilha: DiaDoCronograma | null = null;
+  let todosOsDias: DiaDoCronograma[] = [];
   let cronogramaCompactado = false;
-  if (matricula?.acesso_liberado_em) {
-    diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
-    // Busca o cronograma inteiro, não só o dia de hoje: esta rota é o
-    // "cronograma completo", e mostrar um dia só era o que dava a impressão
-    // de que os demais tinham sumido. O painel do admin é a fonte oficial.
-    const { data } = await supabase.from("trilha_dias").select("*").order("dia_numero");
-    // Idem à tela do painel: o cronograma lê o conteúdo atual da biblioteca,
-    // não a cópia gravada no jsonb quando o dia foi montado.
-    const resolvidos = await resolverCronograma((data as TrilhaDia[]) ?? []);
+  let datasDoCronograma: Record<number, string> | null = null;
 
-    // Mesmo ajuste aplicado no painel (aluno/page.tsx): a rota do Voo Guiado
-    // é projetada na janela real do aluno. As duas telas PRECISAM passar
-    // pela mesma função — se uma comprimisse e a outra não, o aluno veria
-    // "Dia 3 de 20" aqui e "Dia 3 de 40" lá.
-    const ajuste = ajustarCronogramaAoAluno(resolvidos, {
-      temCopiloto,
-      briefing: briefing as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
-      hojeStr
-    });
-    todosOsDias = ajuste.dias;
-    cronogramaCompactado = ajuste.compactado;
+  // Busca o cronograma inteiro, não só o dia de hoje: esta rota é o
+  // "cronograma completo", e mostrar um dia só era o que dava a impressão
+  // de que os demais tinham sumido. O painel do admin é a fonte oficial.
+  const { data: trilhaData } = await supabase.from("trilha_dias").select("*").order("dia_numero");
+  // Idem à tela do painel: o cronograma lê o conteúdo atual da biblioteca,
+  // não a cópia gravada no jsonb quando o dia foi montado.
+  const resolvidos = await resolverCronograma((trilhaData as TrilhaDia[]) ?? []);
+
+  const rota = await rotaDoAluno(supabase, profile.id, {
+    temCopiloto,
+    briefing: briefing as Parameters<typeof rotaDoAluno>[2]["briefing"],
+    template: resolvidos,
+    hoje: hojeStr
+  });
+
+  if (rota) {
+    todosOsDias = cronogramaDeTela(rota);
+    datasDoCronograma = datasDaRota(rota);
+    cronogramaCompactado = rota.dias.length < resolvidos.length;
+    diaAtual = diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null;
+    diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
+  } else if (matricula?.acesso_liberado_em) {
+    // Plano Decolando: 40 dias fixos a partir da matrícula, sem briefing.
+    todosOsDias = resolvidos;
+    diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
+
+  /** "Segunda-feira · 12/08/2026" a partir da rota — sem extrapolar datas. */
+  const rotuloData = (diaNumero: number): string | null => {
+    const iso = datasDoCronograma?.[diaNumero];
+    return iso ? `${nomeDoDiaDaSemana(iso)} · ${dataBR(iso)}` : null;
+  };
 
   // ---- Missões individuais (Copiloto ou cadastradas pelo admin) ----
   const idsAula = (missoesBrutas ?? []).filter((m) => m.tipo === "aula" && m.ref_id).map((m) => m.ref_id as string);
@@ -169,28 +191,48 @@ export default async function AlunoCronogramaPage() {
 
       {temCopiloto && (
         <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
-          <p className="font-display font-bold">✈️ Rota adaptativa do Copiloto</p>
+          <p className="font-display font-bold">✈️ Sua rota até a prova</p>
           <p className="mt-1 text-white/70">
-            Você segue o cronograma abaixo e, quando o Copiloto identifica algo que vale revisar, ele acrescenta missões extras
-            automaticamente.
+            {todosOsDias.length > 0
+              ? `São ${todosOsDias.length} dias de estudo, com 2 simulados no caminho, terminando antes da prova. `
+              : ""}
+            O Copiloto acompanha seu desempenho e acrescenta missões de reforço quando identifica um ponto fraco.
           </p>
           {/* Mesmo aviso do painel: sem ele, o aluno que vê a rota agrupada
               acha que perdeu conteúdo. */}
           {cronogramaCompactado && (
             <p className="mt-2 border-t border-white/15 pt-2 text-white/70">
-              Sua rota foi ajustada ao tempo que você tem até a prova: os dias foram agrupados para caber na sua janela,
-              respeitando as horas por dia informadas no briefing. Nenhum conteúdo foi removido.
+              Como sua janela é menor que o conteúdo completo, alguns dias reúnem mais de um tema — respeitando as horas por
+              dia informadas no briefing. Nenhum conteúdo foi removido.
             </p>
           )}
         </div>
       )}
 
-      {diaTrilha && (
+      {/* Hoje é o dia da prova: nenhuma missão, só o evento. */}
+      {diaTrilha?.tipo_rota === "prova" && (
+        <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
+            {rotuloData(diaAtual!) ?? "Hoje"}
+          </p>
+          <p className="mt-1 font-display text-lg font-bold">🎯 {diaTrilha.titulo}</p>
+          <p className="mt-1 text-white/70">
+            Sem missões hoje. Confira o local da prova, leve documento e caneta. Você se preparou para este dia.
+          </p>
+        </div>
+      )}
+
+      {diaTrilha && diaTrilha.tipo_rota !== "prova" && (
         <>
           <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
-            <p className="text-xs font-semibold uppercase tracking-widest text-white/60">Dia {diaAtual}</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
+              Dia {diaAtual}
+              {todosOsDias.length > 0 ? ` de ${todosOsDias.filter((d) => d.tipo_rota !== "prova").length}` : ""}
+            </p>
             <p className="mt-1 font-display font-bold">{diaTrilha.titulo}</p>
-            <p className="mt-1 text-white/70">Sua missão de hoje, a partir do seu início na plataforma.</p>
+            <p className="mt-1 text-white/70">
+              {rotuloData(diaAtual!) ?? "Sua missão de hoje, a partir do seu início na plataforma."}
+            </p>
           </div>
 
           <div className="mt-4 space-y-2">
@@ -240,10 +282,47 @@ export default async function AlunoCronogramaPage() {
       {todosOsDias.length > 1 && (
         <>
           <h2 className="mt-8 font-display text-lg font-bold text-navy-dark">
-            Cronograma completo · {todosOsDias.length} dias
+            {/* O dia da prova fecha a rota, mas não é um dia de estudo — não
+                entra na contagem anunciada ao aluno. */}
+            Cronograma completo · {todosOsDias.filter((d) => d.tipo_rota !== "prova").length} dias
           </h2>
           <div className="mt-3 space-y-2">
             {todosOsDias.map((d) => {
+              // Dia da prova: só o evento, sem lista de itens para abrir.
+              if (d.tipo_rota === "prova") {
+                return (
+                  <div
+                    key={d.dia_numero}
+                    className="rounded-2xl p-4 text-white shadow"
+                    style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}
+                  >
+                    <p className="text-[11px] font-extrabold uppercase tracking-widest text-white/60">
+                      {rotuloData(d.dia_numero) ?? "Dia da prova"}
+                    </p>
+                    <p className="mt-1 font-display text-base font-bold">🎯 {d.titulo}</p>
+                    <p className="mt-1 text-sm text-white/70">
+                      Sem estudo hoje. Confira o local da prova e leve documento e caneta.
+                    </p>
+                  </div>
+                );
+              }
+
+              // Véspera reservada para descanso — nada de conteúdo novo.
+              if (d.tipo_rota === "descanso") {
+                return (
+                  <div key={d.dia_numero} className="rounded-2xl border border-orange/40 bg-orange/5 p-4 shadow">
+                    <p className="text-[11px] font-extrabold uppercase tracking-widest text-orange">
+                      Dia {d.dia_numero}
+                      {rotuloData(d.dia_numero) ? ` · ${rotuloData(d.dia_numero)}` : ""}
+                    </p>
+                    <p className="mt-1 font-display text-base font-bold text-navy-dark">😴 {d.titulo}</p>
+                    <p className="mt-1 text-sm text-navy-dark/60">
+                      Durma bem e chegue descansado. Nada de conteúdo novo hoje.
+                    </p>
+                  </div>
+                );
+              }
+
               const passado = diaAtual != null && d.dia_numero < diaAtual;
               const hoje = d.dia_numero === diaAtual;
               const itensDoDia = d.itens ?? [];
@@ -272,7 +351,13 @@ export default async function AlunoCronogramaPage() {
                     >
                       Dia {d.dia_numero}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-display font-bold text-navy-dark">{d.titulo}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-display font-bold text-navy-dark">{d.titulo}</span>
+                      {/* Data lida da rota, não extrapolada a partir de hoje. */}
+                      {rotuloData(d.dia_numero) && (
+                        <span className="block text-[11px] font-semibold text-navy-dark/45">{rotuloData(d.dia_numero)}</span>
+                      )}
+                    </span>
                     <span className={`text-xs font-semibold ${diaConcluido ? "text-green" : "text-navy-dark/40"}`}>
                       {itensDoDia.length > 0 ? `${feitos}/${itensDoDia.length}` : "0 itens"}
                     </span>

@@ -14,6 +14,11 @@ import {
   datasDisponiveis,
   posicionarSimulados,
   parametrosDoBriefing,
+  cronogramaDeTela,
+  datasDaRota,
+  diasDeEstudoDaRota,
+  tituloDaProva,
+  TITULO_VESPERA,
   DIAS_MINIMOS_APOS_SIMULADO_2
 } from "./rota.ts";
 
@@ -51,8 +56,11 @@ test("A — rota nova começa exatamente na data informada e numera a partir de 
   // Numeração contínua, sem buraco.
   dias.forEach((d, i) => assert.equal(d.routeDay, i + 1));
 
-  // Nenhum dia cai na prova ou depois.
-  dias.forEach((d) => assert.ok(d.scheduledDate < base.dataProva, `dia ${d.routeDay} caiu em ${d.scheduledDate}`));
+  // Nenhum dia de ESTUDO cai na prova ou depois — o único dia na data da
+  // prova é o próprio evento.
+  diasDeEstudoDaRota(dias).forEach((d) =>
+    assert.ok(d.scheduledDate < base.dataProva, `dia ${d.routeDay} caiu em ${d.scheduledDate}`)
+  );
 });
 
 // ---------------------------------------------------------------- TESTE E --
@@ -69,12 +77,15 @@ test("C — janela de 19 dias produz exatamente 19 dias numerados de 1 a 19", ()
   assert.equal(disponiveis.length, 19, `esperado 19 dias disponíveis, veio ${disponiveis.length}`);
 
   const { dias } = gerarRota(template(), base);
-  assert.equal(dias.length, 19, "a rota tem de ter o mesmo tamanho da janela");
-  assert.equal(dias[dias.length - 1].routeDay, 19);
+  const estudo = diasDeEstudoDaRota(dias);
+  assert.equal(estudo.length, 19, "a rota tem de ter o mesmo tamanho da janela");
+  assert.equal(estudo[estudo.length - 1].routeDay, 19);
 
   // Nenhum número do template vaza para a numeração da rota.
-  const numeros = dias.map((d) => d.routeDay);
-  assert.deepEqual(numeros, Array.from({ length: 19 }, (_, i) => i + 1));
+  assert.deepEqual(
+    estudo.map((d) => d.routeDay),
+    Array.from({ length: 19 }, (_, i) => i + 1)
+  );
 
   // E nenhum título expõe o agrupamento interno ("Dia 38 + Dia 39 + Dia 40").
   dias.forEach((d) => assert.ok(!d.titulo.includes(" + Dia "), `título expõe compressão: ${d.titulo}`));
@@ -254,4 +265,124 @@ test("posicionarSimulados respeita a folga de 7 dias", () => {
     (new Date(base.dataProva + "T12:00:00Z") - new Date(dataSim2 + "T12:00:00Z")) / 86400000
   );
   assert.ok(diff >= DIAS_MINIMOS_APOS_SIMULADO_2, `folga de ${diff} dias, mínimo ${DIAS_MINIMOS_APOS_SIMULADO_2}`);
+});
+
+// ------------------------------------------------------------ SIMULADOS REAIS
+test("os dias de simulado apontam para simulados reais da plataforma", () => {
+  const simulados = [
+    { id: "sim-1", titulo: "Simulado Geral I" },
+    { id: "sim-2", titulo: "Simulado Geral II" }
+  ];
+  const { dias } = gerarRota(template(), base, { simulados });
+  const doDia = dias.filter((d) => d.tipo === "simulado");
+
+  assert.equal(doDia.length, 2);
+  // Sem ref_id o aluno cairia na lista genérica de simulados em vez do
+  // simulado que a rota reservou para aquele dia.
+  assert.equal(doDia[0].itens[0].ref_id, "sim-1");
+  assert.equal(doDia[1].itens[0].ref_id, "sim-2");
+  assert.equal(doDia[0].itens[0].titulo, "Simulado Geral I");
+});
+
+test("sem simulado cadastrado o dia continua existindo (a rota promete dois)", () => {
+  const { dias } = gerarRota(template(), base, { simulados: [] });
+  const doDia = dias.filter((d) => d.tipo === "simulado");
+  assert.equal(doDia.length, 2);
+  assert.equal(doDia[0].itens[0].ref_id, null);
+});
+
+// ----------------------------------------------------------- FORMATO DE TELA
+test("o que chega na tela usa o routeDay, nunca o dia do template", () => {
+  const rota = gerarRota(template(), base);
+  const tela = cronogramaDeTela(rota);
+
+  assert.equal(tela.length, rota.dias.length);
+  tela.forEach((d, i) => assert.equal(d.dia_numero, i + 1));
+  // O dia 2 da tela pode ter vindo dos dias 3..4 do template — e o número do
+  // template não pode vazar para lugar nenhum além de `template_days`.
+  assert.ok(tela.some((d) => d.template_days.length > 1), "este cenário precisa ter dias agrupados");
+  assert.equal(
+    tela.filter((d) => /Dia \d+ do template/.test(d.titulo)).length,
+    tela.filter((d) => d.template_days.length === 1).length,
+    "só um dia alimentado por um único dia do template mantém o título de origem"
+  );
+});
+
+test("as datas da rota vêm prontas, não são extrapoladas a partir de hoje", () => {
+  const rota = gerarRota(template(), base);
+  const mapa = datasDaRota(rota);
+
+  assert.equal(mapa[1], "2026-08-12");
+  assert.equal(Object.keys(mapa).length, rota.dias.length);
+  rota.dias.forEach((d) => assert.equal(mapa[d.routeDay], d.scheduledDate));
+});
+
+// --------------------------------------------------------- DIA DA PROVA ----
+test("o dia da prova sempre entra na rota, sempre sem conteúdo", () => {
+  const { dias } = gerarRota(template(), base, { nomeVestibular: "FACAPE" });
+  const prova = dias.filter((d) => d.tipo === "prova");
+
+  assert.equal(prova.length, 1, "um e apenas um dia de prova");
+  assert.equal(prova[0].scheduledDate, base.dataProva);
+  assert.equal(prova[0], dias[dias.length - 1], "é o último dia da rota");
+  assert.equal(prova[0].itens.length, 0, "o dia da prova não recebe conteúdo nenhum");
+  assert.equal(prova[0].minutos, 0);
+  assert.equal(prova[0].titulo, "DIA DA PROVA — VESTIBULAR FACAPE");
+});
+
+test("sem instituição configurada o dia da prova não vira 'VESTIBULAR VESTIBULAR'", () => {
+  assert.equal(tituloDaProva(null), "DIA DA PROVA");
+  assert.equal(tituloDaProva("vestibular"), "DIA DA PROVA");
+  assert.equal(tituloDaProva("  facape "), "DIA DA PROVA — VESTIBULAR FACAPE");
+});
+
+test("mesmo numa janela mínima o dia da prova aparece", () => {
+  // 3 dias de estudo — a rota mais apertada que ainda existe.
+  const curta = { ...base, inicio: "2026-08-28", dataProva: "2026-08-31" };
+  const { dias } = gerarRota(template(), curta);
+  const prova = dias[dias.length - 1];
+  assert.equal(prova.tipo, "prova");
+  assert.equal(prova.scheduledDate, "2026-08-31");
+});
+
+// ------------------------------------------------------------- VÉSPERA ----
+test("com folga, a véspera vira descanso e não recebe conteúdo novo", () => {
+  // Template pequeno numa janela larga: sobra tempo de sobra.
+  const { dias } = gerarRota(template(6), base);
+  const vespera = dias.find((d) => d.scheduledDate === "2026-08-30");
+
+  assert.equal(vespera.tipo, "descanso");
+  assert.equal(vespera.titulo, TITULO_VESPERA);
+  assert.equal(vespera.itens.length, 0, "descanso é descanso: nada de revisão nem questões");
+});
+
+test("na janela curta a véspera é usada normalmente — descanso é a última prioridade", () => {
+  // 3 dias até a prova: não há folga para abrir mão de um dia inteiro, e a
+  // véspera continua servindo à preparação (aqui, ao simulado).
+  const curta = { ...base, inicio: "2026-08-28", dataProva: "2026-08-31" };
+  const { dias } = gerarRota(template(), curta);
+  const vespera = dias.find((d) => d.scheduledDate === "2026-08-30");
+
+  assert.notEqual(vespera.tipo, "descanso");
+  // Mas o dia da prova continua lá, intocado — é a prioridade número 1.
+  assert.equal(dias[dias.length - 1].tipo, "prova");
+});
+
+test("quando a véspera já era dia de revisão, virar descanso não custa conteúdo", () => {
+  const { dias } = gerarRota(template(), base);
+  const vespera = dias.find((d) => d.scheduledDate === "2026-08-30");
+  assert.equal(vespera.tipo, "descanso");
+  assert.equal(vespera.itens.length, 0);
+});
+
+test("todo o conteúdo continua na rota mesmo com prova e véspera reservadas", () => {
+  const t = template(6);
+  const { dias } = gerarRota(t, base);
+
+  const titulosNaRota = dias.flatMap((d) => d.itens.map((i) => i.titulo));
+  t.forEach((dia) =>
+    dia.itens.forEach((item) =>
+      assert.ok(titulosNaRota.includes(item.titulo), `item perdido: ${item.titulo}`)
+    )
+  );
 });

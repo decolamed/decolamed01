@@ -4,7 +4,6 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 import { Icon } from "@/components/admin/icon";
-import { createAdminClient } from "@/lib/supabase/server";
 
 // Grupo "Gestão" segue a mesma ordem/rótulos do design "Decola Med Admin"
 // (Torre de Comando) — Matrículas não existe no design (que trata acesso
@@ -18,7 +17,6 @@ const GRUPO_GESTAO = [
   { href: "/admin/planos", label: "Planos", icon: "ticket" },
   { href: "/admin/cupons", label: "Cupons", icon: "gift" },
   { href: "/admin/notificacoes", label: "Notificações", icon: "bell" },
-  { href: "/admin/relatos", label: "Relatos de Erros", icon: "alert" },
   { href: "/admin/configuracoes", label: "Configurações", icon: "gear" }
 ] as const;
 
@@ -42,24 +40,11 @@ const GRUPO_CONTEUDO = [
 
 const NAV = [...GRUPO_GESTAO, ...GRUPO_CONTEUDO];
 
-// O contador de relatos pendentes tem que refletir o banco a cada carga —
-// um menu em cache mostraria "0" com chamado novo esperando.
+// O menu reflete o estado do admin logado a cada carga, sem cache.
 export const dynamic = "force-dynamic";
-
-// O menu mostra quantos relatos estão pendentes. Sem esse número, um
-// chamado novo do aluno só era descoberto se o admin entrasse na tela por
-// conta própria — e a sensação era de que a mensagem não tinha chegado.
-async function contarRelatosPendentes(): Promise<number> {
-  const { count } = await createAdminClient()
-    .from("relatos_erro")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "pendente");
-  return count ?? 0;
-}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireAdmin();
-  const relatosPendentes = await contarRelatosPendentes();
 
   return (
     <div className="flex min-h-screen bg-sky font-[family-name:var(--font-montserrat)]">
@@ -78,11 +63,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             >
               <Icon name={item.icon} size={16} />
               <span className="flex-1">{item.label}</span>
-              {item.href === "/admin/relatos" && relatosPendentes > 0 && (
-                <span className="rounded-full bg-[#F8935A] px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white">
-                  {relatosPendentes}
-                </span>
-              )}
             </Link>
           ))}
         </nav>
