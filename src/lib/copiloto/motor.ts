@@ -1645,6 +1645,15 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
     // Gemini e busca uma vídeo-aula REAL (nunca inventada) via YouTube
     // Data API antes de criar a recomendação.
     let payloadExtra: Record<string, unknown> = {};
+    // O tipo da recomendação é decidido ANTES da produção, a partir do
+    // inventário carregado no início da execução. Quando a produção encontra
+    // uma vídeo-aula, o tipo precisa acompanhar — senão a aula é buscada,
+    // validada, gravada em `conteudos_biblioteca`... e a recomendação
+    // continua sendo de flashcards, com o vídeo mencionado só numa frase do
+    // motivo. Era por isso que não existia UMA recomendação de tipo "aula" no
+    // banco: as revisões em vídeo eram produzidas e descartadas na última
+    // linha.
+    let tipoFinal: string = iv.tipoRecomendado;
     if (cfg.gemini && iv.assunto && iv.gen > 8) {
       try {
         const producao = await produzirMaterialSobDemanda(
@@ -1656,9 +1665,12 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
             material_gerado_ia: true,
             flashcards_gerados: producao.flashcardsGerados,
             video_url: producao.videoUrl,
-            video_titulo: producao.videoTitulo
+            video_titulo: producao.videoTitulo,
+            // É este id que a tela de revisão usa para abrir a aula.
+            video_conteudo_id: producao.videoConteudoId
           };
-          if (producao.videoUrl) {
+          if (producao.videoUrl && producao.videoConteudoId) {
+            tipoFinal = "aula";
             motivo += ` Preparei uma vídeo-aula completa sobre esse assunto especialmente pra você.`;
           } else if (producao.flashcardsGerados > 0) {
             motivo += ` Criei novos flashcards sobre esse assunto pra reforçar.`;
@@ -1670,8 +1682,29 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
     }
 
     const titulo = iv.qtdErros === 0 ? `Iniciar: ${iv.assunto ?? iv.materia}` : iv.qtdErros === 1 ? `Revisar: ${iv.assunto ?? iv.materia}` : iv.qtdErros <= 3 ? `Reforçar: ${iv.assunto ?? iv.materia} (${iv.qtdErros} erros)` : `Urgente: ${iv.assunto ?? iv.materia} (${iv.qtdErros} erros)`;
-    await supabase.from("copiloto_recomendacoes").insert({ aluno_id: dados.alunoId, tipo: iv.tipoRecomendado, materia: iv.materia, assunto: iv.assunto, titulo, motivo, prioridade: iv.urgencia, payload: { modo: dados.modo, gen: iv.gen, qtd_erros: iv.qtdErros, precisao: Math.round(iv.precisaoAtual), relevancia: Math.round(iv.relevancia), ...payloadExtra }, fonte: "gatilho" });
-    await registrarEvento(dados.alunoId, "gen_recomendacao", iv.materia, iv.assunto, { gen: iv.gen, modo: dados.modo, tipo: iv.tipoRecomendado });
+    // `ignoreDuplicates`: o índice único parcial
+    // (aluno, matéria, assunto) WHERE status='pendente' é quem garante de
+    // verdade a unicidade — a checagem acima é uma leitura anterior à
+    // escrita, e `rodarCopiloto` roda em paralelo a partir de vários pontos.
+    // Perder a corrida aqui não é erro: significa que outra execução já
+    // criou a mesma recomendação.
+    const { error: erroInsercao } = await supabase
+      .from("copiloto_recomendacoes")
+      .insert({ aluno_id: dados.alunoId, tipo: tipoFinal, materia: iv.materia, assunto: iv.assunto, titulo, motivo, prioridade: iv.urgencia, payload: { modo: dados.modo, gen: iv.gen, qtd_erros: iv.qtdErros, precisao: Math.round(iv.precisaoAtual), relevancia: Math.round(iv.relevancia), ...payloadExtra }, fonte: "gatilho" });
+
+    // 23505 = violação do índice único parcial. Não é erro: significa que
+    // outra execução simultânea já criou esta mesma recomendação. `ON
+    // CONFLICT` não serve aqui porque o índice é sobre uma expressão
+    // (`coalesce(assunto,'')`) e parcial (`WHERE status='pendente'`) — o
+    // Postgres não aceita esse alvo. Deixar o insert falhar e ignorar a
+    // colisão é o caminho correto.
+    if (erroInsercao) {
+      if ((erroInsercao as { code?: string }).code !== "23505") {
+        console.error("[copiloto] falha ao criar recomendação:", erroInsercao.message);
+      }
+      continue;
+    }
+    await registrarEvento(dados.alunoId, "gen_recomendacao", iv.materia, iv.assunto, { gen: iv.gen, modo: dados.modo, tipo: tipoFinal });
     criadas++;
   }
 }

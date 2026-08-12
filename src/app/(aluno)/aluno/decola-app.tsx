@@ -2860,30 +2860,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           done && res?.explicacao
             ? h("div", { key: "expl", style: { margin: "10px 18px 0" } }, card({ padding: 14 }, h("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55 } }, res.explicacao)))
             : null,
+          // Feedback do erro: UMA linha, sem bloquear a navegação.
+          //
+          // Aqui havia o cartão "Rota de Revisão detectada" com cabeçalho,
+          // mascote, uma frase sobre o Raio-X, ATÉ TRÊS cartões de prioridade
+          // (frequentemente a mesma matéria repetida) e um botão grande de
+          // revisão — tudo entre a resposta e o "Próxima questão", que ficava
+          // abaixo da dobra. O aluno tinha de rolar a tela a cada erro para
+          // continuar respondendo.
+          //
+          // O Copiloto continua fazendo tudo: registra o erro, mapeia o
+          // assunto, atualiza o Raio-X e cria a revisão. O que mudou é onde
+          // isso é contado — a análise completa vive na aba Copiloto, e aqui
+          // fica só a confirmação.
           done && !correct
             ? h(
                 "div",
-                { key: "rev", style: { margin: "14px 18px 0" } },
-                card({ border: "1.5px solid " + C.orange, background: C.dark ? "linear-gradient(150deg,#3a2410,#0c3557 60%)" : "linear-gradient(150deg,#fff4ec,#fff)" }, [
-                  h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center", marginBottom: 10 } }, [
-                    this.mascoteBadge("compass", 46, { bg: C.orangeSoft, color: C.orange, shadow: "none" }),
-                    h("div", { key: "t" }, [
-                      h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, "Rota de Revisão detectada"),
-                      h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Assunto mapeado: " + q.tema)
-                    ])
+                {
+                  key: "rev",
+                  style: { margin: "12px 18px 0", padding: "10px 13px", borderRadius: 13, background: C.orangeSoft, display: "flex", gap: 9, alignItems: "center" }
+                },
+                [
+                  I("compass", 16, C.orange),
+                  h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                    h("div", { key: "a", style: { fontSize: 11.5, fontWeight: 800, color: C.dark ? "#ffc9a3" : "#8a4415" } }, "Erro registrado no seu Raio-X"),
+                    q.tema
+                      ? h("div", { key: "b", style: { fontSize: 10.5, fontWeight: 600, color: C.sub, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, q.tema)
+                      : null
                   ]),
-                  h("div", { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55, marginBottom: 12 } }, "Registrei este erro no seu Raio-X."),
-                  ...(d.recs.length
-                    ? d.recs.slice(0, 3).map((r: { ic: string; t: string; d: string; tag: string }, i: number) =>
-                        h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid " + C.line } }, [
-                          iconBox(r.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 36, 16),
-                          h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12, fontWeight: 700 } }, r.t), h("div", { key: "b", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, r.d)]),
-                          h("span", { key: "tag", style: { fontSize: 9.5, fontWeight: 800, color: r.tag === "Prioritário" ? C.orange : C.sub, background: r.tag === "Prioritário" ? C.orangeSoft : C.chip, padding: "3px 8px", borderRadius: 99 } }, r.tag)
-                        ])
-                      )
-                    : []),
-                  btn("INICIAR REVISÃO · 5 QUESTÕES", () => this.montarRevisao(q.materia, q.tema), { marginTop: 12, padding: "12px 14px", fontSize: 13 })
-                ])
+                  h(
+                    "span",
+                    { key: "ver", onClick: () => this.nav("copiloto"), style: { fontSize: 10.5, fontWeight: 800, color: C.orange, cursor: "pointer", whiteSpace: "nowrap" } },
+                    "Ver análise"
+                  )
+                ]
               )
             : null,
           done && correct
@@ -3450,11 +3460,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           " erros nas questões respondidas até agora" +
           (pr.length ? ". Maior ganho de nota agora: " + pr[0].tema + " (peso " + pr[0].w + ") — priorizo o que mais sobe sua nota, não só o que você mais erra." : ".")
         : "Sou seu Copiloto. Assim que você responder questões, revisar flashcards ou fazer simulados, eu começo a identificar o que vale mais a pena revisar.";
-    const LINK_TIPO: Record<string, () => void> = {
-      questoes: () => this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }),
-      flashcards: () => this.nav("flashcards-select"),
-      simulado: () => this.nav("simulados"),
-      aula: () => this.nav("estudos")
+    // O destino de uma recomendação é a REVISÃO dela, não a tela genérica do
+    // tipo. Antes este mapa olhava só `r.tipo` e ignorava matéria e assunto:
+    // "flashcards" caía no hub ("Todos · 389 cards"), "questoes" abria o
+    // banco inteiro sem filtro e "aula" jogava o aluno na aba Estudos. O
+    // contexto do erro existia na recomendação e morria no clique.
+    const abrirRecomendacao = (r: CopilotoRecomendacao) => {
+      if (r.tipo === "simulado") return this.irParaRota("/aluno/atividades");
+      this.irParaRota("/aluno/revisao/" + r.id);
     };
     return this.screenWrap([
       this.head("Copiloto Decola", { back: "mapa" }),
@@ -3480,7 +3493,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   h("div", { key: "h", style: { fontSize: 13.5, fontWeight: 900, marginTop: 3 } }, r.titulo),
                   r.motivo ? h("div", { key: "m", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 4, lineHeight: 1.45 } }, r.motivo) : null,
                   h("div", { key: "acts", style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }, [
-                    btn("FAZER AGORA →", () => (LINK_TIPO[r.tipo] || LINK_TIPO.aula)(), { padding: "9px 14px", fontSize: 12 }),
+                    btn("FAZER AGORA →", () => abrirRecomendacao(r), { padding: "9px 14px", fontSize: 12 }),
                     ghost("Já revisei ✓", () => this.responderRecomendacao(r.id, "concluida"), { padding: "9px 14px", fontSize: 12 }),
                     ghost("Dispensar", () => this.responderRecomendacao(r.id, "descartada"), { padding: "9px 14px", fontSize: 12, color: C.faint })
                   ])
