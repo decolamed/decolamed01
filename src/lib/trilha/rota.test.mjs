@@ -495,3 +495,33 @@ test("AUDITORIA — mudar a data de início joga a rota inteira para frente", ()
   assert.equal(r20.dias.filter((d) => d.scheduledDate < "2026-08-20").length, 0);
   assert.ok(diasDeEstudoDaRota(r20.dias).length < diasDeEstudoDaRota(r12.dias).length);
 });
+
+test("REGRESSÃO — janela apertada distribui o excesso, não despeja num dia só", () => {
+  // 40 dias de template em 19 dias de janela a 3h/dia: o conteúdo não cabe,
+  // e isso é inerente. O que não pode acontecer é a sobra inteira cair no
+  // último dia de conteúdo — a versão sequencial produzia um dia com 1400
+  // minutos (23 horas) e 20 matérias empilhadas.
+  const { dias } = gerarRota(template(40), base);
+  const comConteudo = dias.filter((d) => d.tipo === "estudo");
+
+  const maior = Math.max(...comConteudo.map((d) => d.minutos));
+  const menor = Math.min(...comConteudo.map((d) => d.minutos));
+
+  assert.ok(maior <= base.minutosPorDia * 2, `dia com ${maior} min — desproporcional`);
+  assert.ok(
+    maior - menor <= base.minutosPorDia,
+    `carga desequilibrada: de ${menor} a ${maior} min entre os dias`
+  );
+  // E nenhum dia concentra uma fatia absurda do template.
+  const maiorGrupo = Math.max(...comConteudo.map((d) => d.templateDays.length));
+  assert.ok(maiorGrupo <= 5, `um dia recebeu ${maiorGrupo} dias do template`);
+});
+
+test("REGRESSÃO — janela folgada continua com um dia do template por dia de rota", () => {
+  // O ajuste da distribuição não pode estragar o caso normal.
+  const { dias } = gerarRota(template(6), base);
+  const comConteudo = dias.filter((d) => d.tipo === "estudo");
+  comConteudo.forEach((d) =>
+    assert.ok(d.templateDays.length <= 1, `dia ${d.routeDay} agrupou ${d.templateDays.length} dias sem necessidade`)
+  );
+});

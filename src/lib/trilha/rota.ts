@@ -269,26 +269,27 @@ export function gerarRota(
   indicesDeEstudo.forEach((i) => conteudoPorIndice.set(i, { dias: [], minutos: 0 }));
 
   if (indicesDeEstudo.length > 0) {
-    const porDia = Math.ceil(ordenados.length / indicesDeEstudo.length);
-    let alvo = 0;
-    let noAlvo = 0;
-
-    ordenados.forEach((diaTemplate) => {
-      const minutos = (diaTemplate.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0);
-      const atual = conteudoPorIndice.get(indicesDeEstudo[alvo])!;
-
-      // Abre o próximo dia quando já juntou a cota OU quando somar este dia
-      // estouraria o tempo diário — desde que ainda haja dia disponível.
-      const estouraTempo = atual.minutos > 0 && atual.minutos + minutos > p.minutosPorDia;
-      if ((noAlvo >= porDia || estouraTempo) && alvo < indicesDeEstudo.length - 1) {
-        alvo++;
-        noAlvo = 0;
-      }
-
-      const destino = conteudoPorIndice.get(indicesDeEstudo[alvo])!;
+    // Distribuição PROPORCIONAL: o dia do template na posição `i` cai no dia
+    // de rota `floor(i * diasDeRota / diasDeTemplate)`.
+    //
+    // A versão anterior era sequencial: enchia o dia atual até bater a cota
+    // ou estourar o tempo, e só então abria o próximo — mas quando acabavam
+    // os dias de rota, ela despejava TODO o restante no último. Num template
+    // de 40 dias com 11 dias de conteúdo e 3h/dia, os 11 primeiros levavam 2
+    // dias cada e o último recebia os 18 que sobraram: 1400 minutos, 23 horas
+    // de estudo num dia que o aluno declarou ter 3. Aparecia na tela como um
+    // dia com 20 matérias empilhadas.
+    //
+    // A regra proporcional mantém a ordem pedagógica (o conteúdo continua
+    // seguindo a sequência do template, nada é reordenado nem descartado) e
+    // reparte o excesso por igual. Quando a janela é grande o bastante, cada
+    // dia recebe um dia do template e nada muda; quando é curta, todos os
+    // dias ficam um pouco mais cheios em vez de um único ficar impossível.
+    ordenados.forEach((diaTemplate, i) => {
+      const posicao = Math.floor((i * indicesDeEstudo.length) / ordenados.length);
+      const destino = conteudoPorIndice.get(indicesDeEstudo[Math.min(posicao, indicesDeEstudo.length - 1)])!;
       destino.dias.push(diaTemplate);
-      destino.minutos += minutos;
-      noAlvo++;
+      destino.minutos += (diaTemplate.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0);
     });
   }
 
