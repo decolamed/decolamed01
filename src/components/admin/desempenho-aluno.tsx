@@ -16,9 +16,24 @@ import type { DesempenhoCompleto } from "@/lib/site/desempenho-servidor";
 // rolar a tabela de lado não é ler.
 // ============================================================================
 
+/**
+ * Cor do aproveitamento. `green` e `red` são as cores do painel definidas em
+ * tailwind.config.ts — e são PLANAS, sem escala: o tema substitui o verde e o
+ * vermelho padrão do Tailwind por uma cor só. Escrever `bg-green-500` aqui
+ * gera uma classe que não existe, e a barra sai sem cor nenhuma. Foi o que
+ * aconteceu: só as barras entre 50% e 70% apareciam, porque `bg-orange` era a
+ * única das três que existia de verdade.
+ */
+// Classes ESCRITAS POR INTEIRO: o Tailwind lê o código-fonte como texto e só
+// gera o que encontra literalmente. `bg-${cor}` montado em tempo de execução
+// não existe no CSS final — é a mesma falha, com outra roupa.
+function corDoAproveitamento(valor: number): string {
+  return valor >= 70 ? "bg-green" : valor >= 50 ? "bg-orange" : "bg-red";
+}
+
 /** Barra de aproveitamento. A cor reforça o número, nunca o substitui. */
 function Barra({ valor }: { valor: number }) {
-  const cor = valor >= 70 ? "bg-green-500" : valor >= 50 ? "bg-orange" : "bg-red-500";
+  const cor = corDoAproveitamento(valor);
   return (
     <div className="h-1.5 w-full min-w-[60px] overflow-hidden rounded-full bg-navy-dark/10">
       <div className={`h-full ${cor}`} style={{ width: `${Math.min(100, Math.max(0, valor))}%` }} />
@@ -93,9 +108,7 @@ export function DesempenhoDoAluno({ dados, hoje }: { dados: DesempenhoCompleto; 
                 <span className="text-[10px] font-extrabold text-navy-dark/60">{p.aproveitamento}%</span>
                 <div className="flex h-24 w-full items-end rounded-md bg-navy-dark/5">
                   <div
-                    className={`w-full rounded-md ${
-                      p.aproveitamento >= 70 ? "bg-green-500" : p.aproveitamento >= 50 ? "bg-orange" : "bg-red-500"
-                    }`}
+                    className={`w-full rounded-md ${corDoAproveitamento(p.aproveitamento)}`}
                     style={{ height: `${Math.max(4, p.aproveitamento)}%` }}
                   />
                 </div>

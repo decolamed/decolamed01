@@ -128,7 +128,7 @@ export default async function AdminUsuariosPage({
                   <div className="whitespace-nowrap">
                     <span
                       className={`font-extrabold ${
-                        d.precisao >= 70 ? "text-green-600" : d.precisao >= 50 ? "text-orange" : "text-red-600"
+                        d.precisao >= 70 ? "text-green" : d.precisao >= 50 ? "text-orange" : "text-red"
                       }`}
                     >
                       {d.precisao}%
