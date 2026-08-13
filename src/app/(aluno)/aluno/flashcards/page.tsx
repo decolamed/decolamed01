@@ -3,6 +3,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { FlashcardsStudy } from "@/components/aluno/flashcards-study";
 import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
+import { montarRodada, mensagemDeRetomada } from "@/lib/site/continuidade";
 import type { Flashcard } from "@/types/database";
 
 const LIMITE_POR_RODADA = 15;
@@ -12,7 +13,7 @@ export default async function AlunoFlashcardsPage({
 }: {
   searchParams: { materia?: string };
 }) {
-  await requireAcessoAluno();
+  const profile = await requireAcessoAluno();
   const supabase = createClient();
 
   // Sem `.limit(50)`: com o teto, o sorteio só via as 50 primeiras linhas e
@@ -23,7 +24,18 @@ export default async function AlunoFlashcardsPage({
   const todos = ((cardsData as Flashcard[]) ?? []).filter(
     (c) => !searchParams.materia || mesmaMateria(c.materia, searchParams.materia)
   );
-  const cards = [...todos].sort(() => Math.random() - 0.5).slice(0, LIMITE_POR_RODADA);
+  // Mesma regra do Banco de Questões: o que ainda não foi revisado vem
+  // primeiro, pelo id do card. O sorteio que existia aqui devolvia 15 cards
+  // novos a cada abertura, e o aluno reencontrava os mesmos de sempre.
+  const { data: revisadosData } = await supabase
+    .from("flashcard_revisoes")
+    .select("flashcard_id")
+    .eq("aluno_id", profile.id);
+  const revisados = new Set(((revisadosData as { flashcard_id: string }[]) ?? []).map((r) => r.flashcard_id));
+
+  const rodada = montarRodada(todos, revisados, LIMITE_POR_RODADA);
+  const cards = rodada.itens;
+  const avisoRetomada = mensagemDeRetomada(rodada, "card", "cards");
 
   const materias = materiasUnicas((cardsData ?? []).map((m: any) => m.materia)).sort((a, b) =>
     a.localeCompare(b, "pt-BR")
@@ -59,6 +71,11 @@ export default async function AlunoFlashcardsPage({
       )}
 
       <div className="mx-auto mt-6 max-w-lg">
+        {avisoRetomada && (
+          <p className="mb-3 rounded-xl bg-navy/5 px-4 py-2.5 text-xs font-semibold text-navy-dark/70">
+            {avisoRetomada}
+          </p>
+        )}
         <FlashcardsStudy cards={cards} />
       </div>
     </div>

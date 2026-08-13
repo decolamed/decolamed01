@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { submeterSimulado, type ItemGabarito, type ResultadoSimulado } from "@/app/(aluno)/aluno/simulados/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
-import { IdentificacaoQuestao } from "./identificacao-questao";
+import { CartaoQuestao } from "./cartao-questao";
 import { filtrarPorIdioma } from "@/lib/site/idioma-aluno";
 
 interface QuestaoSimulado {
@@ -357,29 +357,18 @@ export function SimuladoRunner({
           </div>
         </div>
       ) : (
-      <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-        {/* Mesma faixa de identificação da atividade: linguagem visual
-            compartilhada, com a numeração da prova de origem em destaque
-            porque aqui a experiência é a de um caderno de prova. */}
-        <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-4" />
-        <p className="whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
-        <ImagensQuestao imagens={questao.imagens} />
-
-        <div className="mt-5 space-y-2">
-          {questao.alternativas.map((alt) => (
-            <button
-              key={alt.id}
-              onClick={() => setRespostas((r) => ({ ...r, [questao.id]: alt.id }))}
-              className={`flex w-full items-start gap-3 rounded-xl border-2 p-3 text-left text-sm transition ${
-                respostas[questao.id] === alt.id ? "border-orange bg-orange/5" : "border-navy/15 hover:border-orange/50"
-              }`}
-            >
-              <span className="font-display font-bold text-navy-dark">{alt.id.toUpperCase()})</span>
-              <span className="text-navy-dark">{alt.texto}</span>
-            </button>
-          ))}
-        </div>
-
+      <CartaoQuestao
+        questao={questao}
+        posicao={indice + 1}
+        total={totalItens}
+        rotuloProgresso={`${indice + 1} de ${totalItens} neste simulado`}
+        direita={<span>{Object.keys(respostas).length} respondida(s)</span>}
+        escolhida={respostas[questao.id] ?? null}
+        // Sem correção durante a prova: o gabarito só aparece no envio, que é
+        // o que separa a experiência de simulado da de prática.
+        respostaCorreta={null}
+        onEscolher={(alt) => setRespostas((r) => ({ ...r, [questao.id]: alt }))}
+      >
         <div className="mt-6 flex items-center justify-between">
           <button
             onClick={() => setIndice((i) => Math.max(0, i - 1))}
@@ -409,7 +398,7 @@ export function SimuladoRunner({
             </button>
           )}
         </div>
-      </div>
+      </CartaoQuestao>
       )}
     </div>
   );

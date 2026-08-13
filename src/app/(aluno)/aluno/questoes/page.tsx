@@ -3,6 +3,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { QuestoesPractice } from "@/components/aluno/questoes-practice";
 import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
+import { montarRodada, mensagemDeRetomada } from "@/lib/site/continuidade";
 import type { Questao } from "@/types/database";
 
 const LIMITE_POR_RODADA = 10;
@@ -12,7 +13,7 @@ export default async function AlunoQuestoesPage({
 }: {
   searchParams: { materia?: string };
 }) {
-  await requireAcessoAluno();
+  const profile = await requireAcessoAluno();
   const supabase = createClient();
 
   // RLS ("questoes_select_ativas") garante que só questões ativas aparecem
@@ -31,8 +32,19 @@ export default async function AlunoQuestoesPage({
     (q) => !searchParams.materia || mesmaMateria(q.materia, searchParams.materia)
   );
 
-  // Embaralha no servidor e corta pro tamanho da rodada.
-  const questoes = [...todas].sort(() => Math.random() - 0.5).slice(0, LIMITE_POR_RODADA);
+  // Continuar de onde parou, pelo histórico REAL de respostas (por id, nunca
+  // por índice). Antes esta linha era um `sort(() => Math.random() - 0.5)`:
+  // rodada nova a cada visita, quase sempre recomeçando em questões já
+  // respondidas. Ver lib/site/continuidade.ts.
+  const { data: respondidasData } = await supabase
+    .from("respostas_aluno")
+    .select("questao_id")
+    .eq("aluno_id", profile.id);
+  const respondidas = new Set(((respondidasData as { questao_id: string }[]) ?? []).map((r) => r.questao_id));
+
+  const rodada = montarRodada(todas, respondidas, LIMITE_POR_RODADA);
+  const questoes = rodada.itens;
+  const avisoRetomada = mensagemDeRetomada(rodada, "questão", "questões");
 
   const { data: materiasData } = await supabase.from("questoes").select("materia").eq("ativo", true);
   const materias = materiasUnicas((materiasData ?? []).map((m: any) => m.materia)).sort((a, b) =>
@@ -69,6 +81,11 @@ export default async function AlunoQuestoesPage({
       )}
 
       <div className="mt-6">
+        {avisoRetomada && (
+          <p className="mb-3 rounded-xl bg-navy/5 px-4 py-2.5 text-xs font-semibold text-navy-dark/70">
+            {avisoRetomada}
+          </p>
+        )}
         <QuestoesPractice questoes={questoes} />
       </div>
     </div>

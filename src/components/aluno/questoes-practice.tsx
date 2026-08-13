@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { registrarResposta, revisaoCriadaApos } from "@/app/(aluno)/aluno/questoes/actions";
-import { ImagensQuestao } from "./imagens-questao";
-import { IdentificacaoQuestao, ResultadoDaResposta } from "./identificacao-questao";
+import { CartaoQuestao } from "./cartao-questao";
+import { ResultadoDaResposta } from "./identificacao-questao";
 import type { Questao } from "@/types/database";
 
 export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
@@ -81,55 +81,18 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   }
 
   return (
-    <div className="rounded-2xl bg-white p-6 shadow sm:p-8">
-      <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-3" />
-
-      <div className="flex items-center justify-between text-xs font-semibold text-navy-dark/50">
-        <span>
-          {indice + 1} de {questoes.length} nesta rodada
-        </span>
-        <span>{acertos} acerto(s)</span>
-      </div>
-
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-navy/10">
-        <div
-          className="h-full bg-orange transition-all"
-          style={{ width: `${(indice / questoes.length) * 100}%` }}
-        />
-      </div>
-
-      <p className="mt-5 whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
-      <ImagensQuestao imagens={questao.imagens} />
-
-      <div className="mt-5 space-y-2">
-        {questao.alternativas.map((alt) => {
-          const éEscolhida = escolha === alt.id;
-          const éCorreta = resultado && alt.id === resultado.respostaCorreta;
-          const éErradaEscolhida = resultado && éEscolhida && !resultado.correta;
-
-          let estilo = "border-navy/15 hover:border-orange/50";
-          if (resultado) {
-            if (éCorreta) estilo = "border-green-500 bg-green-50";
-            else if (éErradaEscolhida) estilo = "border-red-400 bg-red-50";
-            else estilo = "border-navy/10 opacity-60";
-          } else if (éEscolhida) {
-            estilo = "border-orange bg-orange/5";
-          }
-
-          return (
-            <button
-              key={alt.id}
-              onClick={() => escolher(alt.id)}
-              disabled={pending || !!resultado}
-              className={`flex w-full items-start gap-3 rounded-xl border-2 p-3 text-left text-sm transition ${estilo}`}
-            >
-              <span className="font-display font-bold text-navy-dark">{alt.id.toUpperCase()})</span>
-              <span className="text-navy-dark">{alt.texto}</span>
-            </button>
-          );
-        })}
-      </div>
-
+    <CartaoQuestao
+      questao={questao}
+      posicao={indice + 1}
+      total={questoes.length}
+      rotuloProgresso={`${indice + 1} de ${questoes.length} nesta rodada`}
+      direita={<span>{acertos} acerto(s)</span>}
+      escolhida={escolha}
+      respostaCorreta={resultado?.respostaCorreta ?? null}
+      correta={resultado?.correta}
+      onEscolher={escolher}
+      desabilitado={pending || !!resultado}
+    >
       {resultado && (
         <ResultadoDaResposta
           correta={resultado.correta}
@@ -145,6 +108,6 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
           </button>
         </ResultadoDaResposta>
       )}
-    </div>
+    </CartaoQuestao>
   );
 }

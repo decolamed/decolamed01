@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { corrigirQuestaoAtividade, submeterAtividade, type ResultadoAtividade } from "@/app/(aluno)/aluno/atividades/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
-import { IdentificacaoQuestao, ResultadoDaResposta } from "./identificacao-questao";
+import { CartaoQuestao } from "./cartao-questao";
+import { ResultadoDaResposta } from "./identificacao-questao";
 import { codigoDaQuestao, provaDaQuestao } from "@/lib/site/questao-identidade";
 
 interface QuestaoAtividade {
@@ -176,38 +177,18 @@ export function AtividadeRunner({
         ))}
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-        <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-4" />
-        <p className="whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
-        <ImagensQuestao imagens={questao.imagens} />
-
-        <div className="mt-5 space-y-2">
-          {questao.alternativas.map((alt) => {
-            const escolhida = respostas[questao.id] === alt.id;
-            const mostrarCorreta = feedback && alt.id === feedback.respostaCorreta;
-            const mostrarErrada = feedback && escolhida && !feedback.correta;
-            return (
-              <button
-                key={alt.id}
-                onClick={() => responder(alt.id)}
-                disabled={!!feedback || corrigindo}
-                className={`flex w-full items-start gap-3 rounded-xl border-2 p-3 text-left text-sm transition ${
-                  mostrarCorreta
-                    ? "border-green-500 bg-green-50"
-                    : mostrarErrada
-                    ? "border-red-400 bg-red-50"
-                    : escolhida
-                    ? "border-orange bg-orange/5"
-                    : "border-navy/15 hover:border-orange/50"
-                } disabled:cursor-default`}
-              >
-                <span className="font-display font-bold text-navy-dark">{alt.id.toUpperCase()})</span>
-                <span className="text-navy-dark">{alt.texto}</span>
-              </button>
-            );
-          })}
-        </div>
-
+      <CartaoQuestao
+        questao={questao}
+        posicao={indice + 1}
+        total={questoes.length}
+        rotuloProgresso={`${indice + 1} de ${questoes.length} nesta atividade`}
+        direita={<span>{respondidas} respondida(s)</span>}
+        escolhida={respostas[questao.id] ?? null}
+        respostaCorreta={feedback?.respostaCorreta ?? null}
+        correta={feedback?.correta}
+        onEscolher={responder}
+        desabilitado={!!feedback || corrigindo}
+      >
         {feedback && (
           <ResultadoDaResposta
             correta={feedback.correta}
@@ -241,7 +222,7 @@ export function AtividadeRunner({
             </button>
           )}
         </div>
-      </div>
+      </CartaoQuestao>
     </div>
   );
 }
