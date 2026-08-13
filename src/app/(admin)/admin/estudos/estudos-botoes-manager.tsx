@@ -17,12 +17,22 @@ const TIPOS: { valor: EstudosBotaoTipo; label: string }[] = [
 
 const TELAS_APP = ["estudos", "questoes", "simulados", "flashcards", "copiloto", "redacao", "plano", "ranking", "conquistas", "perfil"];
 
-export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao[] }) {
+export function EstudosBotoesManager({
+  botoes: inicial,
+  cursos
+}: {
+  botoes: EstudosBotao[];
+  /** Planos ativos — a mesma lista que define o curso do aluno. */
+  cursos: { id: string; nome: string }[];
+}) {
   const [botoes, setBotoes] = useState(inicial);
   const [titulo, setTitulo] = useState("");
   const [icone, setIcone] = useState("book");
   const [tipo, setTipo] = useState<EstudosBotaoTipo>("link");
   const [link, setLink] = useState("");
+  // "" = todos os cursos. O material antigo continua com null no banco e cai
+  // aqui como "", que é exatamente o comportamento que ele já tinha.
+  const [planoId, setPlanoId] = useState("");
   // Preenchido = o cartão da esquerda vira "editar", mesmo padrão das
   // outras telas de conteúdo.
   const [editId, setEditId] = useState<string | null>(null);
@@ -35,6 +45,7 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
     setLink("");
     setIcone("book");
     setTipo("link");
+    setPlanoId("");
   }
 
   function editar(b: EstudosBotao) {
@@ -43,21 +54,22 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
     setIcone(b.icone);
     setTipo(b.tipo);
     setLink(b.link);
+    setPlanoId(b.plano_id ?? "");
   }
 
   function salvar() {
     startTransition(async () => {
       if (editId) {
-        const res = await atualizarBotaoEstudos(editId, titulo, icone, tipo, link).catch(() => ({ ok: false, erro: undefined }));
+        const res = await atualizarBotaoEstudos(editId, titulo, icone, tipo, link, planoId || null).catch(() => ({ ok: false, erro: undefined }));
         if (!res.ok) { show(res.erro ?? "Não foi possível salvar."); return; }
-        setBotoes((a) => a.map((x) => (x.id === editId ? { ...x, titulo, icone, tipo, link } : x)));
+        setBotoes((a) => a.map((x) => (x.id === editId ? { ...x, titulo, icone, tipo, link, plano_id: planoId || null } : x)));
         limpar();
         show("Botão atualizado.");
         return;
       }
-      const res = await criarBotaoEstudos(titulo, icone, tipo, link).catch(() => ({ ok: false, erro: undefined }));
+      const res = await criarBotaoEstudos(titulo, icone, tipo, link, planoId || null).catch(() => ({ ok: false, erro: undefined }));
       if (!res.ok) { show(res.erro ?? "Erro."); return; }
-      setBotoes((a) => [{ id: crypto.randomUUID(), titulo, icone, tipo, link, ordem: 0, ativo: true, criado_por: null, created_at: "", updated_at: "" }, ...a]);
+      setBotoes((a) => [{ id: crypto.randomUUID(), titulo, icone, tipo, link, ordem: 0, ativo: true, plano_id: planoId || null, criado_por: null, created_at: "", updated_at: "" }, ...a]);
       limpar();
       show("Botão adicionado.");
     });
@@ -128,6 +140,19 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
               </option>
             ))}
           </select>
+          <FieldLabel>Exibir para</FieldLabel>
+          <select
+            value={planoId}
+            onChange={(e) => setPlanoId(e.target.value)}
+            className="w-full rounded-[10px] border border-navy-dark/15 bg-white px-3 py-2.5 text-xs font-semibold text-navy-dark outline-none focus:border-navy"
+          >
+            <option value="">Todos os cursos</option>
+            {cursos.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+          </select>
           <FieldLabel>{tipo === "app" ? "Tela do app" : "Link"}</FieldLabel>
           {tipo === "app" ? (
             <select
@@ -162,6 +187,8 @@ export function EstudosBotoesManager({ botoes: inicial }: { botoes: EstudosBotao
                 <p className="truncate font-bold text-navy-dark">{b.titulo}</p>
                 <p className="truncate text-xs font-semibold text-navy-dark/40">
                   {TIPOS.find((t) => t.valor === b.tipo)?.label} · {b.link}
+                  {" · "}
+                  {b.plano_id ? (cursos.find((c) => c.id === b.plano_id)?.nome ?? "Curso removido") : "Todos os cursos"}
                 </p>
               </div>
               <Toggle on={b.ativo} onClick={() => alternar(b.id, b.ativo)} />
