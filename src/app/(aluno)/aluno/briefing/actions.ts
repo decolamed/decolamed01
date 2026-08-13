@@ -8,9 +8,8 @@ import { rodarCopiloto } from "@/lib/copiloto/motor";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { regerarRotaDoAluno } from "@/lib/trilha/rota-persistencia";
 import { hojeISO } from "@/lib/site/data";
+import { lerSentimentos } from "@/lib/site/sentimentos";
 import type { TrilhaDia } from "@/types/database";
-
-const SENTIMENTOS_VALIDOS = new Set(["Domínio", "Atenção", "Turbulência"]);
 
 // Item 15: a prova tem 5 questões de língua estrangeira e o aluno faz UMA
 // das duas. Sem essa escolha registrada, a plataforma não consegue entregar
@@ -26,7 +25,7 @@ const IDIOMAS_VALIDOS = new Set(["ingles", "espanhol"]);
  * de uma submissão de <form>, não de uma chamada direta).
  * Espera:
  *   data_prova, inicio_estudos, dias_por_semana, horas_por_dia,
- *   sentimento_<Materia> = "Domínio" | "Atenção" | "Turbulência"
+ *   sentimento_materia_<i> / sentimento_valor_<i> (ver lib/site/sentimentos.ts)
  */
 async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { ok: false; erro: string }> {
   const profile = await requireAcessoAluno();
@@ -38,14 +37,10 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
   const horasPorDia = Number(formData.get("horas_por_dia") ?? 3);
   const observacoes = String(formData.get("observacoes") ?? "").trim() || null;
 
-  // sentimentos por matéria
-  const sentimentos: Record<string, string> = {};
-  for (const [k, v] of formData.entries()) {
-    if (!k.startsWith("sentimento_")) continue;
-    const materia = k.replace("sentimento_", "");
-    const valor = String(v);
-    if (SENTIMENTOS_VALIDOS.has(valor)) sentimentos[materia] = valor;
-  }
+  // Autoavaliação por matéria. A matéria chega como VALOR de um campo de nome
+  // ASCII (lib/site/sentimentos.ts): usá-la como NOME de campo corrompia as
+  // acentuadas no cabeçalho do multipart, e o Copiloto perdia a resposta.
+  const sentimentos = lerSentimentos(formData);
 
   const idiomaBruto = String(formData.get("idioma_prova") ?? "").trim().toLowerCase();
   const idiomaProva = IDIOMAS_VALIDOS.has(idiomaBruto) ? idiomaBruto : null;

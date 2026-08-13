@@ -18,6 +18,7 @@ import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVide
 import { tituloDaProva } from "@/lib/trilha/rota";
 import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { disponivelParaAluno } from "@/lib/site/avaliacoes";
+import { escreverSentimentos } from "@/lib/site/sentimentos";
 import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
@@ -4114,9 +4115,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     fd.set("dias_por_semana", String(B.dias || 5));
     fd.set("horas_por_dia", String(B.horas || 3));
     fd.set("idioma_prova", B.idioma || "");
-    Object.entries(this.state.feels as Record<string, string>).forEach(([materia, sentimento]) => {
-      fd.set("sentimento_" + materia, sentimento);
-    });
+    escreverSentimentos(fd, this.state.feels as Record<string, string>);
     try {
       const resultado = await salvarBriefingApp(fd);
       if (!resultado.ok) {
