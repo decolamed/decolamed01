@@ -9,11 +9,15 @@ import { createClient } from "@/lib/supabase/server";
  *
  * Apaga: respostas, revisões de flashcards, tentativas de simulado e de
  * atividade, progresso de itens, missões, tudo que o Copiloto tinha
- * adaptado (recomendações, eventos, check-ins, produções de IA) e o próprio
- * briefing.
+ * adaptado (recomendações, eventos, check-ins, produções de IA), a ROTA
+ * personalizada (aluno_rota_dias) e o próprio briefing.
  *
- * Preserva: cadastro e autenticação, matrícula, plano, créditos de redação e
- * relatos — o item 19 é explícito em manter a conta.
+ * A rota entrou nessa lista porque sem ela o reset era parcial de um jeito
+ * bem visível: o aluno zerava tudo e continuava vendo o mesmo cronograma,
+ * com as mesmas datas — a rota gravada sobrevivia ao briefing que a gerou.
+ *
+ * Preserva: cadastro e autenticação, matrícula, plano e créditos de redação
+ * — o item 19 é explícito em manter a conta.
  *
  * A remoção acontece dentro de uma função no banco (redefinir_perfil_aluno)
  * para ser atômica: apagar metade das tabelas deixaria o aluno num estado

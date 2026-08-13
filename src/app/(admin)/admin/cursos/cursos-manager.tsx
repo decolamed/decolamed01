@@ -199,7 +199,7 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   const aulasFiltradas = useMemo(() => {
     const termos = normalizar(busca).split(/\s+/).filter(Boolean);
     return aulas.filter((a) => {
-      if (filtroMateria && a.materia !== filtroMateria) return false;
+      if (filtroMateria && !mesmaMateria(a.materia, filtroMateria)) return false;
       if (filtroAssunto && a.assunto !== filtroAssunto) return false;
       if (termos.length === 0) return true;
       // Título, matéria, assunto e URL — quem procura por "mitose" e quem

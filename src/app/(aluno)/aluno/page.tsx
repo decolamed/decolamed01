@@ -4,7 +4,8 @@ import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
-import { ajustarCronogramaAoAluno } from "@/lib/trilha/ajuste-voo-guiado";
+import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
+import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
 import { filtrarPorIdioma, normalizarIdioma, textoAdaptadoAoIdioma } from "@/lib/site/idioma-aluno";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
@@ -46,7 +47,21 @@ import type {
 // voltar a truncar em silêncio: truncar aqui não deixa rastro nenhum na
 // tela, que é o que tornou esse defeito tão difícil de enxergar.
 
-export default async function AlunoHomePage() {
+// Mensagem que já vem digitada quando o aluno abre o WhatsApp pelo botão
+// "Comunicar erro". Ele completa o texto antes de enviar. O NÚMERO não está
+// aqui — vem de `configuracoes.site.contato.whatsapp`, para trocar no admin
+// e valer na hora.
+const MENSAGEM_RELATO_ERRO = "Reportar erro";
+
+export default async function AlunoHomePage({
+  searchParams
+}: {
+  // `?aula=<id>` abre uma videoaula direto no player ao carregar. É o que
+  // permite a revisão em vídeo do Copiloto levar à AULA, e não a uma lista.
+  // "Estudos" é uma tela dentro do app (um Client Component), não uma rota
+  // do Next — não existe `/aluno/estudos` para onde apontar.
+  searchParams?: { aula?: string };
+}) {
   // Camada 2 de proteção (a camada 1 é o middleware): garante que mesmo que
   // a rota seja alcançada por algum outro caminho, o conteúdo só renderiza
   // para quem tem matrícula ativa e dentro do prazo.
@@ -166,31 +181,47 @@ export default async function AlunoHomePage() {
   // para o aluno nunca ficar sem canal.
   const numeroWhatsappRedacao = textoConfig(configRedacao?.valor) || numeroWhatsapp;
 
-  // Dia de hoje no cronograma (trilha_dias) — base de estudo de TODO aluno,
-  // com ou sem Copiloto.
-  const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
-  const diaTrilhaHoje = acessoLiberadoEm ? calcularDiaTrilha(acessoLiberadoEm) : null;
-  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
-  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
-  // aula já corrigida pelo admin em "Cursos e Aulas".
   // Idioma escolhido no briefing. Governa tudo que é de língua estrangeira
   // daqui pra baixo: acervo, cronograma e textos.
   const idiomaAluno = normalizarIdioma((briefingData as { idioma_prova?: string | null } | null)?.idioma_prova);
 
+  // Resolve título/URL a partir de conteudos_biblioteca antes de qualquer
+  // coisa: sem isso o aluno continuaria vendo o nome e o link antigos de uma
+  // aula já corrigida pelo admin em "Cursos e Aulas".
   const diasResolvidos = await resolverCronograma(
     ((trilhaDiasData as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero)
   );
 
-  // Plano Voo Guiado: projeta o cronograma-base na janela real do aluno
-  // (início → prova, só nos dias que ele estuda). Sem isto, quem tem 20 dias
-  // até a prova recebia a mesma trilha de 40 dias do Plano Decolando e
-  // metade do conteúdo caía depois da prova. O Decolando não é afetado — ver
-  // lib/trilha/ajuste-voo-guiado.ts.
-  const { dias: diasAjustados, compactado: cronogramaCompactado } = ajustarCronogramaAoAluno(diasResolvidos, {
+  // ---- A rota do aluno (Voo Guiado) -----------------------------------
+  //
+  // Aqui estava a raiz de quase todo defeito do cronograma. O "dia de hoje"
+  // vinha de `calcularDiaTrilha(matricula.acesso_liberado_em)` — dias desde a
+  // MATRÍCULA. Quem se matriculou 21 dias antes de começar caía no dia 22 do
+  // template: 21 "dias anteriores" que nunca existiram, cartão escrito
+  // "Dia 22" no segundo dia de estudo, e a data do dia 1 recuando para
+  // 22/07 num cronograma que começa em 12/08.
+  //
+  // Agora o template é só fonte de conteúdo. A régua do aluno é a ROTA,
+  // gerada do briefing (início informado, prova, dias da semana, horas por
+  // dia) e persistida em `aluno_rota_dias` — ver lib/trilha/rota.ts.
+  //
+  // O Plano Decolando continua no template linear de 40 dias ancorado na
+  // matrícula: é o que esse plano promete, e ele não tem briefing.
+  const rota = await rotaDoAluno(supabase, profile.id, {
     temCopiloto,
-    briefing: briefingData as Parameters<typeof ajustarCronogramaAoAluno>[1]["briefing"],
-    hojeStr
+    briefing: briefingData as Parameters<typeof rotaDoAluno>[2]["briefing"],
+    template: diasResolvidos,
+    hoje: hojeStr
   });
+
+  const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
+  const diasAjustados = rota ? cronogramaDeTela(rota) : diasResolvidos;
+  // Datas reais de cada dia. Com rota, vêm decididas na geração; sem rota, a
+  // tela segue extrapolando a partir do dia de hoje (Plano Decolando).
+  const datasDoCronograma = rota ? datasDaRota(rota) : null;
+  // A rota já cabe na janela por construção; o aviso de agrupamento só faz
+  // sentido quando ela é de fato menor que o template.
+  const cronogramaCompactado = rota ? rota.dias.length < diasResolvidos.length : false;
 
   // Personalização por idioma no cronograma (item 15.4). O cronograma-base é
   // o mesmo para todos e traz itens genéricos como "5 questões de
@@ -206,6 +237,17 @@ export default async function AlunoHomePage() {
         }))
       }))
     : diasAjustados;
+
+  // FONTE ÚNICA DE VERDADE do "dia de hoje". Com rota, quem decide é
+  // `diaAtualDaRota()` — a mesma função que a tela de cronograma usa, para
+  // as duas nunca mais discordarem. Sem rota, o cálculo antigo pela data de
+  // matrícula, que é o correto para o Plano Decolando.
+  const diaTrilhaHoje = rota
+    ? diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null
+    : acessoLiberadoEm
+      ? calcularDiaTrilha(acessoLiberadoEm)
+      : null;
+
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
   // Client Component) — alimenta a seção "Próximos dias" da tela de
@@ -249,6 +291,8 @@ export default async function AlunoHomePage() {
       plano={plano}
       whatsappSuporte={montarLinkWhatsapp(numeroWhatsapp, "Olá! Preciso de ajuda com a plataforma Decola Med.")}
       whatsappRedacao={montarLinkWhatsapp(numeroWhatsappRedacao, "Olá! Quero enviar minha redação ✍")}
+      whatsappErro={montarLinkWhatsapp(numeroWhatsapp, MENSAGEM_RELATO_ERRO)}
+      abrirAulaId={searchParams?.aula ?? null}
       dados={{
         temCopiloto,
         // Filtrados pelo idioma escolhido no briefing: quem faz Inglês não
@@ -281,9 +325,15 @@ export default async function AlunoHomePage() {
         // isto para explicar por que os dias vêm agrupados, em vez de deixar
         // o aluno achando que perdeu conteúdo.
         cronogramaCompactado,
-        // dia_numero de hoje: é o que permite converter a régua relativa do
-        // cronograma ("Dia 1", "Dia 2") em datas de calendário na tela.
+        // Posição do aluno na própria rota (1..N), não o número do template.
         diaTrilhaHoje,
+        // Data real de cada dia da rota. Quando existe, a tela LÊ a data em
+        // vez de extrapolar `hoje ± diferença` — era a extrapolação que fazia
+        // o dia 1 cair em julho num cronograma que começa em agosto.
+        datasDoCronograma,
+        // Quantos dias de ESTUDO a rota tem ("Dia 2 de 19"). O dia da prova
+        // não entra na contagem: ele fecha a rota, não é um dia de estudo.
+        totalDiasCronograma: todosDias.filter((d) => (d as { tipo_rota?: string }).tipo_rota !== "prova").length,
         progressoItens: ((progressoItensData as AlunoProgressoItem[]) ?? []).reduce(
           (acc: Record<string, AlunoProgressoItem>, p) => {
             acc[p.chave] = p;

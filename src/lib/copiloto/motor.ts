@@ -2,15 +2,17 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { gerarTextoGemini } from "@/lib/gemini/client";
 import { produzirMaterialSobDemanda } from "@/lib/copiloto/producao-sob-demanda";
 import { hojeISO, somarDias, diaDaSemana, diffDias } from "@/lib/site/data";
-import { chaveDeItemTrilha, minutosDoItem, itemReagendavel } from "@/lib/trilha/progresso";
+import { chaveDeAula, chaveDeItemTrilha, minutosDoItem, itemReagendavel } from "@/lib/trilha/progresso";
 import {
   distribuirPendencias, selecionarPendencias, importanciaDe, motivoRemarcacao, chaveDoMotivo,
   type Pendencia, type DiaAlvo
 } from "@/lib/copiloto/pendencias";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { diaAtualDaRota, gerarRota, parametrosDoBriefing } from "@/lib/trilha/rota";
 import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
 import { carregarConfigCopiloto, type ConfigCopiloto } from "@/lib/copiloto/configuracao";
-import type { TrilhaItem } from "@/types/database";
+import { montarAgenda, type AgendaDoAluno } from "@/lib/copiloto/agenda";
+import type { TrilhaDia, TrilhaItem } from "@/types/database";
 
 // ============================================================================
 // COPILOTO DECOLA MED — Motor Adaptativo v5 (cenários completos)
@@ -70,6 +72,8 @@ interface MissaoAgendada {
   materia: string;
   assunto: string | null;
   tipo: string;
+  /** Conteúdo real que a missão abre — usado para não repetir a mesma aula. */
+  ref_id: string | null;
   duracao_minutos: number;
   duracao_estimada_min: number;
   prioridade: number;
@@ -104,15 +108,27 @@ interface DadosAluno {
   checkinsNaoAplicados: Array<{
     id: string; resposta_valor: string; resposta_acao: Record<string, unknown>;
   }>;
+  // Chaves de `aluno_progresso_itens` já concluídas. Governa duas coisas:
+  // não remarcar pendência cumprida e não recomendar conteúdo já feito.
+  concluidas: Set<string>;
   // Quanto conteúdo ATIVO existe por matéria. Sem isso o Copiloto criava
   // missão de "Flashcards de Português" contando as revisões que o aluno já
   // tinha feito — o que não diz nada sobre os flashcards ainda existirem. O
   // aluno abria a missão e via "Não há flashcards disponíveis".
   inventario: Map<string, InventarioMateria>;
-  // Em que dia do cronograma o aluno está hoje (null se a matrícula não tem
-  // data de liberação). É o que separa o passado — onde moram as pendências
-  // — do futuro, onde elas podem ser reagendadas.
+  // Em que dia do cronograma o aluno está hoje. É o que separa o passado —
+  // onde moram as pendências — do futuro, onde elas podem ser reagendadas.
   diaTrilhaHoje: number | null;
+  // O cronograma DESTE aluno, já resolvido em datas de calendário. O
+  // Copiloto lia `trilha_dias` direto e convertia data ↔ dia com
+  // `diaTrilhaHoje + offset`, o que só valeria se o aluno estudasse todos os
+  // dias sem falhar um, desde a matrícula. Na prática ele contava carga do
+  // dia errado e tratava dias do template que o aluno nunca teve como
+  // "pendências atrasadas".
+  cronograma: CronogramaDoAluno;
+  // Orçamento diário de estudo. TODO ponto que cria missão pergunta a ela se
+  // cabe e reserva o tempo — ver lib/copiloto/agenda.ts.
+  agenda: AgendaDoAluno;
   // Parâmetros do algoritmo vindos de `configuracoes` (ver configuracao.ts).
   config: ConfigCopiloto;
 }
@@ -161,7 +177,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   // datava as missões geradas à noite no dia seguinte.
   const hojeStr = hojeISO();
 
-  const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR] = await Promise.all([
+  const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR, progressoR] = await Promise.all([
     supabase.from("respostas_aluno")
       .select("correta, created_at, questoes(materia, assunto)")
       .eq("aluno_id", ctx.alunoId)
@@ -183,6 +199,14 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
       .eq("aluno_id", ctx.alunoId)
       .eq("respondida", true)
       .eq("aplicada", false),
+    // O que o aluno JÁ concluiu. Sem isto o Copiloto recomendava de volta a
+    // aula que ele acabou de assistir — "evitando repetir atividades
+    // desnecessariamente" só valia para as pendências, não para o conteúdo
+    // novo.
+    supabase.from("aluno_progresso_itens")
+      .select("chave")
+      .eq("aluno_id", ctx.alunoId)
+      .eq("concluida", true),
   ]);
 
   const pesosLista = (pesosR.data ?? []) as { materia: string; peso: number; qtd_questoes: number }[];
@@ -239,7 +263,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
 
     const { data: missoes } = await supabase
       .from("aluno_missoes")
-      .select("id, data, titulo, materia, assunto, tipo, duracao_minutos, duracao_estimada_min, prioridade, origem, concluida")
+      .select("id, data, titulo, materia, assunto, tipo, ref_id, duracao_minutos, duracao_estimada_min, prioridade, origem, concluida")
       .eq("aluno_id", ctx.alunoId)
       .gte("data", hojeStr)
       .lte("data", briefing.dataProva)
@@ -250,20 +274,25 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     diasOcupados = new Set(missoesAgendadas.map((m) => m.data)).size;
     totalMissoesPadrao = missoesAgendadas.filter((m) => m.origem === "admin").length;
 
-    // Calcular dias de estudo livres
-    if (diasRestantes > 0) {
-      const MAPA_DIA: Record<number, string> = { 0:"dom",1:"seg",2:"ter",3:"qua",4:"qui",5:"sex",6:"sab" };
-      const diasEstudaSet = new Set(briefing.diasEstuda);
-      const datasComMissao = new Set(missoesAgendadas.map((m) => m.data));
-      for (let d = 1; d <= diasRestantes; d++) {
-        const iso = somarDias(hojeISO(), d);
-        if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-        if (!datasComMissao.has(iso)) diasLivres++;
-      }
-    }
   }
 
   const config = await carregarConfigCopiloto();
+  const cronograma = await carregarCronogramaDoAluno(ctx.alunoId);
+
+  // A agenda vem ANTES da detecção de modo de propósito: é ela que sabe
+  // quanto tempo cada dia ainda tem, e "dias livres" passou a significar
+  // dias com folga real — não dias sem missão. Ver contarDiasComFolga().
+  const agenda = montarAgenda({
+    minutosPorDia: (briefing?.horasPorDia ?? 2) * 60,
+    cargaDoCronograma: cronograma.cargaPorData,
+    missoes: missoesAgendadas.map((m) => ({
+      data: m.data,
+      minutos: m.duracao_estimada_min || m.duracao_minutos
+    })),
+    bloqueadas: cronograma.datasBloqueadas
+  });
+
+  diasLivres = contarDiasComFolga({ diasRestantes, briefing, agenda } as DadosAluno);
   const modo = detectarModo(diasRestantes, diasLivres, diasOcupados, totalMissoesPadrao, config);
   const checkinsNaoAplicados = (checkinsR.data ?? []).map((c: any) => ({
     id: c.id,
@@ -276,7 +305,10 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     materias, briefing, modo, diasRestantes, diasLivres, diasOcupados,
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
-    diaTrilhaHoje: await carregarDiaTrilhaHoje(ctx.alunoId),
+    concluidas: new Set(((progressoR.data ?? []) as { chave: string }[]).map((p) => p.chave)),
+    diaTrilhaHoje: cronograma.diaHoje,
+    cronograma,
+    agenda,
     config,
   };
 }
@@ -338,17 +370,99 @@ async function carregarInventario(): Promise<Map<string, InventarioMateria>> {
   return mapa;
 }
 
-async function carregarDiaTrilhaHoje(alunoId: string): Promise<number | null> {
+/**
+ * O cronograma do aluno já resolvido em datas — a mesma rota que ele vê na
+ * tela, para o Copiloto raciocinar sobre o mesmo calendário.
+ */
+interface CronogramaDoAluno {
+  /** Dia de hoje: routeDay no Voo Guiado, dia do template no Decolando. */
+  diaHoje: number | null;
+  /** Minutos que o cronograma já ocupa em cada data (YYYY-MM-DD). */
+  cargaPorData: Map<string, number>;
+  /** Dias cuja data já passou, com os itens exatamente como a tela os numera. */
+  diasVencidos: { dia: number; itens: TrilhaItem[] }[];
+  /**
+   * Datas em que o Copiloto não pode agendar nada: o dia da prova e a
+   * véspera reservada para descanso. Encher esses dias de missão desfaria a
+   * própria regra da rota — o aluno veria "descanso" e três missões embaixo.
+   */
+  datasBloqueadas: Set<string>;
+}
+
+const CRONOGRAMA_VAZIO: CronogramaDoAluno = {
+  diaHoje: null,
+  cargaPorData: new Map(),
+  diasVencidos: [],
+  datasBloqueadas: new Set()
+};
+
+async function carregarCronogramaDoAluno(alunoId: string): Promise<CronogramaDoAluno> {
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("matriculas")
-    .select("acesso_liberado_em")
-    .eq("aluno_id", alunoId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const liberado = (data as { acesso_liberado_em: string | null } | null)?.acesso_liberado_em;
-  return liberado ? calcularDiaTrilha(liberado) : null;
+  const hoje = hojeISO();
+
+  const [{ data: trilha }, { data: briefing }, { data: matricula }] = await Promise.all([
+    supabase.from("trilha_dias").select("*").order("dia_numero"),
+    supabase
+      .from("aluno_briefing")
+      .select("data_prova, inicio_estudos, dias_estuda, horas_por_dia_semana")
+      .eq("aluno_id", alunoId)
+      .maybeSingle(),
+    supabase
+      .from("matriculas")
+      .select("acesso_liberado_em")
+      .eq("aluno_id", alunoId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  ]);
+
+  const template = ((trilha as TrilhaDia[]) ?? []).sort((a, b) => a.dia_numero - b.dia_numero);
+  if (template.length === 0) return CRONOGRAMA_VAZIO;
+
+  // ---- Voo Guiado: a rota real do aluno -------------------------------
+  const parametros = parametrosDoBriefing(briefing as any, hoje);
+  if (parametros) {
+    const rota = gerarRota(template, parametros);
+    if (rota.dias.length > 0) {
+      const cargaPorData = new Map<string, number>();
+      rota.dias.forEach((d) => cargaPorData.set(d.scheduledDate, d.minutos));
+      return {
+        diaHoje: diaAtualDaRota(rota.dias, hoje)?.routeDay ?? null,
+        cargaPorData,
+        datasBloqueadas: new Set(
+          rota.dias.filter((d) => d.tipo === "prova" || d.tipo === "descanso").map((d) => d.scheduledDate)
+        ),
+        // A numeração e a ordem dos itens são as MESMAS que a tela usa, então
+        // as chaves de progresso (`trilha:<dia>:<índice>`) batem. Se
+        // divergissem, o Copiloto remarcaria conteúdo já concluído.
+        diasVencidos: rota.dias
+          .filter((d) => d.scheduledDate < hoje)
+          .map((d) => ({ dia: d.routeDay, itens: d.itens }))
+      };
+    }
+  }
+
+  // ---- Plano Decolando: régua linear ancorada na matrícula ------------
+  const liberado = (matricula as { acesso_liberado_em: string | null } | null)?.acesso_liberado_em;
+  if (!liberado) return CRONOGRAMA_VAZIO;
+
+  const diaHoje = calcularDiaTrilha(liberado);
+  const cargaPorData = new Map<string, number>();
+  template.forEach((d) => {
+    if (d.dia_numero < diaHoje) return;
+    const data = somarDias(hoje, d.dia_numero - diaHoje);
+    cargaPorData.set(data, (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0));
+  });
+
+  return {
+    diaHoje,
+    cargaPorData,
+    // Sem briefing não há data de prova conhecida aqui — nada a bloquear.
+    datasBloqueadas: new Set<string>(),
+    diasVencidos: template
+      .filter((d) => d.dia_numero < diaHoje)
+      .map((d) => ({ dia: d.dia_numero, itens: d.itens ?? [] }))
+  };
 }
 
 const INVENTARIO_VAZIO: InventarioMateria = { questoes: 0, flashcards: 0, aulas: [] };
@@ -371,6 +485,17 @@ function tipoComConteudo(
   if (inv.flashcards > 0) return "flashcards";
   if (inv.aulas.length > 0) return "aula";
   return null;
+}
+
+/**
+ * Índice estável a partir de um texto — substitui `Math.random()` onde a
+ * escolha precisa ser reproduzível entre execuções.
+ */
+function indiceEstavel(semente: string, tamanho: number): number {
+  if (tamanho <= 0) return 0;
+  let h = 0;
+  for (let i = 0; i < semente.length; i++) h = (h * 31 + semente.charCodeAt(i)) >>> 0;
+  return h % tamanho;
 }
 
 /**
@@ -402,9 +527,26 @@ function resolverConteudoMissao(
 
   if (tipo === "aula") {
     const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
-    // Rotaciona pela lista para não indicar sempre a mesma primeira aula da
-    // matéria a todos os alunos.
-    const escolhida = inv.aulas[Math.floor(Math.random() * inv.aulas.length)];
+
+    // Fora as que o aluno já concluiu e as que já estão agendadas para ele.
+    // A escolha era `Math.random()` sobre a lista inteira: o Copiloto podia
+    // mandar de volta a aula assistida ontem, ou a mesma aula duas vezes na
+    // mesma execução — e, por ser aleatória, duas rodadas seguidas com os
+    // mesmos dados produziam missões diferentes.
+    const jaAgendadas = new Set(
+      dados.missoesAgendadas.filter((m) => m.tipo === "aula" && m.ref_id).map((m) => m.ref_id as string)
+    );
+    const candidatas = inv.aulas.filter((a) => {
+      if (jaAgendadas.has(a.id)) return false;
+      const chave = chaveDeAula(a.id, a.url);
+      return !chave || !dados.concluidas.has(chave);
+    });
+    // Todas já vistas: melhor reapresentar do que não ter missão nenhuma —
+    // rever uma aula é uma revisão legítima.
+    const pool = candidatas.length > 0 ? candidatas : inv.aulas;
+    // Determinístico: a mesma entrada produz sempre a mesma saída, o que
+    // torna a rodada do motor reproduzível e depurável.
+    const escolhida = pool[indiceEstavel(dados.alunoId + "|" + materia, pool.length)];
     if (!escolhida) return null;
     return {
       tipo: "aula",
@@ -478,10 +620,32 @@ function calcularGEN(p: {
 function genMateria(materia: string, dados: DadosAluno): number {
   const m = dados.materias.get(materia);
   if (!m) return 0;
+
   let a = 0, e = 0, t = 0;
   dados.respostas.filter((r) => mesmaMateria(r.materia, materia)).forEach((r) => {
     t++; if (r.correta) a++; else e++;
   });
+
+  // O desempenho nos SIMULADOS entra na mesma conta.
+  //
+  // `dados.tentativas` era carregado e nunca usado: um aluno que zerasse
+  // Biologia num simulado, mas não tivesse respondido questões avulsas dessa
+  // matéria, chegava aqui com a precisão neutra de 50% — o erro mais
+  // significativo que ele podia cometer não influenciava a adaptação em nada.
+  // O simulado é a medida mais próxima da prova real; ignorá-lo era o oposto
+  // de adaptar ao desempenho.
+  dados.tentativas.forEach((tent) => {
+    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
+      if (!mesmaMateria(mat, materia)) return;
+      const total = Number((d as { total?: number }).total ?? 0);
+      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
+      if (!Number.isFinite(total) || total <= 0) return;
+      t += total;
+      a += acertos;
+      e += Math.max(0, total - acertos);
+    });
+  });
+
   const precisao = t > 0 ? (a / t) * 100 : 50;
   const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
   return calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: e, diasRestantes: dados.diasRestantes, sentimento });
@@ -503,16 +667,17 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   if (scores.length === 0) return 0;
 
   // Construir lista de dias livres ordenados
-  const hoje = new Date();
   const MAPA_DIA: Record<number, string> = { 0:"dom",1:"seg",2:"ter",3:"qua",4:"qui",5:"sex",6:"sab" };
   const diasEstudaSet = new Set(dados.briefing?.diasEstuda ?? []);
-  const datasComMissao = new Set(dados.missoesAgendadas.map((m) => m.data));
   const diasLivresOrdenados: string[] = [];
   const dr = dados.diasRestantes ?? 0;
   for (let d = 1; d <= dr; d++) {
     const iso = somarDias(hojeISO(), d);
     if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-    if (!datasComMissao.has(iso)) diasLivresOrdenados.push(iso);
+    // Mesma definição usada em contarDiasComFolga: dia livre é dia com tempo
+    // sobrando, não dia sem missão. Um dia sem missão mas com o cronograma
+    // cheio não tem espaço nenhum a oferecer.
+    if (dados.agenda.livreEm(iso) >= 25) diasLivresOrdenados.push(iso);
   }
 
   if (diasLivresOrdenados.length === 0) return 0;
@@ -521,23 +686,14 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   // por dia e pulava pro dia seguinte — terça questões, quarta flashcards,
   // quinta revisão — mesmo sobrando horas em cada um deles. Agora ele enche
   // o dia até o limite de estudo do aluno antes de abrir o próximo.
-  const maxMinPorDia = (dados.briefing?.horasPorDia ?? 2) * 60;
-  const { data: diasFuturosTrilha } = await supabase
-    .from("trilha_dias")
-    .select("dia_numero, itens")
-    .gte("dia_numero", dados.diaTrilhaHoje ?? 0);
-  const cargaTrilha = new Map<number, number>();
-  ((diasFuturosTrilha ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((d) => {
-    cargaTrilha.set(d.dia_numero, (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0));
-  });
-
   // O dia do cronograma já ocupa parte do tempo, mesmo num dia "livre" de
-  // missões — desconta, senão o Copiloto estoura a rotina do aluno.
-  const capacidade = diasLivresOrdenados.map((data) => {
-    const offset = diffDias(hojeISO(), data);
-    const doCronograma = cargaTrilha.get((dados.diaTrilhaHoje ?? 0) + offset) ?? 0;
-    return { data, livre: Math.max(0, maxMinPorDia - doCronograma) };
-  });
+  // missões — desconta, senão o Copiloto estoura a rotina do aluno. A carga
+  // é indexada por DATA: converter data em dia do cronograma por offset
+  // (`diaTrilhaHoje + dias`) supunha estudo ininterrupto desde a matrícula e
+  // fazia o desconto cair no dia errado.
+  const capacidade = diasLivresOrdenados
+    .filter((data) => !dados.agenda.bloqueada(data))
+    .map((data) => ({ data, livre: dados.agenda.livreEm(data) }));
   const minutosDisponiveis = capacidade.reduce((s, d) => s + d.livre, 0);
   if (minutosDisponiveis <= 0) return 0;
 
@@ -578,8 +734,16 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   }
 
   // Empacota na ordem: enche o primeiro dia até o limite, depois o segundo.
-  // Só abre um dia novo quando a missão realmente não cabe no atual.
-  const restante = capacidade.map((d) => ({ ...d }));
+  // Só abre um dia novo quando a missão realmente não cabe no atual — e quem
+  // decide isso é a agenda, que já conta o conteúdo do cronograma daquele dia
+  // e o que foi criado antes nesta mesma execução.
+  const datasDisponiveis = capacidade.map((d) => d.data);
+  // matéria+tipo já colocados em cada data, para não duplicar no mesmo dia.
+  const jaNoDia = new Map<string, Set<string>>();
+  dados.missoesAgendadas.forEach((m) => {
+    if (!jaNoDia.has(m.data)) jaNoDia.set(m.data, new Set());
+    jaNoDia.get(m.data)!.add(`${chaveMateria(m.materia)}|${m.tipo}`);
+  });
   const missoes: Record<string, unknown>[] = [];
   for (const item of intercalada) {
     // Resolve o conteúdo ANTES de reservar o tempo do dia: uma matéria sem
@@ -588,9 +752,18 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     if (!conteudo) continue;
 
     const min = dados.config.duracaoPorTipo[conteudo.tipo] ?? DURACAO_TIPO[conteudo.tipo] ?? 40;
-    const dia = restante.find((d) => d.livre >= min);
-    if (!dia) break; // acabou a capacidade da janela até a prova
-    dia.livre -= min;
+    // Não cabe hoje → vai para o próximo dia com espaço. Nunca estoura o dia.
+    // Também não repete a mesma matéria+tipo no mesmo dia: "Questões de
+    // Biologia" duas vezes na terça é ruído, não reforço — quando isso
+    // acontece, a missão vai para o próximo dia disponível.
+    const marca = `${chaveMateria(item.materia)}|${conteudo.tipo}`;
+    const candidatas = datasDisponiveis.filter((d) => !jaNoDia.get(d)?.has(marca));
+    const data = dados.agenda.primeiraDataComEspaco(candidatas, min);
+    if (!data) break; // acabou a capacidade da janela até a prova
+    dados.agenda.reservar(data, min);
+    if (!jaNoDia.has(data)) jaNoDia.set(data, new Set());
+    jaNoDia.get(data)!.add(marca);
+    const dia = { data };
     const sc = scores.find((x) => mesmaMateria(x.mat, item.materia))!;
     missoes.push({
       aluno_id: dados.alunoId,
@@ -631,8 +804,6 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     porData.set(m.data, lista);
   });
 
-  const horasPorDia = dados.briefing.horasPorDia;
-  const maxMinPorDia = horasPorDia * 60;
   let acoes = 0;
 
   // Calcula GEN das matérias
@@ -646,14 +817,17 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
   for (const [data, missoesDoDia] of porData) {
     if (acoes >= dados.config.maxDiasModificadosPorExecucao) break; // limite configurável no admin
 
-    const minUsados = missoesDoDia.reduce((s, m) => s + (m.duracao_estimada_min || m.duracao_minutos), 0);
-
     // --- OPÇÃO A: adicionar missão extra se couber no tempo disponível ---
+    //
+    // O teste era `missões do dia + extra <= limite`, contando SÓ as missões.
+    // O conteúdo do cronograma daquele dia ficava de fora, então um dia com
+    // 3h de rota e 1h de missão parecia ter 2h livres num limite de 3h — e o
+    // aluno terminava com 4h de tarefa. A agenda conta os dois.
     const conteudoExtra = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
     const minExtra = conteudoExtra
       ? dados.config.duracaoPorTipo[conteudoExtra.tipo] ?? DURACAO_TIPO[conteudoExtra.tipo] ?? 40
       : 0;
-    if (conteudoExtra && minUsados + minExtra <= maxMinPorDia) {
+    if (conteudoExtra && dados.agenda.cabe(data, minExtra)) {
       const jaTemMateria = missoesDoDia.some((m) => mesmaMateria(m.materia, maisUrgente.mat));
       if (!jaTemMateria) {
         await supabase.from("aluno_missoes").insert({
@@ -669,6 +843,7 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
           origem: "copiloto",
           motivo_copiloto: `[cenário2] GEN=${maisUrgente.gen.toFixed(1)} | adicionado em dia ocupado`,
         });
+        dados.agenda.reservar(data, minExtra);
         acoes++;
         continue;
       }
@@ -692,6 +867,21 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     // por uma vazia deixaria o aluno com menos do que tinha antes.
     const conteudoSubst = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
     if (!conteudoSubst) continue;
+
+    // A missão nova entra com a duração REAL do seu tipo, não com a da que
+    // saiu. Herdar a duração antiga mantinha o total do dia bonito na conta e
+    // errado na prática: 40 min de questões anunciados como os 90 min do
+    // simulado que foi removido, ou o contrário.
+    const minSubst = dados.config.duracaoPorTipo[conteudoSubst.tipo] ?? DURACAO_TIPO[conteudoSubst.tipo] ?? 40;
+    const minLiberados = candidataSubstituir.m.duracao_estimada_min || candidataSubstituir.m.duracao_minutos;
+    dados.agenda.liberar(data, minLiberados);
+    // Se a nova não couber no espaço que a antiga deixou, a troca não
+    // acontece — devolver o tempo e desistir é melhor do que estourar o dia.
+    if (!dados.agenda.cabe(data, minSubst)) {
+      dados.agenda.reservar(data, minLiberados);
+      continue;
+    }
+
     await supabase.from("aluno_missoes").delete().eq("id", candidataSubstituir.m.id);
     await supabase.from("aluno_missoes").insert({
       aluno_id: dados.alunoId, data,
@@ -700,12 +890,13 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
       assunto: conteudoSubst.assunto,
       tipo: conteudoSubst.tipo,
       ref_id: conteudoSubst.refId,
-      duracao_minutos: candidataSubstituir.m.duracao_minutos,
-      duracao_estimada_min: candidataSubstituir.m.duracao_estimada_min,
+      duracao_minutos: minSubst,
+      duracao_estimada_min: minSubst,
       prioridade: 2,
       origem: "copiloto",
       motivo_copiloto: `[cenário2] substituiu "${candidataSubstituir.m.titulo}" (GEN=${genSubst.toFixed(1)}) por ${maisUrgente.mat} (GEN=${maisUrgente.gen.toFixed(1)})`,
     });
+    dados.agenda.reservar(data, minSubst);
 
     await registrarEvento(dados.alunoId, "substituicao_missao", maisUrgente.mat, null, {
       substituida: candidataSubstituir.m.materia,
@@ -801,17 +992,18 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   }
 
   // 3. Levantar as pendências dos dias que já passaram.
-  const { data: diasPassados } = await supabase
-    .from("trilha_dias")
-    .select("dia_numero, itens")
-    .lt("dia_numero", dados.diaTrilhaHoje)
-    .order("dia_numero");
-
+  //
+  // "Já passou" é uma pergunta sobre o CALENDÁRIO DO ALUNO, não sobre o
+  // template. Antes eram todos os dias com `dia_numero < diaTrilhaHoje`, e
+  // como `diaTrilhaHoje` contava da matrícula, quem se matriculou 21 dias
+  // antes de começar a estudar tinha 21 dias de template tratados como
+  // atrasados — conteúdo que nunca lhe foi apresentado voltava como
+  // "pendência" logo no primeiro dia.
   const pendencias: Pendencia[] = [];
-  ((diasPassados ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((dia) => {
+  dados.cronograma.diasVencidos.forEach((dia) => {
     (dia.itens ?? []).forEach((item, i) => {
       if (!itemReagendavel(item)) return;
-      const chave = chaveDeItemTrilha(dia.dia_numero, i, item);
+      const chave = chaveDeItemTrilha(dia.dia, i, item);
       if (!chave || concluidas.has(chave) || chavesReagendadas.has(chave)) return;
       const gen = item.materia ? genMateria(item.materia, dados) : 0;
       pendencias.push({
@@ -821,7 +1013,7 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
         tipo: item.tipo,
         minutos: minutosDoItem(item),
         importancia: importanciaDe(gen, item.tipo),
-        diaOrigem: dia.dia_numero
+        diaOrigem: dia.dia
       });
     });
   });
@@ -830,22 +1022,8 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   if (aReagendar.length === 0) return 0;
 
   // 4. Montar a capacidade dos próximos dias.
-  const maxMinPorDia = (dados.briefing?.horasPorDia ?? 2) * 60;
+  const maxMinPorDia = dados.agenda.minutosPorDia;
   const limite = dados.diasRestantes && dados.diasRestantes > 0 ? Math.min(dados.diasRestantes, 60) : 30;
-  const carga = new Map<string, number>();
-  dados.missoesAgendadas.forEach((m) => {
-    carga.set(m.data, (carga.get(m.data) ?? 0) + (m.duracao_estimada_min || m.duracao_minutos));
-  });
-  // Um dia do cronograma também ocupa tempo, mesmo sem missão do Copiloto.
-  const { data: diasFuturos } = await supabase
-    .from("trilha_dias")
-    .select("dia_numero, itens")
-    .gte("dia_numero", dados.diaTrilhaHoje);
-  const cargaTrilhaPorDiaNumero = new Map<number, number>();
-  ((diasFuturos ?? []) as { dia_numero: number; itens: TrilhaItem[] }[]).forEach((d) => {
-    cargaTrilhaPorDiaNumero.set(d.dia_numero, (d.itens ?? []).reduce((soma, it) => soma + minutosDoItem(it), 0));
-  });
-
   const diasEstuda = new Set(dados.briefing?.diasEstuda ?? []);
   const MAPA_DIA: Record<number, string> = { 0: "dom", 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sab" };
 
@@ -853,8 +1031,11 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   for (let d = 1; d <= limite; d++) {
     const iso = somarDias(hoje, d);
     if (diasEstuda.size > 0 && !diasEstuda.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-    const doCronograma = cargaTrilhaPorDiaNumero.get(dados.diaTrilhaHoje + d) ?? 0;
-    alvos.push({ data: iso, usados: (carga.get(iso) ?? 0) + doCronograma });
+    // Dia da prova e véspera de descanso não recebem missão nenhuma.
+    if (dados.agenda.bloqueada(iso)) continue;
+    // `ocupadoEm` já soma o conteúdo do cronograma daquele dia e as missões
+    // agendadas — antes a conta usava só as missões.
+    alvos.push({ data: iso, usados: dados.agenda.ocupadoEm(iso) });
   }
 
   // 5. Decidir (puro, testável em lib/copiloto/pendencias.ts) e gravar.
@@ -879,6 +1060,7 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
     });
     if (error) continue;
     reagendadas++;
+    dados.agenda.reservar(a.data, p.minutos);
 
     // A pendência remarcada passa a contar como carga já existente. Sem isso,
     // `preencherDiasLivres` continuaria enxergando o dia como vazio e
@@ -891,6 +1073,7 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
       materia: p.materia ?? "",
       assunto: null,
       tipo: p.tipo,
+      ref_id: null,
       duracao_minutos: p.minutos,
       duracao_estimada_min: p.minutos,
       prioridade: p.importancia >= 15 ? 3 : 2,
@@ -910,23 +1093,36 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   return reagendadas;
 }
 
-// Recalcula dias livres/ocupados a partir de `missoesAgendadas`. Mesma conta
-// de `carregarDados`, extraída porque agora precisa rodar de novo depois que
-// o reagendamento de pendências ocupa dias que antes estavam vazios — é isso
-// que decide qual cenário o motor vai executar em seguida.
+// Recalcula dias livres/ocupados. Roda de novo depois que o reagendamento de
+// pendências ocupa dias que antes estavam vazios — é isso que decide qual
+// cenário o motor executa em seguida.
+//
+// "Dia livre" passou a significar DIA COM FOLGA REAL, e não "dia sem missão".
+// A conta antiga olhava só `aluno_missoes`: um aluno cujo cronograma preenche
+// todas as tardes até o limite de horas aparecia com 19 dias livres, o motor
+// entrava em modo generoso e tentava encher dias que já estavam cheios. Além
+// de errar o modo, isso mascarava o cenário 2, que é o que deveria rodar.
 function recontarOcupacao(dados: DadosAluno): void {
   const datasComMissao = new Set(dados.missoesAgendadas.map((m) => m.data));
   dados.diasOcupados = datasComMissao.size;
-  dados.diasLivres = 0;
-  if (!dados.diasRestantes || dados.diasRestantes <= 0) return;
+  dados.diasLivres = contarDiasComFolga(dados);
+}
+
+/** Dias de estudo, daqui até a prova, que ainda têm tempo sobrando. */
+function contarDiasComFolga(dados: DadosAluno): number {
+  if (!dados.diasRestantes || dados.diasRestantes <= 0) return 0;
   const MAPA_DIA: Record<number, string> = { 0: "dom", 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sab" };
   const diasEstudaSet = new Set(dados.briefing?.diasEstuda ?? []);
   const hoje = hojeISO();
+  let livres = 0;
   for (let d = 1; d <= dados.diasRestantes; d++) {
     const iso = somarDias(hoje, d);
     if (diasEstudaSet.size > 0 && !diasEstudaSet.has(MAPA_DIA[diaDaSemana(iso)])) continue;
-    if (!datasComMissao.has(iso)) dados.diasLivres++;
+    // A menor missão que o motor cria tem ~25 min; um resto menor que isso
+    // não é folga utilizável.
+    if (dados.agenda.livreEm(iso) >= 25) livres++;
   }
+  return livres;
 }
 
 // ============================================================================
@@ -1163,13 +1359,26 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         await supabase.from("aluno_briefing")
           .update({ horas_por_dia_semana: horasNovas, horas_por_dia_fim_semana: horasNovas })
           .eq("aluno_id", dados.alunoId);
+
+        // O aluno acabou de AUMENTAR o próprio limite — a agenda precisa
+        // passar a valer o novo teto, senão o Copiloto continuaria medindo
+        // pelo antigo e o "sim" do check-in não teria efeito nenhum.
+        // Reconstruída a partir do estado atual, com o novo teto.
+        dados.agenda = montarAgenda({
+          minutosPorDia: horasNovas * 60,
+          cargaDoCronograma: dados.cronograma.cargaPorData,
+          missoes: dados.missoesAgendadas.map((m) => ({
+            data: m.data,
+            minutos: m.duracao_estimada_min || m.duracao_minutos
+          })),
+          bloqueadas: dados.cronograma.datasBloqueadas
+        });
+        if (dados.briefing) dados.briefing.horasPorDia = horasNovas;
+
         // Adicionar missões extras nos próximos 7 dias que tiverem espaço
         for (let d = 1; d <= 7; d++) {
           const iso = somarDias(hojeISO(), d);
-          const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
-          const minUsados = missoesNoDia.reduce((s, m) => s + m.duracao_estimada_min, 0);
-          const maxMin = horasNovas * 60;
-          if (minUsados + 40 <= maxMin) {
+          if (dados.agenda.cabe(iso, 40)) {
             // Só considera matérias que têm conteúdo — antes bastava ter GEN
             // alto, e o aluno ganhava uma missão que não abria nada.
             const mat = [...dados.materias.keys()]
@@ -1185,6 +1394,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
                 prioridade: 2, origem: "copiloto",
                 motivo_copiloto: `[checkin] aluno aceitou aumentar tempo de estudo`,
               });
+              dados.agenda.reservar(iso, 40);
             }
           }
         }
@@ -1202,9 +1412,9 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
           if (jaTemMateria) continue;
           const tipoFoco = tipoComConteudo(dados, mat, "questoes");
           if (!tipoFoco) break; // matéria pedida no check-in não tem conteúdo
-          const minUsados = missoesNoDia.reduce((s, m) => s + m.duracao_estimada_min, 0);
-          const maxMin = (dados.briefing?.horasPorDia ?? 2) * 60;
-          if (minUsados + 40 <= maxMin) {
+          // Foco pedido pelo aluno não é licença para estourar o dia dele:
+          // se não couber aqui, o laço tenta o dia seguinte.
+          if (dados.agenda.cabe(iso, 40)) {
             await supabase.from("aluno_missoes").insert({
               aluno_id: dados.alunoId, data: iso,
               titulo: `${tipoFoco === "flashcards" ? "Flashcards" : "Questões"} · ${mat} — Copiloto (foco)`,
@@ -1213,6 +1423,7 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
               prioridade: 3, origem: "copiloto",
               motivo_copiloto: `[checkin] aluno pediu foco em ${mat}`,
             });
+            dados.agenda.reservar(iso, 40);
             adicionados++;
           }
         }
@@ -1230,6 +1441,8 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         // tem conteúdo, o aluno terminaria com menos missões válidas do que
         // começou.
         const tipoPara = tipoComConteudo(dados, para, "questoes");
+        // Troca 1-para-1 na mesma data e com a mesma duração: o total do dia
+        // não muda, então o limite continua respeitado por construção.
         for (const m of tipoPara ? missoesParaSubstituir : []) {
           await supabase.from("aluno_missoes").delete().eq("id", m.id);
           await supabase.from("aluno_missoes").insert({
@@ -1318,11 +1531,29 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     lista.push({ materia, assunto, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipo, urgencia: gen > 15 ? 3 : gen > 6 ? 2 : 1, descricao: gerarDescricao({ assunto, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
 
-  // Por matéria
+  // Por matéria — questões avulsas, atividades E simulados.
+  //
+  // A recomendação de matéria olhava só `respostas_aluno`. Um aluno com
+  // desempenho ruim num simulado inteiro de Química não gerava recomendação
+  // nenhuma se não tivesse respondido questões avulsas dessa matéria.
   const porMat = new Map<string, { a: number; e: number; t: number }>();
-  dados.respostas.forEach((r) => {
-    const c = porMat.get(r.materia) ?? { a: 0, e: 0, t: 0 };
-    c.t++; if (r.correta) c.a++; else c.e++; porMat.set(r.materia, c);
+  const somarMateria = (materia: string, acertos: number, total: number) => {
+    if (!materia || total <= 0) return;
+    const c = porMat.get(materia) ?? { a: 0, e: 0, t: 0 };
+    c.t += total;
+    c.a += acertos;
+    c.e += Math.max(0, total - acertos);
+    porMat.set(materia, c);
+  };
+  dados.respostas.forEach((r) => somarMateria(r.materia, r.correta ? 1 : 0, 1));
+  dados.tentativas.forEach((tent) => {
+    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
+      const total = Number((d as { total?: number }).total ?? 0);
+      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
+      // Casa com a chave canônica para "Português" antigo cair em "Linguagens".
+      const alvo = [...porMat.keys()].find((k) => mesmaMateria(k, mat)) ?? mat;
+      somarMateria(alvo, acertos, total);
+    });
   });
   for (const [materia, d] of porMat) {
     if (d.t < 10 || d.e < cfg.errosMinGatilho) continue;
@@ -1414,6 +1645,15 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
     // Gemini e busca uma vídeo-aula REAL (nunca inventada) via YouTube
     // Data API antes de criar a recomendação.
     let payloadExtra: Record<string, unknown> = {};
+    // O tipo da recomendação é decidido ANTES da produção, a partir do
+    // inventário carregado no início da execução. Quando a produção encontra
+    // uma vídeo-aula, o tipo precisa acompanhar — senão a aula é buscada,
+    // validada, gravada em `conteudos_biblioteca`... e a recomendação
+    // continua sendo de flashcards, com o vídeo mencionado só numa frase do
+    // motivo. Era por isso que não existia UMA recomendação de tipo "aula" no
+    // banco: as revisões em vídeo eram produzidas e descartadas na última
+    // linha.
+    let tipoFinal: string = iv.tipoRecomendado;
     if (cfg.gemini && iv.assunto && iv.gen > 8) {
       try {
         const producao = await produzirMaterialSobDemanda(
@@ -1425,9 +1665,12 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
             material_gerado_ia: true,
             flashcards_gerados: producao.flashcardsGerados,
             video_url: producao.videoUrl,
-            video_titulo: producao.videoTitulo
+            video_titulo: producao.videoTitulo,
+            // É este id que a tela de revisão usa para abrir a aula.
+            video_conteudo_id: producao.videoConteudoId
           };
-          if (producao.videoUrl) {
+          if (producao.videoUrl && producao.videoConteudoId) {
+            tipoFinal = "aula";
             motivo += ` Preparei uma vídeo-aula completa sobre esse assunto especialmente pra você.`;
           } else if (producao.flashcardsGerados > 0) {
             motivo += ` Criei novos flashcards sobre esse assunto pra reforçar.`;
@@ -1439,8 +1682,29 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
     }
 
     const titulo = iv.qtdErros === 0 ? `Iniciar: ${iv.assunto ?? iv.materia}` : iv.qtdErros === 1 ? `Revisar: ${iv.assunto ?? iv.materia}` : iv.qtdErros <= 3 ? `Reforçar: ${iv.assunto ?? iv.materia} (${iv.qtdErros} erros)` : `Urgente: ${iv.assunto ?? iv.materia} (${iv.qtdErros} erros)`;
-    await supabase.from("copiloto_recomendacoes").insert({ aluno_id: dados.alunoId, tipo: iv.tipoRecomendado, materia: iv.materia, assunto: iv.assunto, titulo, motivo, prioridade: iv.urgencia, payload: { modo: dados.modo, gen: iv.gen, qtd_erros: iv.qtdErros, precisao: Math.round(iv.precisaoAtual), relevancia: Math.round(iv.relevancia), ...payloadExtra }, fonte: "gatilho" });
-    await registrarEvento(dados.alunoId, "gen_recomendacao", iv.materia, iv.assunto, { gen: iv.gen, modo: dados.modo, tipo: iv.tipoRecomendado });
+    // `ignoreDuplicates`: o índice único parcial
+    // (aluno, matéria, assunto) WHERE status='pendente' é quem garante de
+    // verdade a unicidade — a checagem acima é uma leitura anterior à
+    // escrita, e `rodarCopiloto` roda em paralelo a partir de vários pontos.
+    // Perder a corrida aqui não é erro: significa que outra execução já
+    // criou a mesma recomendação.
+    const { error: erroInsercao } = await supabase
+      .from("copiloto_recomendacoes")
+      .insert({ aluno_id: dados.alunoId, tipo: tipoFinal, materia: iv.materia, assunto: iv.assunto, titulo, motivo, prioridade: iv.urgencia, payload: { modo: dados.modo, gen: iv.gen, qtd_erros: iv.qtdErros, precisao: Math.round(iv.precisaoAtual), relevancia: Math.round(iv.relevancia), ...payloadExtra }, fonte: "gatilho" });
+
+    // 23505 = violação do índice único parcial. Não é erro: significa que
+    // outra execução simultânea já criou esta mesma recomendação. `ON
+    // CONFLICT` não serve aqui porque o índice é sobre uma expressão
+    // (`coalesce(assunto,'')`) e parcial (`WHERE status='pendente'`) — o
+    // Postgres não aceita esse alvo. Deixar o insert falhar e ignorar a
+    // colisão é o caminho correto.
+    if (erroInsercao) {
+      if ((erroInsercao as { code?: string }).code !== "23505") {
+        console.error("[copiloto] falha ao criar recomendação:", erroInsercao.message);
+      }
+      continue;
+    }
+    await registrarEvento(dados.alunoId, "gen_recomendacao", iv.materia, iv.assunto, { gen: iv.gen, modo: dados.modo, tipo: tipoFinal });
     criadas++;
   }
 }

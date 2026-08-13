@@ -52,6 +52,7 @@ export default async function PreviewAlunoPage() {
       plano="voo-guiado"
       whatsappSuporte="#"
       whatsappRedacao="#"
+      whatsappErro="#"
       demoMode
       dados={{
         temCopiloto: true,

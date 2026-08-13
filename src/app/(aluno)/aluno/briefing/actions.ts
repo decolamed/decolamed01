@@ -5,8 +5,11 @@ import { revalidatePath } from "next/cache";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { rodarCopiloto } from "@/lib/copiloto/motor";
-
-const SENTIMENTOS_VALIDOS = new Set(["Domínio", "Atenção", "Turbulência"]);
+import { resolverCronograma } from "@/lib/trilha/resolver";
+import { regerarRotaDoAluno } from "@/lib/trilha/rota-persistencia";
+import { hojeISO } from "@/lib/site/data";
+import { lerSentimentos } from "@/lib/site/sentimentos";
+import type { TrilhaDia } from "@/types/database";
 
 // Item 15: a prova tem 5 questões de língua estrangeira e o aluno faz UMA
 // das duas. Sem essa escolha registrada, a plataforma não consegue entregar
@@ -22,7 +25,7 @@ const IDIOMAS_VALIDOS = new Set(["ingles", "espanhol"]);
  * de uma submissão de <form>, não de uma chamada direta).
  * Espera:
  *   data_prova, inicio_estudos, dias_por_semana, horas_por_dia,
- *   sentimento_<Materia> = "Domínio" | "Atenção" | "Turbulência"
+ *   sentimento_materia_<i> / sentimento_valor_<i> (ver lib/site/sentimentos.ts)
  */
 async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { ok: false; erro: string }> {
   const profile = await requireAcessoAluno();
@@ -34,14 +37,10 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
   const horasPorDia = Number(formData.get("horas_por_dia") ?? 3);
   const observacoes = String(formData.get("observacoes") ?? "").trim() || null;
 
-  // sentimentos por matéria
-  const sentimentos: Record<string, string> = {};
-  for (const [k, v] of formData.entries()) {
-    if (!k.startsWith("sentimento_")) continue;
-    const materia = k.replace("sentimento_", "");
-    const valor = String(v);
-    if (SENTIMENTOS_VALIDOS.has(valor)) sentimentos[materia] = valor;
-  }
+  // Autoavaliação por matéria. A matéria chega como VALOR de um campo de nome
+  // ASCII (lib/site/sentimentos.ts): usá-la como NOME de campo corrompia as
+  // acentuadas no cabeçalho do multipart, e o Copiloto perdia a resposta.
+  const sentimentos = lerSentimentos(formData);
 
   const idiomaBruto = String(formData.get("idioma_prova") ?? "").trim().toLowerCase();
   const idiomaProva = IDIOMAS_VALIDOS.has(idiomaBruto) ? idiomaBruto : null;
@@ -96,24 +95,40 @@ async function salvarBriefingCore(formData: FormData): Promise<{ ok: true } | { 
  * seguiam com os parâmetros antigos — o formulário mostrava o dado novo e o
  * comportamento continuava o velho.
  *
- * Duas coisas acontecem aqui:
+ * Três coisas acontecem aqui:
  *
- *   1. Missões FUTURAS geradas pelo Copiloto sob os parâmetros antigos são
+ *   1. A ROTA é regerada do zero com os novos parâmetros e SUBSTITUI a
+ *      anterior em `aluno_rota_dias`. Não é fusão nem remendo: a rota antiga
+ *      é apagada. Duas rotas convivendo é como um cronograma acaba com dois
+ *      "Dia 12" e com datas que não batem com nada.
+ *   2. Missões FUTURAS geradas pelo Copiloto sob os parâmetros antigos são
  *      removidas. Só as do Copiloto, só as não concluídas e só as de hoje em
  *      diante — o histórico do aluno e o que o admin agendou à mão ficam
  *      intactos, como pede o item 18.3.
- *   2. O Copiloto roda de novo e remonta a rota com a nova janela, as novas
- *      dificuldades e o novo idioma. Como ele parte do desempenho já
+ *   3. O Copiloto roda de novo e remonta as missões extras com a nova janela,
+ *      as novas dificuldades e o novo idioma. Como ele parte do desempenho já
  *      registrado, conteúdo concluído não volta por padrão; volta como
  *      revisão só quando os erros indicarem (item 18.4).
- *
- * O cronograma-base não precisa de nada aqui: ele é projetado na janela do
- * aluno a cada leitura (lib/trilha/ajuste-voo-guiado.ts), então a nova data
- * da prova já muda a rota na próxima tela aberta.
  */
 async function reprojetarJornada(alunoId: string, dataProva: string): Promise<void> {
   const supabase = createClient();
-  const hoje = new Date().toISOString().slice(0, 10);
+  // Fuso da plataforma, não UTC: das 21h à meia-noite o UTC já é o dia
+  // seguinte, e a rota nasceria começando amanhã.
+  const hoje = hojeISO();
+
+  // ---- 1. Rota nova, no lugar da antiga -------------------------------
+  try {
+    const [{ data: briefingAtual }, { data: trilha }] = await Promise.all([
+      supabase.from("aluno_briefing").select("*").eq("aluno_id", alunoId).maybeSingle(),
+      supabase.from("trilha_dias").select("*").order("dia_numero")
+    ]);
+    const template = await resolverCronograma((trilha as TrilhaDia[]) ?? []);
+    await regerarRotaDoAluno(supabase, alunoId, { briefing: briefingAtual as any, template, hoje });
+  } catch (e) {
+    // A rota também é regerada na próxima leitura de tela (rotaDoAluno
+    // compara a assinatura), então isto atrasa, não perde.
+    console.error("Recalibragem: falha ao regerar a rota do aluno:", e);
+  }
 
   const { error: erroLimpeza } = await supabase
     .from("aluno_missoes")

@@ -2,9 +2,7 @@
 
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
-import { enviarRelatoErro } from "./relato-actions";
 import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
-import { nomeDaTela } from "@/lib/site/telas";
 import { formatarNota } from "@/lib/site/nota";
 import { registrarResposta } from "./questoes/actions";
 import { registrarRevisao } from "./flashcards/actions";
@@ -17,6 +15,10 @@ import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
 import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
+import { tituloDaProva } from "@/lib/trilha/rota";
+import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
+import { disponivelParaAluno } from "@/lib/site/avaliacoes";
+import { escreverSentimentos } from "@/lib/site/sentimentos";
 import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
@@ -40,6 +42,15 @@ import type {
   ImagemQuestao
 } from "@/types/database";
 
+// Um dia do cronograma como as telas o recebem. No Voo Guiado vem da rota
+// (`lib/trilha/rota.ts`) e traz a data agendada e o tipo do dia; no Plano
+// Decolando é o dia do template puro, sem esses campos.
+type DiaDoCronograma = TrilhaDia & {
+  scheduled_date?: string;
+  template_days?: number[];
+  tipo_rota?: "estudo" | "simulado" | "revisao" | "descanso" | "prova";
+};
+
 interface DecolaAppDados {
   temCopiloto: boolean;
   questoes: Questao[];
@@ -53,17 +64,22 @@ interface DecolaAppDados {
   revisoes: { lembrou: boolean; created_at: string }[];
   pesos: MateriaPeso[];
   missoes: AlunoMissao[];
-  trilhaHoje: TrilhaDia | null;
+  trilhaHoje: DiaDoCronograma | null;
   // Próximos dias do cronograma — é o que a tela de cronograma mostra
   // abaixo da missão de hoje (antes, só as missões do Copiloto apareciam
   // ali, então quem não tinha missões via um cronograma "vazio").
-  trilhaProximos: TrilhaDia[];
-  // dia_numero correspondente a hoje — converte a régua relativa do
-  // cronograma em datas reais (ver lib/site/data.ts:dataDoDiaTrilha).
+  trilhaProximos: DiaDoCronograma[];
+  // Posição do aluno na rota dele (1..N) — no Voo Guiado é o routeDay, no
+  // Decolando é o dia do template contado da matrícula.
   diaTrilhaHoje: number | null;
+  // Data real de cada dia da rota (routeDay → YYYY-MM-DD). Existe sempre que
+  // há rota; é a única fonte de datas do cronograma quando presente.
+  datasDoCronograma?: Record<number, string> | null;
+  // Total de dias da rota — o "de N" do "Dia 2 de 19".
+  totalDiasCronograma?: number;
   // Dias já passados do cronograma. Ficam visíveis (recolhidos) para o aluno
   // consultar e concluir o que ficou para trás.
-  trilhaAnteriores: TrilhaDia[];
+  trilhaAnteriores: DiaDoCronograma[];
   // O cronograma-base foi projetado na janela real deste aluno (Voo Guiado
   // com menos dias até a prova do que a trilha original tem). Serve para a
   // tela avisar que os dias vêm agrupados — sem o aviso, o aluno acharia que
@@ -111,6 +127,15 @@ interface DecolaAppProps {
   plano: "decolando" | "voo-guiado";
   whatsappSuporte: string;
   whatsappRedacao: string;
+  // Canal de comunicação de erros. É o MESMO número geral da plataforma
+  // (`site.contato.whatsapp`), montado no servidor com a mensagem inicial —
+  // por isso nenhum número aparece aqui no cliente e trocar a configuração
+  // no admin passa a valer sem tocar em código.
+  whatsappErro: string;
+  // Id de `conteudos_biblioteca` para abrir no player assim que o app
+  // carrega. Chega por `/aluno?aula=<id>` — é assim que a revisão em vídeo
+  // do Copiloto abre a aula certa em vez de uma lista.
+  abrirAulaId?: string | null;
   dados: DecolaAppDados;
   // Vitrine somente-leitura usada em /preview-aluno (botão "Ver app do
   // aluno" do admin e "Demonstração grátis" do parceiro): mostra conteúdo
@@ -233,7 +258,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     copAns: {},
     calMonth: 0,
     calSel: null,
-    errOpen: false,
     aviso: null as string | null,
     // A trilha é contínua: o que já passou continua na tela, marcado como
     // concluído, para o aluno poder revisitar e reassistir. Começar recolhido
@@ -243,12 +267,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // aluno digita, "Salvo ✓" logo depois. O salvamento sempre foi
     // automático, mas nada indicava isso na tela.
     notaStatus: null as null | "salvando" | "salvo",
-    errSent: false,
-    // Gravação em curso: trava o botão para não gerar relato duplicado e
-    // impede que a tela de sucesso apareça antes da confirmação do banco.
-    errEnviando: false,
-    errText: "",
-    errCat: "Questão",
     tutStep: 0,
     podeInstalarPWA: false,
     pwaInstalada: false,
@@ -300,6 +318,17 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   _deferredInstallPrompt: any = null;
 
   componentDidMount() {
+    // Deep link de aula (`/aluno?aula=<id>`). Resolve pelo ID real do
+    // conteúdo — nunca pelo título, que não é identificador e muda quando o
+    // admin corrige o nome da aula.
+    if (this.props.abrirAulaId) {
+      const aula = this.props.dados.conteudos.find((c) => c.id === this.props.abrirAulaId && c.url);
+      if (aula) {
+        this.abrirAula(aula.id, aula.titulo, aula.url as string, "mapa");
+      } else {
+        this.avisar("Esta aula não está mais disponível.");
+      }
+    }
     this._r = () => this.setState({ w: window.innerWidth });
     window.addEventListener("resize", this._r);
     this._r();
@@ -698,13 +727,25 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       subjects,
       ranking: P.ranking.map((r, i) => ({ p: i + 1, n: r.nome, xp: String(r.xp), me: r.aluno_id === this.props.alunoId, id: r.aluno_id })),
       badges: this.badgesReais(),
-      sims: P.simulados.map((s) => ({
+      // Mesma regra da aba Atividades (lib/site/avaliacoes.ts): um simulado
+      // sem questões e sem redação não é ofertado em lugar nenhum. Antes esta
+      // lista mostrava simulados vazios que a aba Atividades escondia — duas
+      // telas do mesmo app discordando sobre o que existe.
+      sims: P.simulados
+        .filter((s) =>
+          disponivelParaAluno({
+            ativo: true,
+            totalQuestoes: contagemPorSimulado[s.id] ?? 0,
+            temRedacao: Boolean((s as { redacao?: unknown }).redacao)
+          })
+        )
+        .map((s) => ({
         id: s.id,
         t: s.titulo,
         q: contagemPorSimulado[s.id] ?? 0,
         lvl: nivelPorTotal(contagemPorSimulado[s.id] ?? 0),
         time: s.tempo_minutos >= 60 ? Math.round(s.tempo_minutos / 60) + "h" : s.tempo_minutos + "min"
-      })),
+        })),
       simHist: P.tentativas
         .filter((t) => t.finalizado_em)
         .map((t) => {
@@ -953,12 +994,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const pr = this.priorities();
     return pr.length ? pr[0].tema : null;
   }
+  // O plano vem do servidor (matrícula → plano). Havia um fallback para
+  // `localStorage["dm-plan"]`, sobra da versão de demonstração: ninguém
+  // escrevia essa chave, mas um valor antigo no navegador podia decidir o
+  // plano do aluno se a prop falhasse. Fonte de verdade agora é só o banco.
   plan() {
-    let ls = null;
-    try {
-      ls = localStorage.getItem("dm-plan");
-    } catch (e) {}
-    return this.props.plano ?? ls ?? "decolando";
+    return this.props.plano ?? "decolando";
   }
   // Missões reais de hoje (tabela aluno_missoes, só para planos com
   // Copiloto — ver aluno/cronograma/page.tsx para o mesmo critério).
@@ -994,7 +1035,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             : "Ainda não há questões cadastradas."
         );
       }
-      this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: m.materia || null });
+      // Mesma regra da atividade do cronograma: sessão fechada, não o banco.
+      this.irParaRota("/aluno/sessao/" + encodeURIComponent(chaveSessaoMissao(m.id)));
     } else if (m.tipo === "flashcards") {
       const pool = flashcardsDa(m.materia);
       if (pool.length === 0) {
@@ -1137,7 +1179,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         d: dia!.titulo,
         ia: false,
         done: this.estaConcluido(chave),
-        act: () => this.abrirItemTrilha(item),
+        act: () => this.abrirItemTrilha(item, dia!.dia_numero, i),
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
@@ -1267,7 +1309,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   // referência esperada (ex.: um "simulado" sem ref_id, que existia no
   // cronograma antigo) caem na LISTA daquele tipo em vez de abrir uma tela
   // quebrada — nenhum item pode virar um clique que não faz nada.
-  abrirItemTrilha(item: TrilhaItem) {
+  abrirItemTrilha(item: TrilhaItem, diaNumero?: number, indice?: number) {
     if (item.tipo === "aula") {
       if (!item.url) return this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "plano" });
       // Todas as aulas do mesmo dia viram a playlist do player.
@@ -1279,7 +1321,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       if (!item.url) return this.nav("conteudo", { contTitle: item.tipo === "pdf" ? "PDFs" : "Links úteis", contTipo: item.tipo, contBack: "plano" });
       this.openBrowser(item.titulo, item.url, "plano");
     } else if (item.tipo === "questoes") {
-      this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
+      // Atividade diária = sessão fechada de N questões, numa rota própria.
+      // Antes isto abria a tela de prática com `qMateria`, e `qList()`
+      // devolvia TODAS as questões da matéria — "1 / 82" no cabeçalho. Ver
+      // lib/trilha/sessao-questoes.ts.
+      if (diaNumero == null || indice == null) {
+        // Sem a posição não há como identificar a atividade; o Banco de
+        // Questões continua sendo o destino honesto nesse caso.
+        return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
+      }
+      this.irParaRota("/aluno/sessao/" + encodeURIComponent(chaveSessaoTrilha(diaNumero, indice)));
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
       if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, item.materia))), false);
@@ -1831,7 +1882,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           this.comKey("demo", this.demoBanner()),
           h("div", { key: "c", style: { display: "flex", flexDirection: "column", maxWidth: 640, margin: "0 auto", padding: "26px 32px 60px" } }, children),
           this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
-          this.state.errOpen ? this.comKey("err", this.errSheet()) : null,
           this.comKey("aviso", this.avisoToast())
         ])
       ]);
@@ -1846,7 +1896,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       opts.noTab ? null : this.comKey("tabbar", this.tabbar()),
       this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
       this.state.moreOpen && !opts.noTab ? this.comKey("more", this.moreSheet()) : null,
-      this.state.errOpen ? this.comKey("err", this.errSheet()) : null,
       this.comKey("aviso", this.avisoToast())
     ]);
   }
@@ -2037,8 +2086,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 I("plane", 22, "#F8935A")
               ),
               h("div", { key: "t", style: { flex: 1 } }, [
-                h("div", { key: "a", style: { fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,.65)", letterSpacing: ".08em", textTransform: "uppercase" } }, "Missão do Dia · Missão 6"),
-                h("div", { key: "b", style: { fontSize: 17, fontWeight: 900 } }, "Sistema Digestório"),
+                // "Missão do Dia · Missão 6" e "Sistema Digestório" estavam
+                // ESCRITOS AQUI, fixos, sobrevivendo desde a versão de
+                // demonstração sem banco. Era isso que o aluno via na tela
+                // inicial, independentemente da rota dele — nenhum dado
+                // errado, nenhuma consulta errada: um texto constante.
+                // Agora vêm da rota ativa, pela mesma fonte que o cronograma.
+                h("div", { key: "a", style: { fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,.65)", letterSpacing: ".08em", textTransform: "uppercase" } }, this.rotuloMissaoDoDia()),
+                h("div", { key: "b", style: { fontSize: 17, fontWeight: 900 } }, this.tituloMissaoDoDia()),
                 h("div", { key: "c", style: { fontSize: 10.5, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 2 } }, seq.length + " passos · toque para ver as próximas missões")
               ]),
               h("div", { key: "p", style: { textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 } }, [
@@ -2453,12 +2508,44 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   // ---- Datas do cronograma --------------------------------------------
-  // O cronograma é uma régua relativa (dia_numero). Estas três funções são
-  // a única ponte para o calendário: sabendo qual dia_numero é hoje, todo o
-  // resto sai por diferença.
+  //
+  // Com rota (Voo Guiado), a data de cada dia foi decidida na geração e vem
+  // pronta em `datasDoCronograma`. A tela só consulta.
+  //
+  // Sem rota (Plano Decolando), o cronograma continua sendo uma régua
+  // relativa e a data sai por diferença a partir do dia de hoje. Essa
+  // extrapolação era usada para TODO mundo, e é dela que vinham as datas
+  // anteriores ao início do aluno — ela pressupõe que o aluno estuda todos
+  // os dias, sem intervalo, desde a matrícula.
+
+  /**
+   * "Missão do Dia · Dia 2 de 19" — rótulo do cartão da tela inicial.
+   *
+   * Fonte única: o dia atual da rota, o mesmo número que o cronograma mostra.
+   * Sem rota (Plano Decolando), fica só "Missão do Dia".
+   */
+  rotuloMissaoDoDia(): string {
+    const dia = this.props.dados.diaTrilhaHoje;
+    const total = this.props.dados.totalDiasCronograma;
+    if (!dia) return "Missão do Dia";
+    return "Missão do Dia · Dia " + dia + (total ? " de " + total : "");
+  }
+
+  /** Título do dia atual da rota — nunca um tema escrito no código. */
+  tituloMissaoDoDia(): string {
+    const dia = this.props.dados.trilhaHoje;
+    if (dia?.titulo) return dia.titulo;
+    const primeira = this.missoesHoje()[0];
+    if (primeira?.titulo) return primeira.titulo;
+    return "Suas missões de hoje";
+  }
 
   /** Data YYYY-MM-DD de um dia do cronograma, ou null se não dá pra saber. */
   dataDoDia(diaNumero: number): string | null {
+    const daRota = this.props.dados.datasDoCronograma?.[diaNumero];
+    if (daRota) return daRota;
+    if (this.props.dados.datasDoCronograma) return null;
+
     const hojeNum = this.props.dados.diaTrilhaHoje;
     if (!hojeNum) return null;
     return dataDoDiaTrilha(diaNumero, hojeNum, this.props.dados.hojeStr);
@@ -2505,7 +2592,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   }
 
   // Mesma montagem de todaySeq(), para um dia qualquer do cronograma.
-  sequenciaDoDia(dia: TrilhaDia) {
+  sequenciaDoDia(dia: DiaDoCronograma) {
     // Dia da prova não recebe missão nenhuma.
     if (this.ehDiaDaProva(dia.dia_numero)) return [];
     const list: any[] = [];
@@ -2518,7 +2605,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         d: item.materia || dia.titulo || "",
         ia: false,
         done: this.estaConcluido(chave),
-        act: () => this.abrirItemTrilha(item),
+        act: () => this.abrirItemTrilha(item, dia.dia_numero, i),
         toggle: chave ? () => this.toggleItemGenerico(chave) : null
       });
     });
@@ -2789,30 +2876,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           done && res?.explicacao
             ? h("div", { key: "expl", style: { margin: "10px 18px 0" } }, card({ padding: 14 }, h("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55 } }, res.explicacao)))
             : null,
+          // Feedback do erro: UMA linha, sem bloquear a navegação.
+          //
+          // Aqui havia o cartão "Rota de Revisão detectada" com cabeçalho,
+          // mascote, uma frase sobre o Raio-X, ATÉ TRÊS cartões de prioridade
+          // (frequentemente a mesma matéria repetida) e um botão grande de
+          // revisão — tudo entre a resposta e o "Próxima questão", que ficava
+          // abaixo da dobra. O aluno tinha de rolar a tela a cada erro para
+          // continuar respondendo.
+          //
+          // O Copiloto continua fazendo tudo: registra o erro, mapeia o
+          // assunto, atualiza o Raio-X e cria a revisão. O que mudou é onde
+          // isso é contado — a análise completa vive na aba Copiloto, e aqui
+          // fica só a confirmação.
           done && !correct
             ? h(
                 "div",
-                { key: "rev", style: { margin: "14px 18px 0" } },
-                card({ border: "1.5px solid " + C.orange, background: C.dark ? "linear-gradient(150deg,#3a2410,#0c3557 60%)" : "linear-gradient(150deg,#fff4ec,#fff)" }, [
-                  h("div", { key: "h", style: { display: "flex", gap: 10, alignItems: "center", marginBottom: 10 } }, [
-                    this.mascoteBadge("compass", 46, { bg: C.orangeSoft, color: C.orange, shadow: "none" }),
-                    h("div", { key: "t" }, [
-                      h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 900 } }, "Rota de Revisão detectada"),
-                      h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Assunto mapeado: " + q.tema)
-                    ])
+                {
+                  key: "rev",
+                  style: { margin: "12px 18px 0", padding: "10px 13px", borderRadius: 13, background: C.orangeSoft, display: "flex", gap: 9, alignItems: "center" }
+                },
+                [
+                  I("compass", 16, C.orange),
+                  h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                    h("div", { key: "a", style: { fontSize: 11.5, fontWeight: 800, color: C.dark ? "#ffc9a3" : "#8a4415" } }, "Erro registrado no seu Raio-X"),
+                    q.tema
+                      ? h("div", { key: "b", style: { fontSize: 10.5, fontWeight: 600, color: C.sub, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, q.tema)
+                      : null
                   ]),
-                  h("div", { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, lineHeight: 1.55, marginBottom: 12 } }, "Registrei este erro no seu Raio-X."),
-                  ...(d.recs.length
-                    ? d.recs.slice(0, 3).map((r: { ic: string; t: string; d: string; tag: string }, i: number) =>
-                        h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid " + C.line } }, [
-                          iconBox(r.ic, C.blueSoft, C.dark ? "#8fc3e8" : "#01395E", 36, 16),
-                          h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 12, fontWeight: 700 } }, r.t), h("div", { key: "b", style: { fontSize: 10.5, color: C.faint, fontWeight: 600 } }, r.d)]),
-                          h("span", { key: "tag", style: { fontSize: 9.5, fontWeight: 800, color: r.tag === "Prioritário" ? C.orange : C.sub, background: r.tag === "Prioritário" ? C.orangeSoft : C.chip, padding: "3px 8px", borderRadius: 99 } }, r.tag)
-                        ])
-                      )
-                    : []),
-                  btn("INICIAR REVISÃO · 5 QUESTÕES", () => this.montarRevisao(q.materia, q.tema), { marginTop: 12, padding: "12px 14px", fontSize: 13 })
-                ])
+                  h(
+                    "span",
+                    { key: "ver", onClick: () => this.nav("copiloto"), style: { fontSize: 10.5, fontWeight: 800, color: C.orange, cursor: "pointer", whiteSpace: "nowrap" } },
+                    "Ver análise"
+                  )
+                ]
               )
             : null,
           done && correct
@@ -3379,11 +3476,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           " erros nas questões respondidas até agora" +
           (pr.length ? ". Maior ganho de nota agora: " + pr[0].tema + " (peso " + pr[0].w + ") — priorizo o que mais sobe sua nota, não só o que você mais erra." : ".")
         : "Sou seu Copiloto. Assim que você responder questões, revisar flashcards ou fazer simulados, eu começo a identificar o que vale mais a pena revisar.";
-    const LINK_TIPO: Record<string, () => void> = {
-      questoes: () => this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: null }),
-      flashcards: () => this.nav("flashcards-select"),
-      simulado: () => this.nav("simulados"),
-      aula: () => this.nav("estudos")
+    // O destino de uma recomendação é a REVISÃO dela, não a tela genérica do
+    // tipo. Antes este mapa olhava só `r.tipo` e ignorava matéria e assunto:
+    // "flashcards" caía no hub ("Todos · 389 cards"), "questoes" abria o
+    // banco inteiro sem filtro e "aula" jogava o aluno na aba Estudos. O
+    // contexto do erro existia na recomendação e morria no clique.
+    const abrirRecomendacao = (r: CopilotoRecomendacao) => {
+      if (r.tipo === "simulado") return this.irParaRota("/aluno/atividades");
+      this.irParaRota("/aluno/revisao/" + r.id);
     };
     return this.screenWrap([
       this.head("Copiloto Decola", { back: "mapa" }),
@@ -3409,7 +3509,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   h("div", { key: "h", style: { fontSize: 13.5, fontWeight: 900, marginTop: 3 } }, r.titulo),
                   r.motivo ? h("div", { key: "m", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 4, lineHeight: 1.45 } }, r.motivo) : null,
                   h("div", { key: "acts", style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }, [
-                    btn("FAZER AGORA →", () => (LINK_TIPO[r.tipo] || LINK_TIPO.aula)(), { padding: "9px 14px", fontSize: 12 }),
+                    btn("FAZER AGORA →", () => abrirRecomendacao(r), { padding: "9px 14px", fontSize: 12 }),
                     ghost("Já revisei ✓", () => this.responderRecomendacao(r.id, "concluida"), { padding: "9px 14px", fontSize: 12 }),
                     ghost("Dispensar", () => this.responderRecomendacao(r.id, "descartada"), { padding: "9px 14px", fontSize: 12, color: C.faint })
                   ])
@@ -3848,7 +3948,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   () => this.nav("tutorial", { tutStep: 0 }),
                   () => window.open(this.props.whatsappSuporte, "_blank", "noopener,noreferrer"),
                   () => this.setState({ screen: "tutorial", tutStep: 0 }),
-                  () => this.setState({ errOpen: true, errSent: false, errEnviando: false, errText: "", errCat: "Outro" })
+                  () => this.abrirWhatsappErro()
                 ][i],
                 style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 4 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
@@ -3867,7 +3967,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const save = (b: any) => {
       this.setState({ brief: b });
       try {
-        localStorage.setItem("dm-brief", JSON.stringify(b));
       } catch (e) {}
     };
     const row = (label: string, control: any) =>
@@ -3944,7 +4043,6 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   const f = { ...this.state.feels, [m]: nx };
                   this.setState({ feels: f });
                   try {
-                    localStorage.setItem("dm-feels", JSON.stringify(f));
                   } catch (e) {}
                 },
                 style: { display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 13, background: C.card, border: "1px solid " + C.line, cursor: "pointer" }
@@ -4017,9 +4115,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     fd.set("dias_por_semana", String(B.dias || 5));
     fd.set("horas_por_dia", String(B.horas || 3));
     fd.set("idioma_prova", B.idioma || "");
-    Object.entries(this.state.feels as Record<string, string>).forEach(([materia, sentimento]) => {
-      fd.set("sentimento_" + materia, sentimento);
-    });
+    escreverSentimentos(fd, this.state.feels as Record<string, string>);
     try {
       const resultado = await salvarBriefingApp(fd);
       if (!resultado.ok) {
@@ -4104,28 +4200,39 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         ),
         h(
           "div",
-          { key: "t", onClick: () => this.abrirItemTrilha(item), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
+          { key: "t", onClick: () => this.abrirItemTrilha(item, diaNumero, i), style: { flex: 1, cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 700, textDecoration: concluido ? "line-through" : "none" } },
           item.titulo
         ),
-        h("div", { key: "go", onClick: () => this.abrirItemTrilha(item), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
+        h("div", { key: "go", onClick: () => this.abrirItemTrilha(item, diaNumero, i), style: { cursor: "pointer", display: "flex" } }, I("chevR", 14, "rgba(255,255,255,.7)"))
       ]
     );
   }
   // O dia da prova não é dia de estudo. Em vez das missões, o aluno vê o
   // destino: é o dia para o qual todo o cronograma foi construído.
-  cartaoDiaDaProva(diaNumero: number) {
+  // `diaNumero` é null quando a prova não é um dia da rota — que é o caso
+  // normal agora: a rota termina na véspera, porque dia de prova não é dia de
+  // estudo. Nesse caso o cartão se identifica pela data.
+  cartaoDiaDaProva(diaNumero: number | null) {
     const { C, h, card } = this.ui();
-    const rotulo = this.rotuloDataDoDia(diaNumero);
+    const prova = this.dataDaProva();
+    const rotulo = diaNumero != null
+      ? this.rotuloDataDoDia(diaNumero)
+      : prova
+      ? nomeDoDiaDaSemana(prova) + " · " + dataBR(prova)
+      : null;
     return h(
       "div",
-      { key: "prova" + diaNumero, style: { margin: "0 18px 10px" } },
+      { key: "prova" + (diaNumero ?? "hoje"), style: { margin: "0 18px 10px" } },
       card({ padding: 18, background: C.headGrad, border: "none", color: "#fff" }, [
         h(
           "div",
           { key: "l", style: { fontSize: 10, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase", color: "rgba(255,255,255,.65)" } },
-          "Dia " + diaNumero + (rotulo ? " · " + rotulo : "")
+          (diaNumero != null ? "Dia " + diaNumero : "Hoje") + (rotulo ? " · " + rotulo : "")
         ),
-        h("div", { key: "t", style: { fontSize: 19, fontWeight: 900, marginTop: 8, letterSpacing: "-.01em" } }, "🎯 " + (this.props.dados.nomeVestibular ? "Vestibular " + this.props.dados.nomeVestibular : "Dia da Prova")),
+        // Rótulo exatamente como pedido: "DIA DA PROVA — VESTIBULAR FACAPE".
+        // O nome sai de `configuracoes` (site.marca.vestibular); sem ele
+        // configurado, fica só "DIA DA PROVA".
+        h("div", { key: "t", style: { fontSize: 19, fontWeight: 900, marginTop: 8, letterSpacing: "-.01em" } }, "🎯 " + tituloDaProva(this.props.dados.nomeVestibular)),
         h(
           "div",
           { key: "s", style: { fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)", marginTop: 8, lineHeight: 1.55 } },
@@ -4134,14 +4241,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ])
     );
   }
+  // Véspera da prova. Só existe quando a rota tinha folga para reservá-la —
+  // numa janela apertada esse dia continua sendo de estudo.
+  cartaoVespera(dia: DiaDoCronograma) {
+    const { C, h, card } = this.ui();
+    const rotulo = this.rotuloDataDoDia(dia.dia_numero);
+    return h(
+      "div",
+      { key: "vespera" + dia.dia_numero, style: { margin: "0 18px 12px" } },
+      card({ padding: 16, border: "1.5px solid " + C.orange, background: C.orangeSoft }, [
+        h(
+          "div",
+          { key: "l", style: { fontSize: 10, fontWeight: 900, letterSpacing: ".07em", textTransform: "uppercase", color: C.orange } },
+          "Dia " + dia.dia_numero + (rotulo ? " · " + rotulo : "")
+        ),
+        h("div", { key: "t", style: { fontSize: 15, fontWeight: 900, color: C.txt, marginTop: 6 } }, "😴 " + dia.titulo),
+        h(
+          "div",
+          { key: "s", style: { fontSize: 11.5, fontWeight: 600, color: C.sub, marginTop: 5, lineHeight: 1.55 } },
+          "Nada de conteúdo novo hoje. Durma bem, separe documento e caneta e confira o local da prova."
+        )
+      ])
+    );
+  }
+
   // Cartão de um dia do cronograma (usado nos dias anteriores e nos
   // próximos). `passado` só muda a aparência — os itens continuam clicáveis,
   // para o aluno poder concluir o que ficou para trás.
-  cartaoDiaTrilha(dia: TrilhaDia, passado: boolean) {
+  cartaoDiaTrilha(dia: DiaDoCronograma, passado: boolean) {
     const { C, h, I, card } = this.ui();
     // No dia da prova o cronograma dá lugar ao cartão do vestibular: nada de
     // missão marcada para o dia do exame.
-    if (this.ehDiaDaProva(dia.dia_numero)) return this.cartaoDiaDaProva(dia.dia_numero);
+    if (dia.tipo_rota === "prova" || this.ehDiaDaProva(dia.dia_numero)) return this.cartaoDiaDaProva(dia.dia_numero);
+    // Véspera reservada para descanso — sem itens, e é assim de propósito.
+    if (dia.tipo_rota === "descanso") return this.cartaoVespera(dia);
     const itens = dia.itens || [];
     const feitos = itens.filter((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item))).length;
     const concluido = itens.length > 0 && feitos === itens.length;
@@ -4244,13 +4377,27 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h(
                 "div",
                 { key: "t", style: { fontSize: 10.5, fontWeight: 600, color: C.faint, marginTop: 8, lineHeight: 1.55 } },
-                "Rota adaptativa: além do cronograma, o Copiloto acrescenta missões conforme seu desempenho real em questões, flashcards e simulados." + (B.prova ? " Prova em " + B.prova.split("-").reverse().join("/") + "." : "")
+                // Item 22: a mensagem descreve a rota que o aluno realmente
+                // tem — quantos dias, quando termina — em vez de falar de um
+                // "cronograma" genérico que não corresponde ao que está na
+                // tela. Números vêm da rota; nada é fixo no código.
+                (this.props.dados.totalDiasCronograma
+                  ? "Sua rota tem " + this.props.dados.totalDiasCronograma + " dias de estudo até a prova, com 2 simulados no caminho. "
+                  : "") +
+                "O Copiloto acompanha seu desempenho em questões, flashcards e simulados e acrescenta missões de reforço quando identifica um ponto fraco." +
+                (B.prova ? " Prova em " + B.prova.split("-").reverse().join("/") + "." : "")
               )
             ])
           )
         : null,
       // Missão do dia do cronograma — a "trilha" é exatamente esta visão.
-      diaTrilha && this.ehDiaDaProva(diaTrilha.dia_numero)
+      //
+      // Hoje é o dia da prova: nenhuma missão, só o cartão do vestibular. A
+      // rota termina na véspera (dia de prova não é dia de estudo), então
+      // esta checagem é por DATA, não por dia da rota.
+      this.dataDaProva() === this.props.dados.hojeStr
+        ? h("div", { key: "hero", style: { marginTop: 12 } }, this.cartaoDiaDaProva(null))
+        : diaTrilha && this.ehDiaDaProva(diaTrilha.dia_numero)
         ? h("div", { key: "hero", style: { marginTop: 12 } }, this.cartaoDiaDaProva(diaTrilha.dia_numero))
         : diaTrilha
         ? h(
@@ -4260,7 +4407,12 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h(
                 "div",
                 { key: "l", style: { fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,.6)", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 } },
-                "Hoje · Dia " + diaTrilha.dia_numero + (this.rotuloDataDoDia(diaTrilha.dia_numero) ? " · " + this.rotuloDataDoDia(diaTrilha.dia_numero) : "")
+                // "Hoje · Dia 2 de 19 · Quarta-feira · 12/08/2026". O total
+                // é o da ROTA do aluno, não o do template: era daí que saía
+                // "Dia 22" no segundo dia de estudo de uma janela de 19 dias.
+                "Hoje · Dia " + diaTrilha.dia_numero
+                  + (this.props.dados.totalDiasCronograma ? " de " + this.props.dados.totalDiasCronograma : "")
+                  + (this.rotuloDataDoDia(diaTrilha.dia_numero) ? " · " + this.rotuloDataDoDia(diaTrilha.dia_numero) : "")
               ),
               h("div", { key: "t", style: { fontSize: 17, fontWeight: 900 } }, diaTrilha.titulo),
               diaTrilha.itens?.length
@@ -4316,7 +4468,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h(
                 "span",
                 { key: "t", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, lineHeight: 1.5 } },
-                "Sua rota foi ajustada ao tempo que você tem até a prova: os dias do cronograma foram agrupados para caber na sua janela, respeitando as horas por dia que você informou. Nenhum conteúdo foi removido."
+                "Sua rota foi montada para o tempo que você tem até a prova, respeitando os dias da semana e as horas por dia que você informou. Como a janela é menor que o conteúdo completo, alguns dias reúnem mais de um tema — nada foi removido."
               )
             ]
           )
@@ -4995,113 +5147,36 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     ]);
   }
 
+  /**
+   * Comunicar erro = abrir o WhatsApp geral da plataforma com a mensagem
+   * inicial pronta. Antes era um formulário interno que gravava em
+   * `relatos_erro` e alimentava uma fila no painel; o atendimento passou a
+   * ser pelo WhatsApp e essa fila deixou de ter quem a lesse.
+   *
+   * O número NÃO está aqui: chega pronto em `whatsappErro`, montado no
+   * servidor a partir de `site.contato.whatsapp`. Trocar o número no admin
+   * muda o destino deste botão sem tocar em código.
+   *
+   * `window.open` com `_blank` é o que funciona nos dois casos: no celular o
+   * sistema entrega o link ao aplicativo instalado, no computador abre o
+   * WhatsApp Web.
+   */
+  abrirWhatsappErro() {
+    // No modo demonstração não há número real configurado (a página passa
+    // "#") — abrir levaria a lugar nenhum.
+    if (this.props.demoMode) {
+      this.avisar("No modo demonstração o WhatsApp de suporte não fica disponível.");
+      return;
+    }
+    window.open(this.props.whatsappErro, "_blank", "noopener,noreferrer");
+  }
+
   errInline(label?: string) {
     const { C, h, I } = this.ui();
     return h(
       "div",
-      { key: "erri", onClick: () => this.setState({ errOpen: true, errSent: false, errEnviando: false, errText: "" }), style: { display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "9px 0", cursor: "pointer", color: C.faint, fontSize: 11, fontWeight: 800 } },
+      { key: "erri", onClick: () => this.abrirWhatsappErro(), style: { display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "9px 0", cursor: "pointer", color: C.faint, fontSize: 11, fontWeight: 800 } },
       [I("alert", 13, C.faint), label || "Comunicar erro nesta questão"]
-    );
-  }
-  errSheet() {
-    const { C, h, I, btn, chip } = this.ui();
-    const S = this.state;
-    const d = this.data();
-    const q = S.practice || S.simView === "run" ? (S.simView === "run" ? this.simQs()[S.simIdx] : this.qList()[S.qIdx]) : null;
-    const auto = [
-      ["Aluno", (this.props.nome || "Aluno Decola") + " · " + (this.props.email || "—")],
-      ["Data e hora", new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })],
-      ["Página", nomeDaTela(S.screen) ?? S.screen],
-      q ? ["Questão", q.code + " · " + q.tema] : null,
-      ["Dispositivo", "Navegador · Decola Med Web"]
-    ].filter(Boolean) as string[][];
-    return h(
-      "div",
-      { onClick: () => this.setState({ errOpen: false }), style: { position: "absolute", inset: 0, background: "rgba(2,15,26,.55)", backdropFilter: "blur(3px)", display: "flex", flexDirection: "column", justifyContent: "flex-end", zIndex: 60 } },
-      h(
-        "div",
-        { onClick: (e: any) => e.stopPropagation(), style: { background: C.card, borderRadius: "26px 26px 0 0", padding: "18px 18px 34px", maxHeight: "86%", overflowY: "auto", animation: "dm-in .3s ease both" } },
-        S.errSent
-          ? [
-              h("div", { key: "ok", style: { textAlign: "center", padding: "14px 6px" } }, [
-                this.mascoteBadge("check", 96, { anim: "dm-pop .4s ease both", bg: C.greenSoft, color: C.green, shadow: "none" }),
-                h("div", { key: "t", style: { fontSize: 17, fontWeight: 900, color: C.txt, marginTop: 12 } }, "Relato enviado!"),
-                h(
-                  "div",
-                  { key: "d", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 6, lineHeight: 1.6 } },
-                  // Antes esta frase dizia que o relato tinha sido enviado
-                  // "ao e-mail configurado pela equipe". Não existe nenhum
-                  // campo para cadastrar esse e-mail e nenhum e-mail é
-                  // disparado — a mensagem prometia um canal inexistente. O
-                  // destino real é a fila em /admin/relatos, e é isso que o
-                  // aluno passa a ler.
-                  "Seu comunicado foi registrado na fila de atendimento da equipe. Obrigado por ajudar a melhorar a Decola Med, piloto!"
-                ),
-                btn("FECHAR", () => this.setState({ errOpen: false }), { marginTop: 16 })
-              ])
-            ]
-          : [
-              h("div", { key: "h", style: { display: "flex", alignItems: "center", gap: 11, marginBottom: 12 } }, [
-                this.mascoteBadge("alert", 46, { bg: C.orangeSoft, color: C.orange, shadow: "none" }),
-                h("div", { key: "t", style: { flex: 1 } }, [h("div", { key: "a", style: { fontSize: 16, fontWeight: 900, color: C.txt } }, "Comunicar erro"), h("div", { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600 } }, "Encontrou algo errado? Conta pra gente.")]),
-                h("div", { key: "x", onClick: () => this.setState({ errOpen: false }), style: { cursor: "pointer" } }, I("x", 18, C.sub))
-              ]),
-              h(
-                "div",
-                { key: "cat", style: { display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 } },
-                ["Questão", "Vídeo/Aula", "Material", "Pagamento", "Outro"].map((c2) => chip(c2, S.errCat === c2, () => this.setState({ errCat: c2 })))
-              ),
-              h("textarea", {
-                key: "ta",
-                value: S.errText,
-                onChange: (e: any) => this.setState({ errText: e.target.value }),
-                placeholder: "Descreva o problema...",
-                style: { width: "100%", boxSizing: "border-box", height: 84, resize: "vertical", background: C.dark ? "rgba(191,221,242,.06)" : "#fff", border: "1.5px solid " + C.line, borderRadius: 12, padding: "11px 13px", fontSize: 12.5, fontWeight: 600, color: C.txt, outline: "none", fontFamily: "inherit" }
-              }),
-              h("div", { key: "auto", style: { marginTop: 10, borderRadius: 12, background: C.chip, padding: "10px 13px" } }, [
-                h("div", { key: "l", style: { fontSize: 9.5, fontWeight: 800, color: C.faint, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 6 } }, "Enviado automaticamente com o relato"),
-                ...auto.map((r, i) => h("div", { key: i, style: { display: "flex", gap: 8, fontSize: 10.5, fontWeight: 600, color: C.sub, padding: "2px 0" } }, [h("span", { key: "a", style: { fontWeight: 800, color: C.txt } }, r[0] + ":"), r[1]]))
-              ]),
-              btn(
-                S.errEnviando ? "ENVIANDO..." : "ENVIAR RELATO",
-                () => {
-                  if (!S.errText.trim() || S.errEnviando) return;
-                  const texto = S.errText;
-                  const cat = S.errCat;
-                  const tela = S.screen;
-
-                  // No modo demonstração não existe relato de verdade pra
-                  // registrar (quem está vendo não é um aluno de verdade).
-                  if (this.props.demoMode) {
-                    this.setState({ errSent: true });
-                    return;
-                  }
-
-                  // "Enviado" só aparece DEPOIS que o banco confirma a
-                  // gravação. Antes a tela de sucesso subia junto com a
-                  // chamada: numa falha de rede o aluno via "Relato
-                  // enviado!" por um instante e nada chegava ao painel — o
-                  // exato relato de "confirma o envio mas o admin não
-                  // recebe". Agora o que o aluno lê corresponde ao que
-                  // existe no banco.
-                  this.setState({ errEnviando: true });
-                  enviarRelatoErro(texto, cat, tela)
-                    .then((res) => {
-                      if (res.ok) this.setState({ errSent: true, errEnviando: false });
-                      else {
-                        this.setState({ errEnviando: false });
-                        this.avisar("Não foi possível enviar seu relato. Tente de novo.");
-                      }
-                    })
-                    .catch(() => {
-                      this.setState({ errEnviando: false });
-                      this.avisar("Não foi possível enviar seu relato. Tente de novo.");
-                    });
-                },
-                { marginTop: 14, opacity: S.errText.trim() && !S.errEnviando ? 1 : 0.45 }
-              )
-            ]
-      )
     );
   }
 

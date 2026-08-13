@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { salvarBriefing } from "@/app/(aluno)/aluno/briefing/actions";
+import { escreverSentimentos } from "@/lib/site/sentimentos";
 
 type Sentimento = "Domínio" | "Atenção" | "Turbulência";
 const PROXIMO: Record<Sentimento, Sentimento> = {
@@ -206,7 +207,7 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
               fd.set("dias_por_semana", String(dias));
               fd.set("horas_por_dia", String(horas));
               fd.set("idioma_prova", idioma);
-              Object.entries(sentimentos).forEach(([m, s]) => fd.set(`sentimento_${m}`, s));
+              escreverSentimentos(fd, sentimentos);
               await salvarBriefing(fd);
             }}
             className="mx-auto flex max-w-md flex-col items-center text-center"

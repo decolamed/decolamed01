@@ -101,7 +101,7 @@ export async function produzirMaterialSobDemanda(
       const videoIdEscolhido = await escolherMelhorVideo(candidatos, assunto, materia);
       const escolhido = candidatos.find((c) => c.videoId === videoIdEscolhido) ?? candidatos[0];
 
-      const { data: conteudo } = await supabase
+      const { data: conteudo, error: erroConteudo } = await supabase
         .from("conteudos_biblioteca")
         .insert({
           tipo: "video_externo",
@@ -129,6 +129,29 @@ export async function produzirMaterialSobDemanda(
         resultado.videoConteudoId = conteudo.id;
         resultado.videoUrl = escolhido.url;
         resultado.videoTitulo = escolhido.titulo;
+      } else if (erroConteudo?.code === "23505") {
+        // Outra execução do Copiloto criou a aula deste assunto no mesmo
+        // instante (`conteudo_ia_unico_por_assunto`, migração 051). A checagem
+        // de cobertura não segura essa corrida: as duas leem "não tem aula"
+        // antes de qualquer uma gravar. A recomendação usa o vídeo que ficou —
+        // o aluno precisa da aula, não de saber quem chegou primeiro.
+        const { data: existente } = await supabase
+          .from("conteudos_biblioteca")
+          .select("id, titulo, url")
+          .eq("materia", materia)
+          .eq("assunto", assunto)
+          .in("tipo", ["aula", "video_externo"])
+          .eq("ativo", true)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (existente?.url) {
+          resultado.videoEncontrado = true;
+          resultado.videoConteudoId = existente.id;
+          resultado.videoUrl = existente.url;
+          resultado.videoTitulo = existente.titulo;
+        }
       }
     }
   }

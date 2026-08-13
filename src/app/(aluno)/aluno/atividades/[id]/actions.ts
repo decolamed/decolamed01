@@ -2,6 +2,7 @@
 
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { rodarCopiloto } from "@/lib/copiloto/motor";
 
 export interface ItemGabaritoAtividade {
   questaoId: string;
@@ -96,6 +97,36 @@ export async function submeterAtividade(atividadeId: string, respostas: Record<s
     nota,
     finalizado_em: new Date().toISOString()
   });
+
+  // Cada resposta também vira uma linha em `respostas_aluno`, exatamente como
+  // no Banco de Questões.
+  //
+  // Sem isto, tudo que o aluno respondia dentro de uma Atividade era invisível
+  // para o resto da plataforma: `atividade_tentativas` guarda só os totais,
+  // sem matéria, então o Copiloto não enxergava esses erros, o Raio-X não os
+  // contava e a adaptação continuava baseada apenas nas questões avulsas. Um
+  // aluno que só fizesse atividades aparecia para o algoritmo como alguém que
+  // nunca respondeu nada.
+  const linhasResposta = gabarito
+    .filter((g) => g.escolhida !== null)
+    .map((g) => ({
+      aluno_id: profile.id,
+      questao_id: g.questaoId,
+      alternativa_escolhida: g.escolhida as string,
+      correta: g.correta
+    }));
+
+  if (linhasResposta.length > 0) {
+    const { error: erroRespostas } = await supabase.from("respostas_aluno").insert(linhasResposta);
+    // Não derruba o resultado: a nota da atividade já está correta e gravada.
+    if (erroRespostas) console.error("Atividade: falha ao registrar as respostas:", erroRespostas.message);
+  }
+
+  // O desempenho acabou de mudar — o Copiloto reavalia agora, como já fazia
+  // depois de um simulado ou de uma questão avulsa.
+  rodarCopiloto({ alunoId: profile.id, ultimaAcao: "questao" }).catch((e) =>
+    console.error("[copiloto] falha no ponto de entrada de atividade:", e)
+  );
 
   const resultado: ResultadoAtividade = { acertos, total, nota, pesoFacape, gabarito, salvo: !erroTentativa };
   return resultado;

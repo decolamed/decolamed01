@@ -1,4 +1,5 @@
 import { normalizar } from "@/lib/trilha/catalogo";
+import { mesmaMateria } from "@/lib/site/materia-canonica";
 
 // ============================================================================
 // FILTRO DE QUESTÕES (Alteração 4.5)
@@ -77,7 +78,10 @@ export function filtrarQuestoes<T extends QuestaoFiltravel>(questoes: T[], f: Fi
   const termos = normalizar(f.busca).split(/\s+/).filter(Boolean);
 
   return questoes.filter((q) => {
-    if (f.materia && q.materia !== f.materia) return false;
+    // Identidade canônica, não igualdade de string: é este filtro que o
+    // seletor de questões de Simulados e Atividades usa, e comparar texto
+    // cru faria "Português" e "Linguagens" virarem duas matérias.
+    if (f.materia && !mesmaMateria(q.materia, f.materia)) return false;
     if (f.assunto && (q.assunto ?? "") !== f.assunto) return false;
     if (f.prova && (q.prova_nome ?? "") !== f.prova) return false;
     if (f.ano && String(q.ano ?? "") !== f.ano) return false;

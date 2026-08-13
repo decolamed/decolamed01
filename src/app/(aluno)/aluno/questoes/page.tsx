@@ -60,7 +60,7 @@ export default async function AlunoQuestoesPage({
             <Link
               key={m}
               href={`/aluno/questoes?materia=${encodeURIComponent(m)}`}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${searchParams.materia === m ? "bg-orange text-white" : "bg-white text-navy-dark"}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${mesmaMateria(searchParams.materia, m) ? "bg-orange text-white" : "bg-white text-navy-dark"}`}
             >
               {m}
             </Link>

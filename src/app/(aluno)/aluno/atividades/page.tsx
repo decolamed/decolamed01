@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { PaginaAluno, CartaoAluno } from "@/components/aluno/pagina-aluno";
+import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 
 // ============================================================================
 // ATIVIDADES — aba única do aluno (item 13)
@@ -107,9 +108,13 @@ export default async function AlunoAtividadesPage() {
     // registro não deve influenciar a ordem que o aluno vê.
     .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
 
-  // Item aberto só faz sentido com conteúdo dentro: sem questões e sem
-  // redação, o botão levaria a uma tela vazia.
-  const disponiveis = itens.filter((i) => i.totalQuestoes > 0 || i.temRedacao);
+  // Mesma regra que o painel do admin exibe (lib/site/avaliacoes.ts). Este
+  // filtro existia aqui, escrito à mão, e o admin não sabia dele — era o que
+  // fazia um simulado "Ativo" sumir da tela do aluno sem explicação.
+  // `ativo` já veio filtrado nas consultas acima.
+  const disponiveis = itens.filter((i) =>
+    disponivelParaAluno({ ativo: true, totalQuestoes: i.totalQuestoes, temRedacao: i.temRedacao })
+  );
 
   return (
     <PaginaAluno
