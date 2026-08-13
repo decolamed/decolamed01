@@ -8,6 +8,10 @@ import {
   type Rota,
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
+import { descreverViolacoes, validarRota } from "@/lib/trilha/validador-rota";
+import { contextoVazio, type ContextoDoAluno } from "@/lib/trilha/prioridade";
+import { chaveMateria } from "@/lib/site/materia-canonica";
+import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 
 // ============================================================================
 // PERSISTÊNCIA DA ROTA (aluno_rota_dias)
@@ -64,11 +68,66 @@ export async function rotaDoAluno(
   const parametros = parametrosDoBriefing(opcoes.briefing, opcoes.hoje);
   if (!parametros) return null;
 
-  const rota = gerarRota(opcoes.template, parametros, await contextoDaRota(supabase));
+  const rota = gerarRota(opcoes.template, parametros, {
+    ...(await contextoDaRota(supabase)),
+    contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
+  });
   if (rota.dias.length === 0) return null;
 
   await sincronizarRota(supabase, alunoId, rota);
   return rota;
+}
+
+/**
+ * O que o algoritmo precisa saber sobre ESTE aluno para escolher conteúdo.
+ *
+ * Antes o briefing era guardado e nunca mais lido pela geração da rota, e o
+ * desempenho não entrava em nada: a rota de um aluno que erra tudo em Biologia
+ * era idêntica à de quem acerta tudo. Aqui os dois viram entrada do algoritmo.
+ *
+ * Qualquer falha de leitura devolve o contexto vazio: sem prioridades a rota
+ * fica pedagógica pura (a ordem do template), que é pior do que a
+ * personalizada, mas continua sendo uma rota válida.
+ */
+async function contextoDoAluno(
+  supabase: ClienteSupabase,
+  alunoId: string,
+  briefing: Parameters<typeof parametrosDoBriefing>[0]
+): Promise<ContextoDoAluno> {
+  try {
+    const [{ data: pesos }, { data: respostas }, { data: progresso }] = await Promise.all([
+      supabase.from("materias_peso").select("materia, peso, qtd_questoes"),
+      supabase.from("respostas_aluno").select("correta, questoes(materia)").eq("aluno_id", alunoId),
+      supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", alunoId).eq("concluido", true)
+    ]);
+
+    const ctx = contextoVazio();
+
+    ((pesos as { materia: string; peso: number; qtd_questoes: number }[]) ?? []).forEach((m) => {
+      ctx.pesos.set(chaveMateria(m.materia), { peso: Number(m.peso) || 0, qtdQuestoes: Number(m.qtd_questoes) || 0 });
+    });
+
+    ((respostas as { correta: boolean; questoes?: { materia?: string | null } | null }[]) ?? []).forEach((r) => {
+      const chave = chaveMateria(r.questoes?.materia ?? "");
+      if (!chave) return;
+      const atual = ctx.desempenho.get(chave) ?? { acertos: 0, erros: 0 };
+      if (r.correta) atual.acertos += 1;
+      else atual.erros += 1;
+      ctx.desempenho.set(chave, atual);
+    });
+
+    ((progresso as { chave: string }[]) ?? []).forEach((p) => ctx.concluidos.add(p.chave));
+
+    ctx.sentimentos = ((briefing as { sentimentos?: Record<string, string> | null } | null)?.sentimentos ?? {}) as Record<
+      string,
+      string
+    >;
+
+    return ctx;
+  } catch (e) {
+    console.error("Rota: falha ao carregar o contexto do aluno:", e);
+    return contextoVazio();
+  }
 }
 
 /**
@@ -127,6 +186,16 @@ async function contextoDaRota(
  */
 export async function sincronizarRota(supabase: ClienteSupabase, alunoId: string, rota: Rota): Promise<void> {
   try {
+    // Portão de publicação: rota inválida não é gravada. Se a geração
+    // produzir algo que viole capacidade, datas, numeração ou conteúdo, o
+    // aluno continua com a rota anterior — que ao menos era executável — e o
+    // problema fica registrado com o motivo exato.
+    const validacao = validarRota(rota);
+    if (!validacao.ok) {
+      console.error(`Rota: geração inválida para o aluno ${alunoId}, nada foi gravado:\n${descreverViolacoes(validacao)}`);
+      return;
+    }
+
     const { data: atuais, error: erroLeitura } = await supabase
       .from("aluno_rota_dias")
       .select("route_day, scheduled_date, assinatura")
@@ -210,7 +279,10 @@ export async function regerarRotaDoAluno(
     return null;
   }
 
-  const rota = gerarRota(opcoes.template, parametros, await contextoDaRota(supabase));
+  const rota = gerarRota(opcoes.template, parametros, {
+    ...(await contextoDaRota(supabase)),
+    contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
+  });
   if (rota.dias.length === 0) {
     await limparRotaDoAluno(supabase, alunoId);
     return null;

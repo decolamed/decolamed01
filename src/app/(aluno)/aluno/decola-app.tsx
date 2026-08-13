@@ -2524,8 +2524,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
    * Fonte única: o dia atual da rota, o mesmo número que o cronograma mostra.
    * Sem rota (Plano Decolando), fica só "Missão do Dia".
    */
+  /**
+   * O dia da rota que o aluno tem de fato pela frente: o PRIMEIRO ainda não
+   * concluído, não o que o calendário aponta.
+   *
+   * Os dois divergem exatamente quando importa. Quem deixou o Dia 3 pela
+   * metade e chegou no dia 5 do calendário precisa ver "Missão 3" — mandá-lo
+   * para a missão de hoje é fingir que o atraso não existe. E quem terminou
+   * tudo hoje já enxerga a próxima.
+   */
+  diaAtualDaRota(): DiaDoCronograma | null {
+    const d = this.props.dados;
+    const emOrdem = [...(d.trilhaAnteriores || []), ...(d.trilhaHoje ? [d.trilhaHoje] : []), ...(d.trilhaProximos || [])];
+    const pendente = emOrdem.find((dia) => {
+      const itens = dia.itens || [];
+      if (itens.length === 0) return false;
+      return !itens.every((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item)));
+    });
+    return pendente ?? d.trilhaHoje ?? emOrdem[emOrdem.length - 1] ?? null;
+  }
+
   rotuloMissaoDoDia(): string {
-    const dia = this.props.dados.diaTrilhaHoje;
+    const dia = this.diaAtualDaRota()?.dia_numero ?? this.props.dados.diaTrilhaHoje;
     const total = this.props.dados.totalDiasCronograma;
     if (!dia) return "Missão do Dia";
     return "Missão do Dia · Dia " + dia + (total ? " de " + total : "");
