@@ -8,7 +8,7 @@ import {
   type Rota,
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
-import { descreverViolacoes, validarRota } from "@/lib/trilha/validador-rota";
+import { descreverViolacoes, requisitosDoTemplate, validarRota } from "@/lib/trilha/validador-rota";
 import { contextoVazio, type ContextoDoAluno } from "@/lib/trilha/prioridade";
 import { chaveMateria } from "@/lib/site/materia-canonica";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
@@ -74,7 +74,7 @@ export async function rotaDoAluno(
   });
   if (rota.dias.length === 0) return null;
 
-  await sincronizarRota(supabase, alunoId, rota);
+  await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
 }
 
@@ -184,13 +184,18 @@ async function contextoDaRota(
  * upsert linha a linha deixaria sobras da rota antiga sempre que a nova
  * fosse mais curta — que é como um cronograma acaba com dois "Dia 12".
  */
-export async function sincronizarRota(supabase: ClienteSupabase, alunoId: string, rota: Rota): Promise<void> {
+export async function sincronizarRota(
+  supabase: ClienteSupabase,
+  alunoId: string,
+  rota: Rota,
+  template?: TrilhaDia[]
+): Promise<void> {
   try {
     // Portão de publicação: rota inválida não é gravada. Se a geração
     // produzir algo que viole capacidade, datas, numeração ou conteúdo, o
     // aluno continua com a rota anterior — que ao menos era executável — e o
     // problema fica registrado com o motivo exato.
-    const validacao = validarRota(rota);
+    const validacao = validarRota(rota, template ? requisitosDoTemplate(template) : undefined);
     if (!validacao.ok) {
       console.error(`Rota: geração inválida para o aluno ${alunoId}, nada foi gravado:\n${descreverViolacoes(validacao)}`);
       return;
@@ -289,7 +294,7 @@ export async function regerarRotaDoAluno(
   }
 
   await limparRotaDoAluno(supabase, alunoId);
-  await sincronizarRota(supabase, alunoId, rota);
+  await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
 }
 

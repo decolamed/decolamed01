@@ -31,7 +31,15 @@ export interface ResultadoValidacao {
  * concreto atrás — todas foram, em algum momento, um defeito real na tela do
  * aluno.
  */
-export function validarRota(rota: Rota): ResultadoValidacao {
+export function validarRota(
+  rota: Rota,
+  /**
+   * Quantos itens fixos o template oferece (`requisitosDoTemplate`). Sem
+   * isto a checagem de requisitos é pulada — quem chama sem o template não
+   * tem como saber o que era esperado.
+   */
+  obrigatoriosDoTemplate?: Record<string, number>
+): ResultadoValidacao {
   const v: Violacao[] = [];
   const { dias, parametros: p } = rota;
 
@@ -167,7 +175,74 @@ export function validarRota(rota: Rota): ResultadoValidacao {
     }
   }
 
+  // ---- Requisitos fixos do plano ----------------------------------------
+  // Redações e livros não são conteúdo acadêmico: são o que o plano promete.
+  // O Copiloto pode mudar em que dia eles caem; não pode fazê-los sumir para
+  // abrir espaço. O validador é o que garante isso em toda recalibragem, e
+  // não só na primeira geração.
+  //
+  // A conta é feita contra o que o TEMPLATE oferece: se o admin cadastrou
+  // três livros, a rota não pode inventar um quarto — a cobrança é "não
+  // perdeu nenhum", nunca "atingiu um número mágico".
+  if (obrigatoriosDoTemplate) {
+    const naRota = contarPorTipo(rota);
+    TIPOS_FIXOS.forEach((tipo) => {
+      const esperado = obrigatoriosDoTemplate[tipo] ?? 0;
+      const entregue = naRota[tipo] ?? 0;
+      if (entregue < esperado) {
+        v.push({
+          regra: `requisito-fixo-${tipo}`,
+          detalhe: `A rota entrega ${entregue} de ${esperado} ${ROTULO_FIXO[tipo] ?? tipo} — requisito do plano, não conteúdo opcional.`
+        });
+      }
+    });
+  }
+
   return { ok: v.length === 0, violacoes: v };
+}
+
+/** Tipos de item que o plano exige e o algoritmo não pode descartar. */
+const TIPOS_FIXOS = ["redacao", "leitura"] as const;
+
+const ROTULO_FIXO: Record<string, string> = {
+  redacao: "redações",
+  leitura: "leituras dos livros"
+};
+
+/** Quantos itens de cada tipo fixo o template oferece. */
+export function requisitosDoTemplate(
+  template: { itens?: { tipo?: string }[] | null }[]
+): Record<string, number> {
+  const contagem: Record<string, number> = {};
+  template.forEach((d) =>
+    (d.itens ?? []).forEach((it) => {
+      const tipo = it?.tipo ?? "";
+      if ((TIPOS_FIXOS as readonly string[]).includes(tipo)) contagem[tipo] = (contagem[tipo] ?? 0) + 1;
+    })
+  );
+  return contagem;
+}
+
+function contarPorTipo(rota: Rota): Record<string, number> {
+  const contagem: Record<string, number> = {};
+  rota.dias.forEach((d) =>
+    d.itens.forEach((it) => {
+      const tipo = (it as { tipo?: string }).tipo ?? "";
+      contagem[tipo] = (contagem[tipo] ?? 0) + 1;
+    })
+  );
+  return contagem;
+}
+
+/**
+ * Quantas redações o aluno faz na rota inteira.
+ *
+ * Soma as redações agendadas como atividade e as que vêm dentro dos
+ * simulados — cada simulado com proposta de redação vale uma. É a conta que
+ * responde "o plano promete 4; a rota entrega quantas?".
+ */
+export function totalDeRedacoes(rota: Rota, simuladosComRedacao: number): number {
+  return (contarPorTipo(rota)["redacao"] ?? 0) + Math.min(simuladosComRedacao, rota.dias.filter((d) => d.tipo === "simulado").length);
 }
 
 /** Uma linha por violação — para log de servidor. */

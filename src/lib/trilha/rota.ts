@@ -349,7 +349,11 @@ export function gerarRota(
   // onde encaixar as revisões que o desempenho vai pedir.
   const orcamento = Math.floor(capacidadeTotal * (1 - fracaoDeReserva(indicesDeEstudo.length)));
 
-  const { selecionados, descartados } = selecionarPorPrioridade(candidatosDoTemplate(template), contexto, orcamento);
+  const { obrigatorios, selecionados, descartados } = selecionarPorPrioridade(
+    candidatosDoTemplate(template),
+    contexto,
+    orcamento
+  );
 
   // ---- Alocação ----------------------------------------------------------
   // Primeiro que couber, na ordem do calendário: o conteúdo segue a sequência
@@ -365,6 +369,28 @@ export function gerarRota(
   // caberiam todos nos três primeiros, e o resto da rota dependeria do
   // preenchimento de emergência. Com ele, conteúdo folgado se espalha e
   // conteúdo apertado enche cada dia até o teto — sem nunca passar dele.
+  // Os requisitos do plano (redações e leituras dos livros) são colocados
+  // ANTES de tudo, espalhados pela rota. Se disputassem lugar com o conteúdo
+  // acadêmico na alocação, poderiam sobrar de fora por falta de espaço num
+  // dia — depois de já terem sido garantidos na seleção, o que seria perdê-los
+  // no último passo.
+  const espacados = Math.max(1, Math.floor(indicesDeEstudo.length / Math.max(1, obrigatorios.length)));
+  obrigatorios.forEach((c, k) => {
+    const preferido = Math.min(k * espacados, indicesDeEstudo.length - 1);
+    const ordemDeBusca = [
+      ...indicesDeEstudo.slice(preferido),
+      ...indicesDeEstudo.slice(0, preferido)
+    ];
+    const destino = ordemDeBusca.find((i) => {
+      const bucket = conteudoPorIndice.get(i)!;
+      return bucket.minutos + c.minutos <= (capacidade.get(i) ?? 0);
+    });
+    if (destino === undefined) return; // janela pequena demais: o validador acusa
+    const bucket = conteudoPorIndice.get(destino)!;
+    bucket.itens.push(c);
+    bucket.minutos += c.minutos;
+  });
+
   const naoAlocados: ItemCandidato[] = [];
   let restante = selecionados.reduce((s, c) => s + c.minutos, 0);
   let fila = [...selecionados];
@@ -373,7 +399,9 @@ export function gerarRota(
     const bucket = conteudoPorIndice.get(indice)!;
     const teto = capacidade.get(indice) ?? 0;
     const diasRestantes = indicesDeEstudo.length - posicao;
-    const ritmo = Math.min(teto, Math.ceil(restante / Math.max(1, diasRestantes)));
+    // O ritmo soma o que o obrigatório já ocupou neste dia: sem isso um dia
+    // com redação receberia conteúdo acadêmico como se estivesse vazio.
+    const ritmo = Math.min(teto, bucket.minutos + Math.ceil(restante / Math.max(1, diasRestantes)));
 
     for (;;) {
       const proximo = fila[0];
@@ -390,6 +418,10 @@ export function gerarRota(
   });
 
   naoAlocados.push(...fila);
+  indicesDeEstudo.forEach((i) => {
+    const bucket = conteudoPorIndice.get(i)!;
+    bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
+  });
 
   // ---- Nenhum dia de estudo vazio ----------------------------------------
   // A reserva existe para o algoritmo, não para o aluno: se um dia ficou sem

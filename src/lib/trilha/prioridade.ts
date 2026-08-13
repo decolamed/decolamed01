@@ -186,7 +186,41 @@ function saturacao(minutosJaSelecionados: number): number {
   return SATURACAO_MINUTOS / (SATURACAO_MINUTOS + Math.max(0, minutosJaSelecionados));
 }
 
+/**
+ * Tipos que o plano do Voo Guiado EXIGE, independentemente de prioridade.
+ *
+ * As redações e as leituras dos livros não competem com o conteúdo
+ * acadêmico: elas são requisito do plano, e o aluno as contratou. Passar por
+ * `pontuarItem` seria errado por construção — nenhuma delas tem matéria, logo
+ * nenhuma tem peso de prova, e numa janela curta todas perderiam para
+ * qualquer aula de Biologia. Foi o que aconteceu: em 10 dias a rota entregava
+ * 2 dos 4 livros e 1 das 2 redações; em 5 dias, 1 livro e nenhuma redação.
+ *
+ * Entram primeiro, sempre. O que sobra de capacidade é que vira disputa.
+ */
+export const TIPOS_OBRIGATORIOS = new Set(["redacao", "leitura"]);
+
+/**
+ * Tipos que a própria rota já cria como dia inteiro — não podem entrar
+ * também como item solto de um dia de estudo.
+ *
+ * O template tem dois itens `simulado`; a rota reserva dois DIAS de simulado.
+ * Sem esta exclusão o aluno via quatro: os dois dias e mais dois itens
+ * empilhados dentro de dias de conteúdo.
+ */
+export const TIPOS_DA_PROPRIA_ROTA = new Set(["simulado"]);
+
+function tipoDoItem(item: TrilhaItem): string {
+  return (item as { tipo?: string }).tipo ?? "";
+}
+
+export function ehObrigatorio(c: ItemCandidato): boolean {
+  return TIPOS_OBRIGATORIOS.has(tipoDoItem(c.item));
+}
+
 export interface Selecao {
+  /** Requisitos do plano — entram sempre, antes de qualquer disputa. */
+  obrigatorios: ItemCandidato[];
   selecionados: ItemCandidato[];
   descartados: ItemCandidato[];
 }
@@ -209,8 +243,18 @@ export function selecionarPorPrioridade(
   ctx: ContextoDoAluno,
   orcamento: number
 ): Selecao {
-  const ultimo = candidatos.length - 1 || 1;
-  const pendentes = candidatos.map((c, i) => ({ c, base: pontuarItem(c, ctx, i / ultimo), usado: false }));
+  // Fora do pool: o que a rota já entrega como dia inteiro.
+  const doPool = candidatos.filter((c) => !TIPOS_DA_PROPRIA_ROTA.has(tipoDoItem(c.item)));
+
+  // Requisitos do plano saem da disputa e entram inteiros. O orçamento do
+  // conteúdo acadêmico é o que sobra depois deles — nunca o contrário.
+  const obrigatorios = doPool.filter(ehObrigatorio);
+  const disputam = doPool.filter((c) => !ehObrigatorio(c));
+  const minutosObrigatorios = obrigatorios.reduce((s, c) => s + c.minutos, 0);
+  const restante = Math.max(0, orcamento - minutosObrigatorios);
+
+  const ultimo = disputam.length - 1 || 1;
+  const pendentes = disputam.map((c, i) => ({ c, base: pontuarItem(c, ctx, i / ultimo), usado: false }));
 
   const minutosPorMateria = new Map<string, number>();
   const selecionados: ItemCandidato[] = [];
@@ -221,7 +265,7 @@ export function selecionarPorPrioridade(
     let melhorNota = -Infinity;
 
     pendentes.forEach((p, i) => {
-      if (p.usado || gasto + p.c.minutos > orcamento) return;
+      if (p.usado || gasto + p.c.minutos > restante) return;
       const materia = chaveMateria((p.c.item as { materia?: string | null }).materia ?? "");
       const nota = p.base * saturacao(minutosPorMateria.get(materia) ?? 0);
       // Empate pela ordem do template: primeiro dia, primeira posição.
@@ -256,6 +300,7 @@ export function selecionarPorPrioridade(
 
   // De volta à ordem pedagógica: a seleção decide O QUE entra, não a ordem em
   // que se estuda. Base antes de aprofundamento continua valendo.
+  obrigatorios.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
   selecionados.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
-  return { selecionados, descartados };
+  return { obrigatorios, selecionados, descartados };
 }
