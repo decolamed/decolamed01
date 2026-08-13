@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { registrarResposta } from "@/app/(aluno)/aluno/questoes/actions";
+import { registrarResposta, revisaoCriadaApos } from "@/app/(aluno)/aluno/questoes/actions";
 import { alternarConclusaoItem } from "@/app/(aluno)/aluno/progresso-actions";
 import { ImagensQuestao } from "./imagens-questao";
+import { IdentificacaoQuestao, ResultadoDaResposta } from "./identificacao-questao";
 import type { Questao } from "@/types/database";
 
 // ============================================================================
@@ -39,6 +40,7 @@ export function SessaoQuestoesRunner({
   const [resultado, setResultado] = useState<
     { correta: boolean; respostaCorreta: string; explicacao: string | null } | null
   >(null);
+  const [revisaoCriada, setRevisaoCriada] = useState(false);
   const [acertos, setAcertos] = useState(0);
   const [pending, startTransition] = useTransition();
 
@@ -49,18 +51,28 @@ export function SessaoQuestoesRunner({
   function escolher(alternativaId: string) {
     if (resultado || !questao) return;
     setEscolha(alternativaId);
+    const desde = new Date().toISOString();
     startTransition(async () => {
       const resposta = await registrarResposta(questao.id, alternativaId);
-      if (resposta.ok) {
-        setResultado(resposta);
-        if (resposta.correta) setAcertos((a) => a + 1);
+      if (!resposta.ok) return;
+      setResultado(resposta);
+      if (resposta.correta) {
+        setAcertos((a) => a + 1);
+        return;
       }
+      // Só avisa que o Copiloto criou revisão depois de confirmar no banco.
+      setTimeout(() => {
+        revisaoCriadaApos(resposta.materia, resposta.assunto, desde)
+          .then(setRevisaoCriada)
+          .catch(() => setRevisaoCriada(false));
+      }, 1200);
     });
   }
 
   function proxima() {
     setEscolha(null);
     setResultado(null);
+    setRevisaoCriada(false);
     const seguinte = indice + 1;
     setIndice(seguinte);
     // A atividade só conta como concluída depois da ÚLTIMA questão. Em 3/5
@@ -122,12 +134,14 @@ export function SessaoQuestoesRunner({
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow sm:p-8">
-      <div className="flex items-center justify-between text-sm text-navy-dark/60">
-        {/* "Questão 3 de 5" — o total é o da sessão, nunca o do banco. */}
-        <span className="font-semibold">
-          Questão {indice + 1} de {total}
+      <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-3" />
+
+      <div className="flex items-center justify-between text-xs font-semibold text-navy-dark/50">
+        {/* "3 de 5" — o total é o da sessão, nunca o do banco. */}
+        <span>
+          {indice + 1} de {total} nesta atividade
         </span>
-        <span className="rounded-full bg-navy/5 px-3 py-1 font-semibold">{questao.materia}</span>
+        <span>{acertos} acerto(s)</span>
       </div>
 
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-navy/10">
@@ -174,23 +188,19 @@ export function SessaoQuestoesRunner({
       </div>
 
       {resultado && (
-        <div
-          className={`mt-5 rounded-xl p-4 text-sm ${
-            resultado.correta ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
-          }`}
+        <ResultadoDaResposta
+          correta={resultado.correta}
+          respostaCorreta={resultado.respostaCorreta}
+          explicacao={resultado.explicacao}
+          revisaoCriada={revisaoCriada}
         >
-          <p className="font-bold">{resultado.correta ? "✅ Você acertou!" : "❌ Você errou."}</p>
-          {resultado.explicacao && <p className="mt-1">{resultado.explicacao}</p>}
-        </div>
-      )}
-
-      {resultado && (
-        <button
-          onClick={proxima}
-          className="mt-5 w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
-        >
-          {indice + 1 >= total ? "Concluir atividade" : "Próxima questão"}
-        </button>
+          <button
+            onClick={proxima}
+            className="w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+          >
+            {indice + 1 >= total ? "Concluir atividade" : "Próxima questão →"}
+          </button>
+        </ResultadoDaResposta>
       )}
     </div>
   );

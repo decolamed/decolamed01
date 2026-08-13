@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { registrarResposta } from "@/app/(aluno)/aluno/questoes/actions";
+import { registrarResposta, revisaoCriadaApos } from "@/app/(aluno)/aluno/questoes/actions";
 import { ImagensQuestao } from "./imagens-questao";
+import { IdentificacaoQuestao, ResultadoDaResposta } from "./identificacao-questao";
 import type { Questao } from "@/types/database";
 
 export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   const [indice, setIndice] = useState(0);
   const [escolha, setEscolha] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ correta: boolean; respostaCorreta: string; explicacao: string | null } | null>(null);
+  const [revisaoCriada, setRevisaoCriada] = useState(false);
   const [acertos, setAcertos] = useState(0);
   const [pending, startTransition] = useTransition();
 
@@ -25,18 +27,31 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   function escolher(alternativaId: string) {
     if (resultado) return; // já respondeu essa questão, ignora novo clique
     setEscolha(alternativaId);
+    const desde = new Date().toISOString();
     startTransition(async () => {
       const resposta = await registrarResposta(questao.id, alternativaId);
-      if (resposta.ok) {
-        setResultado(resposta);
-        if (resposta.correta) setAcertos((a) => a + 1);
+      if (!resposta.ok) return;
+      setResultado(resposta);
+      if (resposta.correta) {
+        setAcertos((a) => a + 1);
+        return;
       }
+      // O Copiloto roda em segundo plano; a resposta do aluno não espera por
+      // ele. Passado um instante, pergunta ao banco se a revisão existe mesmo
+      // — e só então mostra o aviso. Se ainda não estiver gravada, o aviso
+      // simplesmente não aparece, que é melhor do que prometer o que não há.
+      setTimeout(() => {
+        revisaoCriadaApos(resposta.materia, resposta.assunto, desde)
+          .then(setRevisaoCriada)
+          .catch(() => setRevisaoCriada(false));
+      }, 1200);
     });
   }
 
   function proxima() {
     setEscolha(null);
     setResultado(null);
+    setRevisaoCriada(false);
     setIndice((i) => i + 1);
   }
 
@@ -67,11 +82,13 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow sm:p-8">
-      <div className="flex items-center justify-between text-sm text-navy-dark/60">
+      <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-3" />
+
+      <div className="flex items-center justify-between text-xs font-semibold text-navy-dark/50">
         <span>
-          Questão {indice + 1} de {questoes.length}
+          {indice + 1} de {questoes.length} nesta rodada
         </span>
-        <span className="rounded-full bg-navy/5 px-3 py-1 font-semibold">{questao.materia}</span>
+        <span>{acertos} acerto(s)</span>
       </div>
 
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-navy/10">
@@ -114,19 +131,19 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
       </div>
 
       {resultado && (
-        <div className={`mt-5 rounded-xl p-4 text-sm ${resultado.correta ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
-          <p className="font-bold">{resultado.correta ? "✅ Você acertou!" : "❌ Você errou."}</p>
-          {resultado.explicacao && <p className="mt-1">{resultado.explicacao}</p>}
-        </div>
-      )}
-
-      {resultado && (
-        <button
-          onClick={proxima}
-          className="mt-5 w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        <ResultadoDaResposta
+          correta={resultado.correta}
+          respostaCorreta={resultado.respostaCorreta}
+          explicacao={resultado.explicacao}
+          revisaoCriada={revisaoCriada}
         >
-          Próxima questão
-        </button>
+          <button
+            onClick={proxima}
+            className="w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+          >
+            {indice + 1 >= questoes.length ? "Concluir rodada" : "Próxima questão →"}
+          </button>
+        </ResultadoDaResposta>
       )}
     </div>
   );

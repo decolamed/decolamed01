@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { submeterSimulado, type ItemGabarito, type ResultadoSimulado } from "@/app/(aluno)/aluno/simulados/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
+import { IdentificacaoQuestao } from "./identificacao-questao";
 import { filtrarPorIdioma } from "@/lib/site/idioma-aluno";
 
 interface QuestaoSimulado {
@@ -12,6 +13,15 @@ interface QuestaoSimulado {
   alternativas: { id: string; texto: string }[];
   materia: string;
   imagens: { url: string; legenda: string | null; ordem: number }[];
+  // Origem: num simulado ela vale ainda mais, porque a experiência é a de
+  // uma prova e o aluno precisa saber de qual caderno a questão saiu.
+  prova_nome?: string | null;
+  modalidade?: string | null;
+  ano?: number | null;
+  semestre?: number | null;
+  numero_questao?: number | null;
+  fonte?: string | null;
+  anulada?: boolean | null;
 }
 
 export interface PropostaRedacao {
@@ -348,8 +358,11 @@ export function SimuladoRunner({
         </div>
       ) : (
       <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-        <span className="rounded-full bg-navy/5 px-3 py-1 text-xs font-semibold text-navy-dark/60">{questao.materia}</span>
-        <p className="mt-4 whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
+        {/* Mesma faixa de identificação da atividade: linguagem visual
+            compartilhada, com a numeração da prova de origem em destaque
+            porque aqui a experiência é a de um caderno de prova. */}
+        <IdentificacaoQuestao questao={questao} posicao={indice + 1} className="mb-4" />
+        <p className="whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
         <ImagensQuestao imagens={questao.imagens} />
 
         <div className="mt-5 space-y-2">

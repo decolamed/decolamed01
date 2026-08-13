@@ -8,6 +8,9 @@ import { ImportadorTexto } from "@/components/admin/importador-texto";
 import { parseQuestoesTexto, type QuestaoParseada } from "@/lib/importacao/parse-questoes";
 import { ROTULO_MODALIDADE, rotuloModalidade } from "@/lib/site/filtro-questoes";
 import { materiaCanonica, mesmaMateria } from "@/lib/site/materia-canonica";
+// O MESMO código que o aluno vê na questão. Duas implementações da mesma
+// regra é o que faria o aluno reportar "erro na Q3F9A2" e o admin não achar.
+import { codigoDaQuestao as codigo } from "@/lib/site/questao-identidade";
 import { salvarQuestao, salvarQuestoesEmLote, excluirQuestao, alternarAtivoQuestao, type QuestaoForm } from "./actions";
 import type { Questao } from "@/types/database";
 
@@ -29,10 +32,6 @@ const VAZIO: QuestaoForm = {
   numeroQuestao: "",
   anulada: false
 };
-
-function codigo(id: string) {
-  return "Q" + id.slice(0, 6).toUpperCase();
-}
 
 export function QuestoesManager({
   questoes,
