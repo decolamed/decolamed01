@@ -9,6 +9,9 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
+import { DesempenhoDoAluno } from "@/components/admin/desempenho-aluno";
+import { carregarDesempenho } from "@/lib/site/desempenho-servidor";
+import { hojeISO } from "@/lib/site/data";
 import { adicionarMissaoIndividual, excluirMissaoIndividual } from "./actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
 
@@ -161,6 +164,11 @@ export default async function AdminDetalhesUsuarioPage({
       };
     }
   }
+
+  // Desempenho pela MESMA leitura e pelas MESMAS contas da tela do aluno
+  // (lib/site/desempenho*.ts). Uma segunda implementação aqui é como o painel
+  // e o aluno passam a mostrar percentuais diferentes da mesma pessoa.
+  const desempenho = await carregarDesempenho(supabase, params.id);
 
   const { data: historicoData } = await supabase
     .from("historico_admin")
@@ -315,6 +323,12 @@ export default async function AdminDetalhesUsuarioPage({
           )}
         </ul>
       </div>
+
+      <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Desempenho do aluno</h2>
+      <p className="mb-3 mt-1 text-xs font-semibold text-navy-dark/50">
+        Os mesmos números que o aluno vê no painel dele — mesma fonte, mesma conta.
+      </p>
+      <DesempenhoDoAluno dados={desempenho} hoje={hojeISO()} />
 
       <h2 className="mt-10 font-display text-lg font-bold text-navy-dark">Cronograma individual</h2>
       <p className="mt-1 text-sm text-navy-dark/60">

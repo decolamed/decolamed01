@@ -2,46 +2,33 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { PaginaAluno } from "@/components/aluno/pagina-aluno";
+import { carregarDesempenho } from "@/lib/site/desempenho-servidor";
 
 export default async function AlunoDesempenhoPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  const [{ data: respostas }, { data: revisoes }, { data: tentativas }] = await Promise.all([
-    supabase.from("respostas_aluno").select("correta, questoes(materia)").eq("aluno_id", profile.id),
-    supabase.from("flashcard_revisoes").select("lembrou").eq("aluno_id", profile.id),
-    supabase.from("simulado_tentativas").select("nota, acertos, total, created_at, simulados(titulo)").eq("aluno_id", profile.id).order("created_at", { ascending: false })
+  // As contas saem de lib/site/desempenho*.ts — as MESMAS que o painel do
+  // administrador usa. Enquanto cada tela calculava por conta própria, nada
+  // impedia o aluno ver 78% e o admin ver 74% para a mesma pessoa.
+  const desempenho = await carregarDesempenho(supabase, profile.id);
+  const { resumo } = desempenho;
+
+  const listaTentativas = desempenho.tentativas;
+  const totalQuestoes = resumo.questoes;
+  const acertosQuestoes = resumo.acertos;
+  const precisaoGeral = resumo.precisao;
+  const totalFlashcards = resumo.flashcards;
+  const lembrados = resumo.lembrados;
+  const precisaoFlashcards = resumo.precisaoFlashcards;
+  const mediaSimulados = resumo.mediaSimulados;
+
+  const materiasOrdenadas: [string, { acertos: number; total: number }][] = desempenho.porMateria.map((m) => [
+    m.materia,
+    { acertos: m.acertos, total: m.total }
   ]);
 
-  const listaRespostas = respostas ?? [];
-  const listaRevisoes = revisoes ?? [];
-  const listaTentativas = tentativas ?? [];
-
-  const totalQuestoes = listaRespostas.length;
-  const acertosQuestoes = listaRespostas.filter((r: any) => r.correta).length;
-  const precisaoGeral = totalQuestoes > 0 ? Math.round((acertosQuestoes / totalQuestoes) * 100) : 0;
-
-  const totalFlashcards = listaRevisoes.length;
-  const lembrados = listaRevisoes.filter((r: any) => r.lembrou).length;
-  const precisaoFlashcards = totalFlashcards > 0 ? Math.round((lembrados / totalFlashcards) * 100) : 0;
-
-  const mediaSimulados =
-    listaTentativas.length > 0
-      ? Math.round(listaTentativas.reduce((soma: number, t: any) => soma + t.nota, 0) / listaTentativas.length)
-      : 0;
-
-  // Agrupa acertos por matéria a partir das respostas de questões.
-  const porMateria = new Map<string, { acertos: number; total: number }>();
-  listaRespostas.forEach((r: any) => {
-    const materia = r.questoes?.materia ?? "Sem matéria";
-    const atual = porMateria.get(materia) ?? { acertos: 0, total: 0 };
-    atual.total += 1;
-    if (r.correta) atual.acertos += 1;
-    porMateria.set(materia, atual);
-  });
-  const materiasOrdenadas = Array.from(porMateria.entries()).sort((a, b) => b[1].total - a[1].total);
-
-  const semDadosAinda = totalQuestoes === 0 && totalFlashcards === 0 && listaTentativas.length === 0;
+  const semDadosAinda = resumo.semDados;
 
   // Só a moldura mudou (item 11): fundo navy, título centralizado, sem
   // emoji e com o "Voltar ao painel" no padrão da plataforma em vez de um
