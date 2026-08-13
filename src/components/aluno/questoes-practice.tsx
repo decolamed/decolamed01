@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { registrarResposta } from "@/app/(aluno)/aluno/questoes/actions";
-import { ImagensQuestao } from "./imagens-questao";
+import { registrarResposta, revisaoCriadaApos } from "@/app/(aluno)/aluno/questoes/actions";
+import { CartaoQuestao } from "./cartao-questao";
+import { ResultadoDaResposta } from "./identificacao-questao";
 import type { Questao } from "@/types/database";
 
 export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   const [indice, setIndice] = useState(0);
   const [escolha, setEscolha] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ correta: boolean; respostaCorreta: string; explicacao: string | null } | null>(null);
+  const [revisaoCriada, setRevisaoCriada] = useState(false);
   const [acertos, setAcertos] = useState(0);
   const [pending, startTransition] = useTransition();
 
@@ -25,18 +27,31 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   function escolher(alternativaId: string) {
     if (resultado) return; // já respondeu essa questão, ignora novo clique
     setEscolha(alternativaId);
+    const desde = new Date().toISOString();
     startTransition(async () => {
       const resposta = await registrarResposta(questao.id, alternativaId);
-      if (resposta.ok) {
-        setResultado(resposta);
-        if (resposta.correta) setAcertos((a) => a + 1);
+      if (!resposta.ok) return;
+      setResultado(resposta);
+      if (resposta.correta) {
+        setAcertos((a) => a + 1);
+        return;
       }
+      // O Copiloto roda em segundo plano; a resposta do aluno não espera por
+      // ele. Passado um instante, pergunta ao banco se a revisão existe mesmo
+      // — e só então mostra o aviso. Se ainda não estiver gravada, o aviso
+      // simplesmente não aparece, que é melhor do que prometer o que não há.
+      setTimeout(() => {
+        revisaoCriadaApos(resposta.materia, resposta.assunto, desde)
+          .then(setRevisaoCriada)
+          .catch(() => setRevisaoCriada(false));
+      }, 1200);
     });
   }
 
   function proxima() {
     setEscolha(null);
     setResultado(null);
+    setRevisaoCriada(false);
     setIndice((i) => i + 1);
   }
 
@@ -66,68 +81,33 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
   }
 
   return (
-    <div className="rounded-2xl bg-white p-6 shadow sm:p-8">
-      <div className="flex items-center justify-between text-sm text-navy-dark/60">
-        <span>
-          Questão {indice + 1} de {questoes.length}
-        </span>
-        <span className="rounded-full bg-navy/5 px-3 py-1 font-semibold">{questao.materia}</span>
-      </div>
-
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-navy/10">
-        <div
-          className="h-full bg-orange transition-all"
-          style={{ width: `${(indice / questoes.length) * 100}%` }}
-        />
-      </div>
-
-      <p className="mt-5 whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
-      <ImagensQuestao imagens={questao.imagens} />
-
-      <div className="mt-5 space-y-2">
-        {questao.alternativas.map((alt) => {
-          const éEscolhida = escolha === alt.id;
-          const éCorreta = resultado && alt.id === resultado.respostaCorreta;
-          const éErradaEscolhida = resultado && éEscolhida && !resultado.correta;
-
-          let estilo = "border-navy/15 hover:border-orange/50";
-          if (resultado) {
-            if (éCorreta) estilo = "border-green-500 bg-green-50";
-            else if (éErradaEscolhida) estilo = "border-red-400 bg-red-50";
-            else estilo = "border-navy/10 opacity-60";
-          } else if (éEscolhida) {
-            estilo = "border-orange bg-orange/5";
-          }
-
-          return (
-            <button
-              key={alt.id}
-              onClick={() => escolher(alt.id)}
-              disabled={pending || !!resultado}
-              className={`flex w-full items-start gap-3 rounded-xl border-2 p-3 text-left text-sm transition ${estilo}`}
-            >
-              <span className="font-display font-bold text-navy-dark">{alt.id.toUpperCase()})</span>
-              <span className="text-navy-dark">{alt.texto}</span>
-            </button>
-          );
-        })}
-      </div>
-
+    <CartaoQuestao
+      questao={questao}
+      posicao={indice + 1}
+      total={questoes.length}
+      rotuloProgresso={`${indice + 1} de ${questoes.length} nesta rodada`}
+      direita={<span>{acertos} acerto(s)</span>}
+      escolhida={escolha}
+      respostaCorreta={resultado?.respostaCorreta ?? null}
+      correta={resultado?.correta}
+      onEscolher={escolher}
+      desabilitado={pending || !!resultado}
+    >
       {resultado && (
-        <div className={`mt-5 rounded-xl p-4 text-sm ${resultado.correta ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
-          <p className="font-bold">{resultado.correta ? "✅ Você acertou!" : "❌ Você errou."}</p>
-          {resultado.explicacao && <p className="mt-1">{resultado.explicacao}</p>}
-        </div>
-      )}
-
-      {resultado && (
-        <button
-          onClick={proxima}
-          className="mt-5 w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        <ResultadoDaResposta
+          correta={resultado.correta}
+          respostaCorreta={resultado.respostaCorreta}
+          explicacao={resultado.explicacao}
+          revisaoCriada={revisaoCriada}
         >
-          Próxima questão
-        </button>
+          <button
+            onClick={proxima}
+            className="w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+          >
+            {indice + 1 >= questoes.length ? "Concluir rodada" : "Próxima questão →"}
+          </button>
+        </ResultadoDaResposta>
       )}
-    </div>
+    </CartaoQuestao>
   );
 }

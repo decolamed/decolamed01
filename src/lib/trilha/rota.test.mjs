@@ -91,15 +91,21 @@ test("C — janela de 19 dias produz exatamente 19 dias numerados de 1 a 19", ()
   dias.forEach((d) => assert.ok(!d.titulo.includes(" + Dia "), `título expõe compressão: ${d.titulo}`));
 });
 
-test("C2 — todo o conteúdo do template continua na rota, nada é descartado", () => {
-  const t = template();
+test("C2 — cabendo tudo, tudo entra: nada é descartado sem necessidade", () => {
+  // Este teste dizia o contrário até esta rodada: exigia que TODO o template
+  // entrasse na rota, sempre. Era a regra errada — com 10 dias de 3h e 167h
+  // de template, cumpri-la só era possível ignorando a capacidade do aluno,
+  // que é justamente o que produzia os dias impossíveis. Deixar conteúdo de
+  // fora quando não cabe é a decisão certa; o que o teste garante agora é que
+  // isso só acontece por falta de espaço.
+  const t = template(6); // 12 itens, folgados numa janela de 19 dias
   const { dias } = gerarRota(t, base);
 
   const itensTemplate = t.flatMap((d) => d.itens).length;
   const itensNaRota = dias.filter((d) => d.tipo === "estudo").flatMap((d) => d.itens).length;
-  assert.equal(itensNaRota, itensTemplate, "todo item do template precisa aparecer na rota");
+  assert.equal(itensNaRota, itensTemplate, "com espaço de sobra, nenhum item pode ficar de fora");
 
-  const templateDays = dias.flatMap((d) => d.templateDays).sort((a, b) => a - b);
+  const templateDays = [...new Set(dias.flatMap((d) => d.templateDays))].sort((a, b) => a - b);
   assert.deepEqual(templateDays, t.map((d) => d.dia_numero), "todo dia do template precisa ter destino");
 });
 

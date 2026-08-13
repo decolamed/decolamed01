@@ -6,13 +6,21 @@ import type { EstudosBotaoTipo } from "@/types/database";
 
 const PATH = "/admin/estudos";
 
-export async function criarBotaoEstudos(titulo: string, icone: string, tipo: EstudosBotaoTipo, link: string) {
+export async function criarBotaoEstudos(
+  titulo: string,
+  icone: string,
+  tipo: EstudosBotaoTipo,
+  link: string,
+  // null = todos os cursos. É o padrão seguro: esquecer de escolher publica
+  // para todos, nunca esconde de todos.
+  planoId: string | null = null
+) {
   const admin = await requireAdmin();
   const supabase = createAdminClient();
   if (!titulo.trim() || !link.trim()) return { ok: false as const, erro: "Preencha nome e link." };
   const { error } = await supabase
     .from("estudos_botoes")
-    .insert({ titulo: titulo.trim(), icone, tipo, link: link.trim(), ativo: true, criado_por: admin.id });
+    .insert({ titulo: titulo.trim(), icone, tipo, link: link.trim(), ativo: true, plano_id: planoId, criado_por: admin.id });
   revalidatePath(PATH);
   revalidatePath("/aluno");
   if (error) return { ok: false as const, erro: "Não foi possível criar o botão." };
@@ -26,14 +34,15 @@ export async function atualizarBotaoEstudos(
   titulo: string,
   icone: string,
   tipo: EstudosBotaoTipo,
-  link: string
+  link: string,
+  planoId: string | null = null
 ) {
   await requireAdmin();
   const supabase = createAdminClient();
   if (!titulo.trim() || !link.trim()) return { ok: false as const, erro: "Preencha nome e link." };
   const { error } = await supabase
     .from("estudos_botoes")
-    .update({ titulo: titulo.trim(), icone, tipo, link: link.trim() })
+    .update({ titulo: titulo.trim(), icone, tipo, link: link.trim(), plano_id: planoId })
     .eq("id", id);
   revalidatePath(PATH);
   revalidatePath("/aluno");

@@ -1,7 +1,7 @@
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
-import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
+import { alunoTemCopiloto, planoDoAluno } from "@/lib/copiloto/permissao";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
@@ -67,8 +67,9 @@ export default async function AlunoHomePage({
   // para quem tem matrícula ativa e dentro do prazo.
   const profile = await requireAcessoAluno();
   const supabase = createClient();
-  const [temCopiloto, nomeVestibular, materias] = await Promise.all([
+  const [temCopiloto, cursoDoAluno, nomeVestibular, materias] = await Promise.all([
     alunoTemCopiloto(profile.id),
+    planoDoAluno(profile.id),
     getNomeVestibular(),
     getMateriasDoConteudo()
   ]);
@@ -351,7 +352,13 @@ export default async function AlunoHomePage({
         conteudos: (conteudosData as ConteudoBiblioteca[]) ?? [],
         linksExternos: (linksData as LinkExterno[]) ?? [],
         conteudosTrilha,
-        estudosBotoes: (estudosBotoesData as EstudosBotao[]) ?? [],
+        // Materiais da Tela de Estudo destinados a este curso. `plano_id`
+        // nulo = todos os cursos, que é como todo material cadastrado antes
+        // desta regra continua se comportando. A RLS já aplica o mesmo corte
+        // no banco; aqui é a mesma regra, escrita onde a tela lê.
+        estudosBotoes: ((estudosBotoesData as EstudosBotao[]) ?? []).filter(
+          (b) => !b.plano_id || b.plano_id === cursoDoAluno
+        ),
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         termosUsoUrl: textoConfig(termosData?.valor) || null,
         nomeVestibular,

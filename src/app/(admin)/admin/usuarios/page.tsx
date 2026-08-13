@@ -6,6 +6,9 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
+import { resumosDosAlunos } from "@/lib/site/desempenho-servidor";
+import { diasSemEstudar } from "@/lib/site/desempenho";
+import { hojeISO } from "@/lib/site/data";
 import type { Profile } from "@/types/database";
 import {
   criarAlunoManual,
@@ -47,6 +50,14 @@ export default async function AdminUsuariosPage({
   }
   const { data: usuarios } = await query;
   const { data: planos } = await supabase.from("planos").select("id, nome").eq("ativo", true).order("ordem");
+
+  // Indicadores de acompanhamento na própria listagem: quem está evoluindo,
+  // quem praticou pouco e quem parou de estudar. Vêm das mesmas contas do
+  // perfil individual (lib/site/desempenho.ts), numa leitura só para toda a
+  // lista em vez de uma consulta por aluno.
+  const alunos = ((usuarios ?? []) as Profile[]).filter((u) => u.role === "aluno");
+  const desempenhos = await resumosDosAlunos(supabase, alunos.map((a) => a.id));
+  const hoje = hojeISO();
 
   return (
     <div>
@@ -107,6 +118,38 @@ export default async function AdminUsuariosPage({
               )
             },
             { titulo: "Papel", celula: (u) => ROLE_LABEL[u.role] ?? u.role },
+            {
+              titulo: "Desempenho",
+              celula: (u) => {
+                if (u.role !== "aluno") return "—";
+                const d = desempenhos.get(u.id);
+                if (!d || d.semDados) return <span className="text-navy-dark/40">sem atividade</span>;
+                return (
+                  <div className="whitespace-nowrap">
+                    <span
+                      className={`font-extrabold ${
+                        d.precisao >= 70 ? "text-green" : d.precisao >= 50 ? "text-orange" : "text-red"
+                      }`}
+                    >
+                      {d.precisao}%
+                    </span>
+                    <span className="text-navy-dark/50"> · {d.questoes} questões</span>
+                  </div>
+                );
+              }
+            },
+            {
+              titulo: "Última atividade",
+              celula: (u) => {
+                if (u.role !== "aluno") return "—";
+                const parado = diasSemEstudar(desempenhos.get(u.id)?.ultimaAtividade ?? null, hoje);
+                if (parado === null) return <span className="text-navy-dark/40">nunca estudou</span>;
+                if (parado === 0) return "hoje";
+                return (
+                  <span className={parado >= 7 ? "font-semibold text-orange" : ""}>há {parado} dia(s)</span>
+                );
+              }
+            },
             {
               titulo: "Plano",
               celula: (u) =>

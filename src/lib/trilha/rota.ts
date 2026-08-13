@@ -1,6 +1,13 @@
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { diaDaSemana, diffDias, somarDias } from "@/lib/site/data";
 import { minutosDoItem } from "@/lib/trilha/progresso";
+import {
+  candidatosDoTemplate,
+  contextoVazio,
+  selecionarPorPrioridade,
+  type ContextoDoAluno,
+  type ItemCandidato
+} from "@/lib/trilha/prioridade";
 
 // ============================================================================
 // ROTA PERSONALIZADA DO ALUNO
@@ -77,8 +84,23 @@ export interface ParametrosRota {
   dataProva: string;
   /** Siglas dos dias da semana em que estuda. Vazio = todos os dias. */
   diasEstuda: string[];
-  /** Teto de minutos por dia. */
+  /** Teto de minutos por dia — restrição absoluta, não sugestão. */
   minutosPorDia: number;
+  /**
+   * Teto por dia da semana, quando o aluno tiver disponibilidade diferente
+   * em cada um ("segunda 3h, terça 5h"). O que não estiver aqui usa
+   * `minutosPorDia`. Hoje o briefing pergunta um número só; a capacidade já
+   * é calculada dia a dia para não precisar refazer o algoritmo depois.
+   */
+  minutosPorDiaDaSemana?: Partial<Record<(typeof MAPA_DIA)[number], number>>;
+}
+
+/** Capacidade de estudo de uma data específica, em minutos. */
+export function capacidadeDaData(data: string, p: ParametrosRota): number {
+  const sigla = MAPA_DIA[diaDaSemana(data)];
+  const especifico = p.minutosPorDiaDaSemana?.[sigla];
+  const minutos = Number.isFinite(especifico) && (especifico as number) > 0 ? (especifico as number) : p.minutosPorDia;
+  return Math.max(0, Math.round(minutos));
 }
 
 export interface Rota {
@@ -118,8 +140,9 @@ export function datasDisponiveis(p: Pick<ParametrosRota, "inicio" | "dataProva" 
  *  1. o 2º simulado fica no ÚLTIMO dia que ainda respeita
  *     `scheduledDate <= dataProva − 7`, para sobrar tempo de corrigir os
  *     erros que ele revelar;
- *  2. os dias após o 2º simulado viram revisão — é a função pedagógica da
- *     reta final, não conteúdo novo;
+ *  2. logo depois do 2º simulado vêm um ou dois dias de correção — o tempo
+ *     de fato necessário para trabalhar o que ele revelou, e não a reta
+ *     final inteira;
  *  3. o 1º simulado fica a meio caminho entre o começo e o 2º, com pelo
  *     menos 2 dias de folga de cada lado, para não colar os dois nem gastar
  *     o começo da rota com prova.
@@ -128,19 +151,32 @@ export function datasDisponiveis(p: Pick<ParametrosRota, "inicio" | "dataProva" 
  * dois simulados no mesmo dia.
  */
 export function posicionarSimulados(datas: string[], dataProva: string): { indiceSim1: number; indiceSim2: number } {
-  const limite = somarDias(dataProva, -DIAS_MINIMOS_APOS_SIMULADO_2);
+  // Quantos dias de estudo ficam DEPOIS do 2º simulado, para o aluno corrigir
+  // o que ele revelar. Sete é o alvo — mas sete dias de uma janela de dez
+  // seriam 70% da preparação gastos depois do diagnóstico, com os dois
+  // simulados espremidos no comecinho. O alvo vale enquanto for uma parte
+  // razoável da rota; abaixo disso, a folga acompanha o tamanho da janela.
+  const folga = Math.max(1, Math.min(DIAS_MINIMOS_APOS_SIMULADO_2, Math.ceil(datas.length * 0.3)));
 
-  // Último índice cuja data ainda cabe dentro do limite.
-  let indiceSim2 = -1;
-  for (let i = datas.length - 1; i >= 0; i--) {
-    if (datas[i] <= limite) {
-      indiceSim2 = i;
-      break;
+  // Posição pretendida, contada em dias de estudo (não de calendário): é o
+  // que o aluno de fato executa.
+  let indiceSim2 = Math.max(0, datas.length - 1 - folga);
+
+  // Se a janela é longa, a regra de calendário ainda manda: no mínimo sete
+  // dias corridos entre o simulado e a prova.
+  const limite = somarDias(dataProva, -DIAS_MINIMOS_APOS_SIMULADO_2);
+  if (datas[indiceSim2] > limite) {
+    for (let i = indiceSim2; i >= 0; i--) {
+      if (datas[i] <= limite) {
+        // Só recua se o simulado continuar na segunda metade da rota. Puxá-lo
+        // para o comecinho para satisfazer a regra de calendário seria trocar
+        // um problema por outro: o aluno faria os dois simulados nos primeiros
+        // dias e chegaria à prova sem nenhum diagnóstico recente.
+        if (i >= Math.floor(datas.length / 2)) indiceSim2 = i;
+        break;
+      }
     }
   }
-  // Rota curta demais para respeitar os 7 dias: usa o último dia disponível,
-  // porque ter o simulado é mais importante do que a folga ideal.
-  if (indiceSim2 < 0) indiceSim2 = datas.length - 1;
 
   // 1º simulado a meio caminho, com folga mínima nas duas pontas.
   let indiceSim1 = Math.floor(indiceSim2 / 2);
@@ -199,6 +235,26 @@ function minutosDoTemplate(template: TrilhaDia[]): number {
 }
 
 /**
+ * Quanto da capacidade fica LIVRE para o Copiloto preencher depois.
+ *
+ * A reserva não cria dia vazio: ela deixa uma fatia de cada dia sem
+ * compromisso, para caber a revisão que o erro de amanhã vai pedir. Sem isso,
+ * uma rota planejada até o último minuto não tem onde encaixar revisão
+ * nenhuma, e toda adaptação viraria "empurrar para depois da prova".
+ *
+ * Varia com a janela: rota longa tem mais tempo para o desempenho revelar
+ * problemas (e mais revisões pela frente), rota curta precisa gastar quase
+ * tudo com conteúdo — mas nunca zero, senão o Copiloto fica sem manobra.
+ */
+export function fracaoDeReserva(diasDeEstudo: number): number {
+  if (diasDeEstudo <= 0) return 0;
+  if (diasDeEstudo <= 5) return 0.1;
+  if (diasDeEstudo <= 12) return 0.15;
+  if (diasDeEstudo <= 25) return 0.2;
+  return 0.25;
+}
+
+/**
  * Gera a rota do aluno.
  *
  * Determinístico por construção: só depende dos argumentos. Não lê banco,
@@ -208,9 +264,15 @@ function minutosDoTemplate(template: TrilhaDia[]): number {
 export function gerarRota(
   template: TrilhaDia[],
   p: ParametrosRota,
-  opcoes: { simulados?: SimuladoDisponivel[]; nomeVestibular?: string | null } = {}
+  opcoes: {
+    simulados?: SimuladoDisponivel[];
+    nomeVestibular?: string | null;
+    /** Pesos, briefing, desempenho e progresso — o que decide a seleção. */
+    contexto?: ContextoDoAluno;
+  } = {}
 ): Rota {
   const simulados = opcoes.simulados ?? [];
+  const contexto = opcoes.contexto ?? contextoVazio();
   const datas = datasDisponiveis(p);
   const assinatura = assinaturaDosParametros(p);
 
@@ -222,7 +284,18 @@ export function gerarRota(
   const reservados = new Map<number, TipoDiaRota>();
   if (indiceSim1 >= 0) reservados.set(indiceSim1, "simulado");
   reservados.set(indiceSim2, "simulado");
-  for (let i = indiceSim2 + 1; i < datas.length; i++) reservados.set(i, "revisao");
+
+  // Depois do 2º simulado vêm os dias de CORRIGIR o que ele revelou — não a
+  // rota inteira. A versão anterior marcava como revisão todo dia depois do
+  // simulado: numa janela de 10 dias isso transformava 6 dos 10 em "Revisão
+  // dirigida", e o aluno recebia meia rota sem conteúdo. Corrigir um simulado
+  // custa um ou dois dias; o que sobra continua sendo tempo de estudo, que é
+  // onde o Copiloto vai encaixar o reforço do que ele errou.
+  const diasAposSimulado2 = datas.length - 1 - indiceSim2;
+  const diasDeCorrecao = diasAposSimulado2 <= 1 ? diasAposSimulado2 : Math.min(2, Math.ceil(diasAposSimulado2 / 3));
+  for (let i = indiceSim2 + 1; i <= indiceSim2 + diasDeCorrecao && i < datas.length; i++) {
+    reservados.set(i, "revisao");
+  }
 
   // ---- Véspera da prova -------------------------------------------------
   //
@@ -239,59 +312,161 @@ export function gerarRota(
   const podeSerVespera = datas[ultimo] === vesperaReal && reservados.get(ultimo) !== "simulado";
 
   if (podeSerVespera) {
-    if (reservados.get(ultimo) === "revisao") {
-      // O dia já era de revisão: não carrega conteúdo do template, então
-      // transformá-lo em descanso não tira nada de ninguém. É o caso comum
-      // nas janelas curtas, onde a reta final já é toda de revisão.
-      reservados.set(ultimo, "descanso");
-    } else if (!reservados.has(ultimo)) {
-      // Aqui a véspera é um dia de conteúdo. Só vira descanso se o template
-      // inteiro ainda couber nos dias restantes, dentro das horas por dia
-      // informadas — senão o descanso espremeria a matéria, e o pedido é
-      // explícito: distribuir o conteúdo vem antes do descanso.
-      const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i)).length;
-      if (diasDeConteudo > 0 && minutosDoTemplate(template) <= diasDeConteudo * p.minutosPorDia) {
-        reservados.set(ultimo, "descanso");
-      }
-    }
+    // A decisão é de custo-benefício — não uma regra fixa de "véspera sempre
+    // descansa".
+    //
+    // Descansar custa a capacidade daquele dia. Numa rota longa esse dia é
+    // uma fração pequena do plano, e chegar inteiro na prova vale mais.
+    // Numa rota curta ele é uma fatia grande da preparação inteira, e tirar
+    // conteúdo de quem já tem pouco tempo prejudica o aluno.
+    //
+    // O corte é esse: a véspera vira descanso quando perdê-la custa menos de
+    // um décimo da capacidade total — ou quando todo o conteúdo cabe mesmo
+    // sem ela, caso em que não há nada a perder.
+    const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i));
+    const capacidadeSemVespera = diasDeConteudo.reduce((s, d) => s + capacidadeDaData(d, p), 0);
+    const capacidadeDaVespera = capacidadeDaData(datas[ultimo], p);
+    const total = capacidadeSemVespera + capacidadeDaVespera;
+
+    const cabeSemEla = diasDeConteudo.length > 0 && minutosDoTemplate(template) <= capacidadeSemVespera;
+    const custaPouco = total > 0 && capacidadeDaVespera / total < 0.1;
+
+    if (diasDeConteudo.length > 0 && (cabeSemEla || custaPouco)) reservados.set(ultimo, "descanso");
   }
 
   // Dias que recebem conteúdo do template, na ordem do calendário.
   const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i));
 
-  // Conteúdo, na ordem pedagógica do template. Nada é descartado.
-  const ordenados = [...template].sort((a, b) => a.dia_numero - b.dia_numero);
+  // ---- Capacidade real ---------------------------------------------------
+  // A capacidade do dia é o que o aluno declarou que consegue estudar. Daqui
+  // pra baixo ela é uma RESTRIÇÃO: nenhum dia recebe mais do que isso, e o
+  // total planejado nunca passa da soma das capacidades.
+  const capacidade = new Map<number, number>();
+  indicesDeEstudo.forEach((i) => capacidade.set(i, capacidadeDaData(datas[i], p)));
+  const capacidadeTotal = [...capacidade.values()].reduce((s, m) => s + m, 0);
 
-  // Distribui os dias do template pelos dias de estudo. Quando há mais
-  // template do que dias, mais de um dia do template cai no mesmo dia de
-  // rota — mas isso é detalhe interno: o aluno vê um único dia numerado.
-  const conteudoPorIndice = new Map<number, { dias: TrilhaDia[]; minutos: number }>();
-  indicesDeEstudo.forEach((i) => conteudoPorIndice.set(i, { dias: [], minutos: 0 }));
+  // Parte da capacidade fica de fora do plano inicial, para o Copiloto ter
+  // onde encaixar as revisões que o desempenho vai pedir.
+  const orcamento = Math.floor(capacidadeTotal * (1 - fracaoDeReserva(indicesDeEstudo.length)));
 
-  if (indicesDeEstudo.length > 0) {
-    // Distribuição PROPORCIONAL: o dia do template na posição `i` cai no dia
-    // de rota `floor(i * diasDeRota / diasDeTemplate)`.
-    //
-    // A versão anterior era sequencial: enchia o dia atual até bater a cota
-    // ou estourar o tempo, e só então abria o próximo — mas quando acabavam
-    // os dias de rota, ela despejava TODO o restante no último. Num template
-    // de 40 dias com 11 dias de conteúdo e 3h/dia, os 11 primeiros levavam 2
-    // dias cada e o último recebia os 18 que sobraram: 1400 minutos, 23 horas
-    // de estudo num dia que o aluno declarou ter 3. Aparecia na tela como um
-    // dia com 20 matérias empilhadas.
-    //
-    // A regra proporcional mantém a ordem pedagógica (o conteúdo continua
-    // seguindo a sequência do template, nada é reordenado nem descartado) e
-    // reparte o excesso por igual. Quando a janela é grande o bastante, cada
-    // dia recebe um dia do template e nada muda; quando é curta, todos os
-    // dias ficam um pouco mais cheios em vez de um único ficar impossível.
-    ordenados.forEach((diaTemplate, i) => {
-      const posicao = Math.floor((i * indicesDeEstudo.length) / ordenados.length);
-      const destino = conteudoPorIndice.get(indicesDeEstudo[Math.min(posicao, indicesDeEstudo.length - 1)])!;
-      destino.dias.push(diaTemplate);
-      destino.minutos += (diaTemplate.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0);
+  const { obrigatorios, selecionados, descartados } = selecionarPorPrioridade(
+    candidatosDoTemplate(template),
+    contexto,
+    orcamento
+  );
+
+  // ---- Alocação ----------------------------------------------------------
+  // Primeiro que couber, na ordem do calendário: o conteúdo segue a sequência
+  // pedagógica e cada dia para de receber quando bate no próprio teto. Um
+  // item que não cabe no dia atual vai para o próximo com espaço — nunca é
+  // empilhado num dia que o aluno não tem como executar.
+  const conteudoPorIndice = new Map<number, { itens: ItemCandidato[]; minutos: number }>();
+  indicesDeEstudo.forEach((i) => conteudoPorIndice.set(i, { itens: [], minutos: 0 }));
+
+  // O ritmo do dia é o menor entre a capacidade dele e o que sobra dividido
+  // pelos dias que faltam. Sem esse segundo termo, encher "o primeiro que
+  // couber" concentraria tudo no começo: 12 itens numa janela de 19 dias
+  // caberiam todos nos três primeiros, e o resto da rota dependeria do
+  // preenchimento de emergência. Com ele, conteúdo folgado se espalha e
+  // conteúdo apertado enche cada dia até o teto — sem nunca passar dele.
+  // Os requisitos do plano (redações e leituras dos livros) são colocados
+  // ANTES de tudo, espalhados pela rota. Se disputassem lugar com o conteúdo
+  // acadêmico na alocação, poderiam sobrar de fora por falta de espaço num
+  // dia — depois de já terem sido garantidos na seleção, o que seria perdê-los
+  // no último passo.
+  const espacados = Math.max(1, Math.floor(indicesDeEstudo.length / Math.max(1, obrigatorios.length)));
+  obrigatorios.forEach((c, k) => {
+    const preferido = Math.min(k * espacados, indicesDeEstudo.length - 1);
+    const ordemDeBusca = [
+      ...indicesDeEstudo.slice(preferido),
+      ...indicesDeEstudo.slice(0, preferido)
+    ];
+    const destino = ordemDeBusca.find((i) => {
+      const bucket = conteudoPorIndice.get(i)!;
+      return bucket.minutos + c.minutos <= (capacidade.get(i) ?? 0);
     });
-  }
+    if (destino === undefined) return; // janela pequena demais: o validador acusa
+    const bucket = conteudoPorIndice.get(destino)!;
+    bucket.itens.push(c);
+    bucket.minutos += c.minutos;
+  });
+
+  const naoAlocados: ItemCandidato[] = [];
+  let restante = selecionados.reduce((s, c) => s + c.minutos, 0);
+  let fila = [...selecionados];
+
+  indicesDeEstudo.forEach((indice, posicao) => {
+    const bucket = conteudoPorIndice.get(indice)!;
+    const teto = capacidade.get(indice) ?? 0;
+    const diasRestantes = indicesDeEstudo.length - posicao;
+    // O ritmo soma o que o obrigatório já ocupou neste dia: sem isso um dia
+    // com redação receberia conteúdo acadêmico como se estivesse vazio.
+    const ritmo = Math.min(teto, bucket.minutos + Math.ceil(restante / Math.max(1, diasRestantes)));
+
+    for (;;) {
+      const proximo = fila[0];
+      if (!proximo) break;
+      // Um item mais longo que o ritmo ainda entra, desde que caiba no teto do
+      // dia — do contrário ele nunca seria alocado em lugar nenhum.
+      const limite = Math.min(teto, Math.max(ritmo, proximo.minutos));
+      if (bucket.minutos + proximo.minutos > limite) break;
+      bucket.itens.push(proximo);
+      bucket.minutos += proximo.minutos;
+      restante -= proximo.minutos;
+      fila = fila.slice(1);
+    }
+  });
+
+  naoAlocados.push(...fila);
+  indicesDeEstudo.forEach((i) => {
+    const bucket = conteudoPorIndice.get(i)!;
+    bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
+  });
+
+  // ---- Nenhum dia de estudo vazio ----------------------------------------
+  // A reserva existe para o algoritmo, não para o aluno: se um dia ficou sem
+  // nada, ele recebe o melhor conteúdo que ainda cabe. Só quando não há mais
+  // conteúdo nenhum é que o dia vira revisão — com item de verdade, nunca em
+  // branco.
+  const sobrando = [...naoAlocados, ...descartados];
+
+  // O dia de correção depois do simulado também recebe reforço: sozinho, o
+  // bloco de revisão ocupava 30 dos 180 minutos do dia e o resto se perdia.
+  // Ele continua sendo um dia de revisão — só que com material em cima.
+  const reforcoDaRevisao = new Map<number, { itens: ItemCandidato[]; minutos: number }>();
+  datas.forEach((data, i) => {
+    if (reservados.get(i) !== "revisao") return;
+    const teto = Math.max(0, capacidadeDaData(data, p) - minutosDoItem(itemRevisao()));
+    const alvo = Math.floor(teto * (1 - fracaoDeReserva(indicesDeEstudo.length)));
+    const bucket = { itens: [] as ItemCandidato[], minutos: 0 };
+    for (;;) {
+      const cabe = sobrando.findIndex((c) => bucket.minutos + c.minutos <= alvo);
+      if (cabe < 0) break;
+      const [escolhido] = sobrando.splice(cabe, 1);
+      bucket.itens.push(escolhido);
+      bucket.minutos += escolhido.minutos;
+    }
+    bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
+    reforcoDaRevisao.set(i, bucket);
+  });
+
+  indicesDeEstudo.forEach((i) => {
+    const bucket = conteudoPorIndice.get(i)!;
+    if (bucket.itens.length > 0) return;
+    // Enche até o limite do planejamento (o mesmo desconto de reserva do
+    // resto da rota), não até o teto: o dia deixa de estar vazio sem consumir
+    // a folga que o Copiloto vai precisar.
+    const teto = Math.max(1, Math.floor((capacidade.get(i) ?? 0) * (1 - fracaoDeReserva(indicesDeEstudo.length))));
+    for (;;) {
+      const cabe = sobrando.findIndex((c) => bucket.minutos + c.minutos <= teto);
+      if (cabe < 0) break;
+      const [escolhido] = sobrando.splice(cabe, 1);
+      bucket.itens.push(escolhido);
+      bucket.minutos += escolhido.minutos;
+    }
+    bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
+    if (bucket.itens.length === 0) reservados.set(i, "revisao");
+  });
 
   // Monta os dias da rota. A numeração é sempre 1..N, na ordem das datas.
   const dias: DiaDaRota[] = datas.map((data, i) => {
@@ -316,14 +491,15 @@ export function gerarRota(
 
     if (reservado === "revisao") {
       const item = itemRevisao();
+      const reforco = reforcoDaRevisao.get(i) ?? { itens: [] as ItemCandidato[], minutos: 0 };
       return {
         routeDay,
         scheduledDate: data,
-        templateDays: [],
+        templateDays: [...new Set(reforco.itens.map((c) => c.templateDay))].sort((a, b) => a - b),
         tipo: "revisao",
         titulo: "Revisão e correção",
-        itens: [item],
-        minutos: minutosDoItem(item)
+        itens: [item, ...reforco.itens.map((c) => c.item)],
+        minutos: minutosDoItem(item) + reforco.minutos
       };
     }
 
@@ -341,18 +517,18 @@ export function gerarRota(
       };
     }
 
-    const conteudo = conteudoPorIndice.get(i) ?? { dias: [], minutos: 0 };
-    const itens = conteudo.dias.flatMap((d) => d.itens ?? []);
+    const conteudo = conteudoPorIndice.get(i) ?? { itens: [] as ItemCandidato[], minutos: 0 };
+    const origem = [...new Set(conteudo.itens.map((c) => c.templateDay))].sort((a, b) => a - b);
     return {
       routeDay,
       scheduledDate: data,
       // Referência interna da origem. NÃO é o número mostrado ao aluno.
-      templateDays: conteudo.dias.map((d) => d.dia_numero),
+      templateDays: origem,
       tipo: "estudo",
       // Título próprio da rota. Antes vinha concatenado do template
       // ("Dia 38 + Dia 39 + Dia 40"), expondo a compressão interna.
-      titulo: tituloDoDia(conteudo.dias),
-      itens,
+      titulo: tituloDoDia(conteudo.itens.map((c) => c.item)),
+      itens: conteudo.itens.map((c) => c.item),
       minutos: conteudo.minutos
     };
   });
@@ -384,17 +560,14 @@ export function diasDeEstudoDaRota(dias: DiaDaRota[]): DiaDaRota[] {
  * alimentou; com mais de um, descreve o dia pelo próprio conteúdo em vez de
  * emendar os títulos de origem.
  */
-function tituloDoDia(origem: TrilhaDia[]): string {
-  if (origem.length === 0) return "Dia de estudo";
-  if (origem.length === 1) return origem[0].titulo || "Dia de estudo";
+function tituloDoDia(itens: TrilhaItem[]): string {
+  if (itens.length === 0) return "Dia de estudo";
 
   const materias: string[] = [];
-  origem.forEach((d) =>
-    (d.itens ?? []).forEach((it) => {
-      const m = (it as { materia?: string | null }).materia;
-      if (m && !materias.includes(m)) materias.push(m);
-    })
-  );
+  itens.forEach((it) => {
+    const m = (it as { materia?: string | null }).materia;
+    if (m && !materias.includes(m)) materias.push(m);
+  });
 
   if (materias.length === 0) return "Dia de estudo";
   if (materias.length <= 3) return materias.join(" · ");

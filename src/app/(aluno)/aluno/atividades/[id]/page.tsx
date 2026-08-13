@@ -19,7 +19,12 @@ export default async function AlunoAtividadePage({ params }: { params: { id: str
   // submeterAtividade), mesmo padrão de segurança usado em simulados.
   const { data: itens } = await supabase
     .from("atividade_questoes")
-    .select("questao_id, ordem, questoes(id, enunciado, alternativas, imagens)")
+    // A origem da questão viaja junto: sem prova, ano, número e código o aluno
+    // não consegue identificar QUAL questão tem problema quando vai reportar.
+    // `resposta_correta` continua de fora — a correção só acontece no servidor.
+    .select(
+      "questao_id, ordem, questoes(id, enunciado, alternativas, imagens, materia, prova_nome, modalidade, ano, semestre, numero_questao, fonte, anulada)"
+    )
     .eq("atividade_id", params.id)
     .order("ordem");
 
@@ -29,7 +34,15 @@ export default async function AlunoAtividadePage({ params }: { params: { id: str
       id: i.questoes.id,
       enunciado: i.questoes.enunciado,
       alternativas: i.questoes.alternativas,
-      imagens: i.questoes.imagens ?? []
+      imagens: i.questoes.imagens ?? [],
+      materia: i.questoes.materia ?? null,
+      prova_nome: i.questoes.prova_nome ?? null,
+      modalidade: i.questoes.modalidade ?? null,
+      ano: i.questoes.ano ?? null,
+      semestre: i.questoes.semestre ?? null,
+      numero_questao: i.questoes.numero_questao ?? null,
+      fonte: i.questoes.fonte ?? null,
+      anulada: i.questoes.anulada ?? false
     }));
 
   // Mesma moldura da listagem: quem entra numa atividade continua na aba

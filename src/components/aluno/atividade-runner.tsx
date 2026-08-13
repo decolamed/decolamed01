@@ -4,12 +4,25 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { corrigirQuestaoAtividade, submeterAtividade, type ResultadoAtividade } from "@/app/(aluno)/aluno/atividades/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
+import { CartaoQuestao } from "./cartao-questao";
+import { ResultadoDaResposta } from "./identificacao-questao";
+import { codigoDaQuestao, provaDaQuestao } from "@/lib/site/questao-identidade";
 
 interface QuestaoAtividade {
   id: string;
   enunciado: string;
   alternativas: { id: string; texto: string }[];
   imagens: { url: string; legenda: string | null; ordem: number }[];
+  // Origem da questão. Sem isto o aluno não tem como dizer QUAL questão tem
+  // problema: "questão 3 da atividade" não localiza nada no banco.
+  materia?: string | null;
+  prova_nome?: string | null;
+  modalidade?: string | null;
+  ano?: number | null;
+  semestre?: number | null;
+  numero_questao?: number | null;
+  fonte?: string | null;
+  anulada?: boolean | null;
 }
 
 export function AtividadeRunner({
@@ -107,7 +120,14 @@ export function AtividadeRunner({
         <div className="mt-6 space-y-4">
           {resultado.gabarito.map((item, i) => (
             <div key={item.questaoId} className="rounded-2xl bg-white p-5 shadow">
-              <p className="text-xs font-semibold text-navy-dark/50">Questão {i + 1}</p>
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <p className="text-xs font-semibold text-navy-dark/50">
+                  {provaDaQuestao(questoes[i] ?? { id: item.questaoId }) || `Questão ${i + 1}`}
+                </p>
+                <span className="ml-auto select-all font-mono text-[10px] font-bold text-navy-dark/40">
+                  {codigoDaQuestao(item.questaoId)}
+                </span>
+              </div>
               <p className="mt-1 whitespace-pre-line font-display font-semibold text-navy-dark">{item.enunciado}</p>
               <ImagensQuestao imagens={item.imagens} />
               <div className="mt-3 space-y-1.5">
@@ -157,45 +177,27 @@ export function AtividadeRunner({
         ))}
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-        <p className="whitespace-pre-line font-display text-lg font-semibold text-navy-dark">{questao.enunciado}</p>
-        <ImagensQuestao imagens={questao.imagens} />
-
-        <div className="mt-5 space-y-2">
-          {questao.alternativas.map((alt) => {
-            const escolhida = respostas[questao.id] === alt.id;
-            const mostrarCorreta = feedback && alt.id === feedback.respostaCorreta;
-            const mostrarErrada = feedback && escolhida && !feedback.correta;
-            return (
-              <button
-                key={alt.id}
-                onClick={() => responder(alt.id)}
-                disabled={!!feedback || corrigindo}
-                className={`flex w-full items-start gap-3 rounded-xl border-2 p-3 text-left text-sm transition ${
-                  mostrarCorreta
-                    ? "border-green-500 bg-green-50"
-                    : mostrarErrada
-                    ? "border-red-400 bg-red-50"
-                    : escolhida
-                    ? "border-orange bg-orange/5"
-                    : "border-navy/15 hover:border-orange/50"
-                } disabled:cursor-default`}
-              >
-                <span className="font-display font-bold text-navy-dark">{alt.id.toUpperCase()})</span>
-                <span className="text-navy-dark">{alt.texto}</span>
-              </button>
-            );
-          })}
-        </div>
-
+      <CartaoQuestao
+        questao={questao}
+        posicao={indice + 1}
+        total={questoes.length}
+        rotuloProgresso={`${indice + 1} de ${questoes.length} nesta atividade`}
+        direita={<span>{respondidas} respondida(s)</span>}
+        escolhida={respostas[questao.id] ?? null}
+        respostaCorreta={feedback?.respostaCorreta ?? null}
+        correta={feedback?.correta}
+        onEscolher={responder}
+        desabilitado={!!feedback || corrigindo}
+      >
         {feedback && (
-          <div className={`mt-4 rounded-xl p-3 text-sm ${feedback.correta ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
-            {feedback.correta ? "Você acertou!" : "Você errou."}
-            {feedback.explicacao && <p className="mt-1 text-navy-dark/70">{feedback.explicacao}</p>}
-          </div>
+          <ResultadoDaResposta
+            correta={feedback.correta}
+            respostaCorreta={feedback.respostaCorreta}
+            explicacao={feedback.explicacao}
+          />
         )}
 
-        <div className="mt-6 flex items-center justify-between">
+        <div className="mt-6 flex items-center justify-between gap-3">
           <button
             onClick={() => setIndice((i) => Math.max(0, i - 1))}
             disabled={indice === 0}
@@ -220,7 +222,7 @@ export function AtividadeRunner({
             </button>
           )}
         </div>
-      </div>
+      </CartaoQuestao>
     </div>
   );
 }

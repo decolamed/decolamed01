@@ -19,6 +19,7 @@ import { tituloDaProva } from "@/lib/trilha/rota";
 import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import { escreverSentimentos } from "@/lib/site/sentimentos";
+import { codigoDaQuestao } from "@/lib/site/questao-identidade";
 import { mesmaMateria, materiaCanonica, chaveMateria } from "@/lib/site/materia-canonica";
 import styles from "./decola-app.module.css";
 import type {
@@ -651,7 +652,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   mapQuestao(q: Questao) {
     return {
       id: q.id,
-      code: "Q" + q.id.slice(0, 6).toUpperCase(),
+      code: codigoDaQuestao(q.id),
       materia: q.materia,
       tema: q.assunto || q.materia,
       fonte: q.fonte,
@@ -806,7 +807,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const itens: DecolaAppDados["simuladoQuestoes"][string] = (simId ? this.props.dados.simuladoQuestoes[simId] : undefined) || [];
     return itens.map((q, i: number) => ({
       id: q.id,
-      code: "Q" + q.id.slice(0, 6).toUpperCase(),
+      code: codigoDaQuestao(q.id),
       n: i + 1,
       materia: q.materia,
       tema: q.assunto || q.materia,
@@ -2524,8 +2525,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
    * Fonte única: o dia atual da rota, o mesmo número que o cronograma mostra.
    * Sem rota (Plano Decolando), fica só "Missão do Dia".
    */
+  /**
+   * O dia da rota que o aluno tem de fato pela frente: o PRIMEIRO ainda não
+   * concluído, não o que o calendário aponta.
+   *
+   * Os dois divergem exatamente quando importa. Quem deixou o Dia 3 pela
+   * metade e chegou no dia 5 do calendário precisa ver "Missão 3" — mandá-lo
+   * para a missão de hoje é fingir que o atraso não existe. E quem terminou
+   * tudo hoje já enxerga a próxima.
+   */
+  diaAtualDaRota(): DiaDoCronograma | null {
+    const d = this.props.dados;
+    const emOrdem = [...(d.trilhaAnteriores || []), ...(d.trilhaHoje ? [d.trilhaHoje] : []), ...(d.trilhaProximos || [])];
+    const pendente = emOrdem.find((dia) => {
+      const itens = dia.itens || [];
+      if (itens.length === 0) return false;
+      return !itens.every((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item)));
+    });
+    return pendente ?? d.trilhaHoje ?? emOrdem[emOrdem.length - 1] ?? null;
+  }
+
   rotuloMissaoDoDia(): string {
-    const dia = this.props.dados.diaTrilhaHoje;
+    const dia = this.diaAtualDaRota()?.dia_numero ?? this.props.dados.diaTrilhaHoje;
     const total = this.props.dados.totalDiasCronograma;
     if (!dia) return "Missão do Dia";
     return "Missão do Dia · Dia " + dia + (total ? " de " + total : "");

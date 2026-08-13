@@ -46,6 +46,44 @@ export async function registrarResposta(questaoId: string, alternativaEscolhida:
     ok: true as const,
     correta,
     respostaCorreta: questao.resposta_correta as string,
-    explicacao: questao.explicacao as string | null
+    explicacao: questao.explicacao as string | null,
+    materia: questao.materia as string,
+    assunto: (questao.assunto as string | null) ?? null
   };
+}
+
+/**
+ * Houve mesmo uma revisão criada para este erro?
+ *
+ * O Copiloto roda em segundo plano (a resposta do aluno não pode esperar o
+ * motor inteiro), então a tela não tem como saber na hora se ele agiu. Em vez
+ * de supor, ela pergunta: existe recomendação PENDENTE para esta matéria e
+ * este assunto criada depois da resposta?
+ *
+ * Só o que está gravado conta. Uma recomendação antiga não serve — seria
+ * anunciar como novidade algo que já existia — e, no pior caso, a resposta é
+ * "não" e a tela simplesmente não mostra o aviso. Prometer uma revisão que o
+ * aluno não vai encontrar é o único erro que não pode acontecer aqui.
+ */
+export async function revisaoCriadaApos(
+  materia: string,
+  assunto: string | null,
+  desdeISO: string
+): Promise<boolean> {
+  const profile = await requireAcessoAluno();
+  const supabase = createClient();
+
+  let consulta = supabase
+    .from("copiloto_recomendacoes")
+    .select("id", { count: "exact", head: true })
+    .eq("aluno_id", profile.id)
+    .eq("status", "pendente")
+    .eq("materia", materia)
+    .gte("gerado_em", desdeISO);
+
+  consulta = assunto ? consulta.eq("assunto", assunto) : consulta.is("assunto", null);
+
+  const { count, error } = await consulta;
+  if (error) return false;
+  return (count ?? 0) > 0;
 }

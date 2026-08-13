@@ -511,6 +511,8 @@ export interface EstudosBotao {
   link: string;
   ordem: number;
   ativo: boolean;
+  /** Curso (plano) para o qual o botão aparece. null = todos os cursos. */
+  plano_id: string | null;
   criado_por: string | null;
   created_at: string;
   updated_at: string;

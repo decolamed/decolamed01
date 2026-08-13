@@ -17,3 +17,17 @@ export async function alunoTemCopiloto(alunoId: string): Promise<boolean> {
     .maybeSingle();
   return Boolean((data as any)?.planos?.tem_copiloto);
 }
+
+/**
+ * O curso (plano) do aluno. Mesma chave que decide o acesso ao Copiloto —
+ * `profiles.plano_id` —, para a plataforma não passar a ter duas maneiras
+ * diferentes de responder "de que curso é este aluno".
+ *
+ * Já houve o defeito de decidir plano por `nome.includes("guiado")`: quebra
+ * no dia em que o admin renomeia o plano, e em silêncio.
+ */
+export async function planoDoAluno(alunoId: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase.from("profiles").select("plano_id").eq("id", alunoId).maybeSingle();
+  return ((data as { plano_id?: string | null } | null)?.plano_id) ?? null;
+}
