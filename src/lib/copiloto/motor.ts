@@ -92,11 +92,6 @@ interface DadosAluno {
   ctx: ContextoAluno;
   respostas: Array<{ correta: boolean; materia: string; assunto: string | null; createdAt: string }>;
   revisoes: Array<{ lembrou: boolean; materia: string; assunto: string | null; createdAt: string }>;
-  tentativas: Array<{
-    nota: number; notaFacape: number | null; simuladoId: string; titulo: string;
-    createdAt: string;
-    desempenhoPorMateria: Record<string, { precisao: number; peso: number; acertos: number; total: number }>;
-  }>;
   materias: Map<string, MateriaMeta>;
   briefing: {
     dataProva: string | null;
@@ -190,7 +185,11 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   // datava as missões geradas à noite no dia seguinte.
   const hojeStr = hojeISO();
 
-  const [respostasR, revisoesR, tentativasR, pesosR, briefingR, checkinsR, progressoR] = await Promise.all([
+  // `simulado_tentativas` não é mais lido aqui: o desempenho por questão vem
+  // todo de `respostas_aluno`, inclusive o das questões de simulado. Manter a
+  // consulta seria uma ida ao banco por execução para alimentar uma soma que
+  // hoje duplicaria o que já está contado.
+  const [respostasR, revisoesR, pesosR, briefingR, checkinsR, progressoR] = await Promise.all([
     supabase.from("respostas_aluno")
       .select("correta, created_at, questoes(materia, assunto)")
       .eq("aluno_id", ctx.alunoId)
@@ -199,10 +198,6 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
       .select("lembrou, created_at, flashcards(materia, assunto)")
       .eq("aluno_id", ctx.alunoId)
       .order("created_at", { ascending: false }).limit(150),
-    supabase.from("simulado_tentativas")
-      .select("nota, nota_facape, simulado_id, created_at, desempenho_por_materia, simulados(titulo)")
-      .eq("aluno_id", ctx.alunoId)
-      .order("created_at", { ascending: false }).limit(10),
     supabase.from("materias_peso").select("materia, peso, qtd_questoes").gt("qtd_questoes", 0),
     supabase.from("aluno_briefing")
       .select("data_prova, sentimentos, dias_estuda, horas_por_dia_semana")
@@ -242,12 +237,6 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     lembrou: r.lembrou, materia: r.flashcards?.materia ?? "",
     assunto: r.flashcards?.assunto ?? null, createdAt: r.created_at,
   })).filter((r) => r.materia);
-
-  const tentativas = (tentativasR.data ?? []).map((t: any) => ({
-    nota: t.nota, notaFacape: t.nota_facape, simuladoId: t.simulado_id,
-    titulo: t.simulados?.titulo ?? "Simulado", createdAt: t.created_at,
-    desempenhoPorMateria: t.desempenho_por_materia ?? {},
-  }));
 
   const b = briefingR.data;
   const briefing = b ? {
@@ -314,7 +303,7 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
   }));
 
   return {
-    alunoId: ctx.alunoId, ctx, respostas, revisoes, tentativas,
+    alunoId: ctx.alunoId, ctx, respostas, revisoes,
     materias, briefing, modo, diasRestantes, diasLivres, diasOcupados,
     totalMissoesPadrao, missoesAgendadas, checkinsNaoAplicados,
     inventario: await carregarInventario(),
@@ -502,17 +491,18 @@ function desempenhoNaMateria(dados: DadosAluno, materia: string): { a: number; e
     .filter((r) => mesmaMateria(r.materia, materia))
     .forEach((r) => { t++; if (r.correta) a++; else e++; });
 
-  dados.tentativas.forEach((tent) => {
-    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
-      if (!mesmaMateria(mat, materia)) return;
-      const total = Number((d as { total?: number }).total ?? 0);
-      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
-      if (!Number.isFinite(total) || total <= 0) return;
-      t += total;
-      a += acertos;
-      e += Math.max(0, total - acertos);
-    });
-  });
+  // O agregado de `simulado_tentativas` NÃO entra aqui.
+  //
+  // Ele entrava, e fazia falta, enquanto o simulado não gravava
+  // `respostas_aluno`. Agora grava (ver simulados/[id]/actions.ts): cada
+  // questão do simulado já está contada linha a linha acima, e somar o
+  // agregado de novo contaria o mesmo acerto e o mesmo erro duas vezes —
+  // inflando o GEN da matéria e puxando o aluno para o modo cirúrgico antes
+  // da hora.
+  //
+  // A divisão passa a ser: `respostas_aluno` responde "como o aluno vai nas
+  // questões", `simulado_tentativas` responde "como o aluno vai nos
+  // simulados" (nota, média, quantidade). Uma origem por pergunta.
 
   return { a, e, t };
 }
@@ -694,30 +684,10 @@ function genMateria(materia: string, dados: DadosAluno): number {
   const m = dados.materias.get(materia);
   if (!m) return 0;
 
-  let a = 0, e = 0, t = 0;
-  dados.respostas.filter((r) => mesmaMateria(r.materia, materia)).forEach((r) => {
-    t++; if (r.correta) a++; else e++;
-  });
-
-  // O desempenho nos SIMULADOS entra na mesma conta.
-  //
-  // `dados.tentativas` era carregado e nunca usado: um aluno que zerasse
-  // Biologia num simulado, mas não tivesse respondido questões avulsas dessa
-  // matéria, chegava aqui com a precisão neutra de 50% — o erro mais
-  // significativo que ele podia cometer não influenciava a adaptação em nada.
-  // O simulado é a medida mais próxima da prova real; ignorá-lo era o oposto
-  // de adaptar ao desempenho.
-  dados.tentativas.forEach((tent) => {
-    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
-      if (!mesmaMateria(mat, materia)) return;
-      const total = Number((d as { total?: number }).total ?? 0);
-      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
-      if (!Number.isFinite(total) || total <= 0) return;
-      t += total;
-      a += acertos;
-      e += Math.max(0, total - acertos);
-    });
-  });
+  // Mesma leitura usada para escolher o formato do reforço — o desempenho da
+  // matéria é uma conta só. O que o aluno respondeu num simulado entra por
+  // `respostas_aluno`, como qualquer outra questão.
+  const { a, e, t } = desempenhoNaMateria(dados, materia);
 
   const precisao = t > 0 ? (a / t) * 100 : 50;
   const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
@@ -1670,16 +1640,10 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     c.e += Math.max(0, total - acertos);
     porMat.set(materia, c);
   };
+  // Só `respostas_aluno`: as questões do simulado já estão aqui desde que
+  // `submeterSimulado` passou a gravá-las. Somar o agregado da tentativa por
+  // cima contaria cada uma duas vezes.
   dados.respostas.forEach((r) => somarMateria(r.materia, r.correta ? 1 : 0, 1));
-  dados.tentativas.forEach((tent) => {
-    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
-      const total = Number((d as { total?: number }).total ?? 0);
-      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
-      // Casa com a chave canônica para "Português" antigo cair em "Linguagens".
-      const alvo = [...porMat.keys()].find((k) => mesmaMateria(k, mat)) ?? mat;
-      somarMateria(alvo, acertos, total);
-    });
-  });
   for (const [materia, d] of porMat) {
     if (d.t < 10 || d.e < cfg.errosMinGatilho) continue;
     const m = dados.materias.get(materia); if (!m) continue;

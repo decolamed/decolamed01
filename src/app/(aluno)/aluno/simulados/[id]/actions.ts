@@ -224,6 +224,36 @@ export async function submeterSimulado(
     throw new Error("Não foi possível registrar o resultado do seu simulado. Tente enviar de novo.");
   }
 
+  // Cada questão respondida também vira uma linha em `respostas_aluno` —
+  // exatamente como no Banco de Questões e nas Atividades.
+  //
+  // Sem isto, questão respondida em simulado NÃO CONTAVA COMO FEITA em lugar
+  // nenhum. `simulado_tentativas` guarda os totais por matéria, e é só isso;
+  // a questão em si continuava "inédita" para o resto da plataforma:
+  //
+  //   • voltava no Banco de Questões e na atividade de 5 questões como se o
+  //     aluno nunca a tivesse visto (a continuidade lê `respostas_aluno`);
+  //   • não entrava no desempenho POR ASSUNTO — o agregado da tentativa só
+  //     tem matéria, então o Raio-X não sabia qual conteúdo o aluno errou;
+  //   • o Copiloto não conseguia mirar o assunto errado num simulado, só a
+  //     matéria inteira.
+  //
+  // Só as respondidas: questão deixada em branco não é resposta.
+  const linhasResposta = gabarito
+    .filter((g) => g.escolhida !== null)
+    .map((g) => ({
+      aluno_id: profile.id,
+      questao_id: g.questaoId,
+      alternativa_escolhida: g.escolhida as string,
+      correta: g.correta
+    }));
+
+  if (linhasResposta.length > 0) {
+    const { error: erroRespostas } = await supabase.from("respostas_aluno").insert(linhasResposta);
+    // Não derruba o resultado: a nota do simulado já está gravada e correta.
+    if (erroRespostas) console.error("Simulado: falha ao registrar as respostas:", erroRespostas.message);
+  }
+
   rodarCopiloto({ alunoId: profile.id, ultimaAcao: "simulado" }).catch((e) =>
     console.error("[copiloto] falha no ponto de entrada de simulado:", e)
   );
