@@ -10,6 +10,7 @@ import { getGeminiApiKey, salvarGeminiApiKey, removerGeminiApiKey, gerarTextoGem
 import { getYoutubeApiKey, salvarYoutubeApiKey, removerYoutubeApiKey } from "@/lib/youtube/client";
 import { CAMPOS_CONFIG_COPILOTO } from "@/lib/copiloto/configuracao";
 import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
+import { CHAVES_DOS_RESUMOS, TOTAL_DE_LIVROS, chaveDoResumo } from "@/lib/site/resumos-livros";
 
 const CAMPOS = [
   { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
@@ -48,6 +49,43 @@ async function salvarConfigCopiloto(formData: FormData) {
     redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os parâmetros do Copiloto."));
   }
   redirect("/admin/configuracoes?sucesso=" + encodeURIComponent("Parâmetros do Copiloto salvos — valem na próxima rodada."));
+}
+
+// Os quatro links dos resumos de livro. Ficam numa gravação própria para o
+// admin poder salvar só esta seção sem passar pelo formulário inteiro — e
+// para a mensagem de sucesso dizer exatamente o que foi salvo.
+async function salvarResumosDosLivros(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const resultados = await Promise.all(
+    CHAVES_DOS_RESUMOS.map((chave) => {
+      const bruto = String(formData.get(chave) ?? "").trim();
+      // Sem protocolo, o link vira caminho relativo no `<a href>` da tela de
+      // cronograma (o app do aluno normaliza sozinho, a página não). O campo
+      // é type="url" e o navegador já cobra o https://, mas isto protege quem
+      // grava por outro caminho.
+      const url = bruto && !/^https?:\/\//i.test(bruto) ? `https://${bruto}` : bruto;
+      return supabase.from("configuracoes").upsert({ chave, valor: valorConfig(url) }, { onConflict: "chave" });
+    })
+  );
+
+  // Todo lugar que mostra cronograma passa por `resolverCronograma`, que lê
+  // estas chaves. Revalidar as telas do aluno é o que faz a troca de link
+  // aparecer sem o aluno precisar sair e voltar.
+  revalidatePath("/admin/configuracoes");
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  revalidatePath("/admin/trilha");
+  revalidatePath("/preview-aluno");
+  if (resultados.some((r) => r.error)) {
+    redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os links dos resumos."));
+  }
+  redirect(
+    "/admin/configuracoes?sucesso=" +
+      encodeURIComponent("Links dos resumos salvos — já valem em todos os cronogramas.")
+  );
 }
 
 async function salvarConfiguracoes(formData: FormData) {
@@ -243,6 +281,64 @@ export default async function AdminConfiguracoesPage({
         <SubmitButton
           pendingText="Salvando..."
           className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        >
+          Salvar alterações
+        </SubmitButton>
+      </form>
+
+      {/* ----------------------------------------------------------------
+          Resumos dos livros
+
+          Fonte oficial dos quatro endereços. Todo cronograma passa por
+          `resolverCronograma`, que lê estas chaves — então trocar o link
+          aqui muda o destino em todos os lugares que mostram o resumo, em
+          qualquer plano e em qualquer variação de cronograma.
+          ---------------------------------------------------------------- */}
+      <form action={salvarResumosDosLivros} className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Resumos dos livros</h2>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Endereço de cada um dos quatro resumos obrigatórios. É a fonte única: o botão do resumo abre este link em
+          todos os cronogramas — personalizado pelo Copiloto, padrão, Decolando ou Voo Guiado. Trocar aqui vale
+          imediatamente para todos os alunos.
+        </p>
+        <div className="mt-4 space-y-3">
+          {Array.from({ length: TOTAL_DE_LIVROS }, (_, i) => i + 1).map((numero) => {
+            const chave = chaveDoResumo(numero);
+            const atual = valores.get(chave) ?? "";
+            return (
+              <div key={chave}>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor={chave}>
+                  Resumo do Livro {numero} → URL
+                </label>
+                <input
+                  id={chave}
+                  name={chave}
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://..."
+                  defaultValue={atual}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+                {atual !== "" && (
+                  <a
+                    href={atual}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-xs font-bold text-navy hover:underline"
+                  >
+                    Testar link ↗
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs text-navy-dark/50">
+          Campo em branco deixa o resumo sem botão — melhor do que um botão que abre uma página vazia.
+        </p>
+        <SubmitButton
+          pendingText="Salvando..."
+          className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
         >
           Salvar alterações
         </SubmitButton>
