@@ -126,6 +126,18 @@ export default async function AdminDetalhesUsuarioPage({
   const missoes = ((missoesData as AlunoMissao[]) ?? []).sort((m1, m2) => m1.data.localeCompare(m2.data));
   const adicionarMissaoComId = adicionarMissaoIndividual.bind(null, params.id);
 
+  // Materiais que a missão manual pode abrir. Vêm da MESMA biblioteca que o
+  // app do aluno já lê (`conteudos_biblioteca`) — anexar aqui é apontar para
+  // um registro que existe, não cadastrar um material paralelo.
+  const { data: materiaisData } = await supabase
+    .from("conteudos_biblioteca")
+    .select("id, titulo, tipo, materia")
+    .eq("ativo", true)
+    .not("url", "is", null)
+    .order("materia")
+    .order("titulo");
+  const materiais = (materiaisData ?? []) as { id: string; titulo: string; tipo: string; materia: string | null }[];
+
   const { data: matriculasData } = await supabase
     .from("matriculas")
     .select("*, planos(nome)")
@@ -362,19 +374,43 @@ export default async function AdminDetalhesUsuarioPage({
             <li className="p-6 text-center text-sm text-navy-dark/50">Nenhuma missão individual — este aluno segue o cronograma geral.</li>
           )}
         </ul>
-        <form action={adicionarMissaoComId} className="grid gap-2 border-t p-4 sm:grid-cols-5">
-          <input type="date" name="data" required className="rounded-lg border p-2 text-sm sm:col-span-1" />
-          <input name="titulo" required placeholder="Título da missão" className="rounded-lg border p-2 text-sm sm:col-span-2" />
-          <select name="tipo" defaultValue="livre" className="rounded-lg border p-2 text-sm">
+        <form action={adicionarMissaoComId} className="grid gap-2 border-t p-4 sm:grid-cols-6">
+          <input type="date" name="data" required className="rounded-lg border p-2 text-sm sm:col-span-2" />
+          <input name="titulo" required placeholder="Título da missão" className="rounded-lg border p-2 text-sm sm:col-span-4" />
+          <select name="tipo" defaultValue="livre" className="rounded-lg border p-2 text-sm sm:col-span-2">
             {Object.entries(TIPO_MISSAO_LABEL).map(([valor, label]) => (
               <option key={valor} value={valor}>{label}</option>
             ))}
           </select>
-          <input name="materia" placeholder="Matéria (opcional)" className="rounded-lg border p-2 text-sm" />
-          <input type="number" name="duracao" defaultValue={30} placeholder="Minutos" className="rounded-lg border p-2 text-sm" />
-          <SubmitButton pendingText="Adicionando..." className="rounded-lg bg-orange px-4 py-2 text-sm font-semibold text-white hover:bg-orange-dark sm:col-span-5">
+          <input name="materia" placeholder="Matéria (opcional)" className="rounded-lg border p-2 text-sm sm:col-span-2" />
+          <input name="assunto" placeholder="Conteúdo/assunto (opcional)" className="rounded-lg border p-2 text-sm sm:col-span-2" />
+
+          {/* O que a missão ABRE. Sem isto a missão manual nascia sem
+              `ref_id` e o clique do aluno não levava a lugar nenhum. */}
+          <select name="conteudo_id" defaultValue="" className="rounded-lg border p-2 text-sm sm:col-span-3">
+            <option value="">Material da biblioteca (opcional)</option>
+            {materiais.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.materia ? `${m.materia} · ` : ""}{m.titulo} ({m.tipo})
+              </option>
+            ))}
+          </select>
+          <input
+            name="url"
+            type="url"
+            placeholder="…ou cole um link novo (https://)"
+            className="rounded-lg border p-2 text-sm sm:col-span-3"
+          />
+
+          <input type="number" name="duracao" defaultValue={30} min={5} placeholder="Minutos" className="rounded-lg border p-2 text-sm sm:col-span-2" />
+          <SubmitButton pendingText="Adicionando..." className="rounded-lg bg-orange px-4 py-2 text-sm font-semibold text-white hover:bg-orange-dark sm:col-span-4">
             + Adicionar missão individual
           </SubmitButton>
+          <p className="text-[11px] font-semibold text-navy-dark/50 sm:col-span-6">
+            Missões de <strong>Questões</strong> e <strong>Flashcards</strong> abrem o acervo da matéria escolhida. Para
+            abrir um material específico (aula, PDF, link), escolha o tipo <strong>Aula/Material</strong> ou{" "}
+            <strong>Livre</strong> e anexe o conteúdo acima — um link novo é salvo na biblioteca e fica reutilizável.
+          </p>
         </form>
       </div>
 

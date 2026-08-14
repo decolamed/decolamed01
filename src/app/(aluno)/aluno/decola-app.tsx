@@ -1087,7 +1087,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       if (conteudo) this.abrirAula(conteudo.id, conteudo.titulo, conteudo.url || "", "mapa");
       else if (m.materia) this.avisar(`Ainda não há aulas de ${m.materia} publicadas.`);
       else this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "mapa" });
-    } else this.nav("estudos");
+    } else {
+      // Missão "livre" com material anexado pelo administrador. O painel
+      // passou a permitir escolher um conteúdo da biblioteca (ou colar um
+      // link, que vira um conteúdo) ao criar a missão manual — sem este
+      // caminho, o `ref_id` gravado lá não abriria nada e o clique cairia na
+      // aba Estudos, como se a missão não tivesse ação.
+      const anexado = m.ref_id
+        ? this.props.dados.conteudos.find((c) => c.id === m.ref_id && c.url)
+        : null;
+      if (anexado) this.abrirAula(anexado.id, anexado.titulo, anexado.url || "", "mapa");
+      else this.nav("estudos");
+    }
   }
   toggleMissao(id: string) {
     const atual = this.state.missoesLocal.find((m: AlunoMissao) => m.id === id);
