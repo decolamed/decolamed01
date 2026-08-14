@@ -78,15 +78,15 @@ export default async function SessaoDeQuestoesPage({ params }: { params: { chave
       descricao={`Sessão de ${sessao.quantidadePedida} ${
         sessao.quantidadePedida === 1 ? "questão" : "questões"
       } de ${sessao.materia}. Ao terminar, a atividade é marcada como concluída.`}
-      voltarPara="/aluno/cronograma"
-      rotuloVoltar="Voltar ao cronograma"
+      voltarPara="/aluno"
+      rotuloVoltar="Voltar ao painel"
     >
       <SessaoQuestoesRunner
         questoes={sessao.questoes}
         chave={chave}
         materia={sessao.materia}
         quantidadePedida={sessao.quantidadePedida}
-        voltarPara="/aluno/cronograma"
+        voltarPara="/aluno"
       />
     </PaginaAluno>
   );

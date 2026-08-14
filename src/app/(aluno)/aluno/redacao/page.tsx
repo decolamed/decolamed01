@@ -83,7 +83,7 @@ export default async function AlunoRedacaoPage() {
           href={linkWhatsapp}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex-1 rounded-full bg-green-600 px-6 py-3 text-center font-display font-bold text-white hover:bg-green-700"
+          className="flex-1 rounded-full bg-green px-6 py-3 text-center font-display font-bold text-white hover:brightness-110"
         >
           Enviar redação pelo WhatsApp →
         </a>

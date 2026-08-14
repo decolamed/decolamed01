@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { corrigirQuestaoAtividade, submeterAtividade, type ResultadoAtividade } from "@/app/(aluno)/aluno/atividades/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
-import { CartaoQuestao } from "./cartao-questao";
+import { CartaoQuestao, AlternativaDoGabarito } from "./cartao-questao";
 import { ResultadoDaResposta } from "./identificacao-questao";
 import { codigoDaQuestao, provaDaQuestao } from "@/lib/site/questao-identidade";
 
@@ -92,14 +92,14 @@ export function AtividadeRunner({
   if (resultado) {
     return (
       <div>
-        <div className="rounded-2xl bg-white p-8 text-center shadow">
+        <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
           <span className="mx-auto block h-1 w-10 rounded-full bg-orange" />
-          <h1 className="mt-2 font-display text-2xl font-bold text-navy-dark">Atividade concluída!</h1>
-          <p className="mt-2 text-navy-dark/70">Você acertou {resultado.acertos} de {resultado.total} questões.</p>
+          <h1 className="mt-2 font-display text-2xl font-bold text-app-txt">Atividade concluída!</h1>
+          <p className="mt-2 text-app-sub">Você acertou {resultado.acertos} de {resultado.total} questões.</p>
           <div className="mt-4 flex flex-col items-center gap-1">
             <p className="font-display text-5xl font-extrabold text-orange">{resultado.nota}%</p>
             {resultado.pesoFacape !== 1 && (
-              <p className="text-xs text-navy-dark/50">Peso {resultado.pesoFacape}x na nota ponderada</p>
+              <p className="text-xs text-app-faint">Peso {resultado.pesoFacape}x na nota ponderada</p>
             )}
           </div>
           {/* A correção é feita em memória, então o resultado aparece mesmo
@@ -107,41 +107,47 @@ export function AtividadeRunner({
               acharia que ficou tudo registrado e só notaria a ausência
               depois, ao procurar a atividade no histórico. */}
           {!resultado.salvo && (
-            <p className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+            <p className="mt-4 rounded-xl border border-app-red bg-app-red-soft px-4 py-3 text-sm font-semibold text-app-red">
               Não conseguimos salvar esta tentativa. O resultado acima está correto, mas não entrou no seu
               histórico nem no seu XP — refaça a atividade quando a conexão estiver estável.
             </p>
           )}
-          <Link href="/aluno/atividades" className="mt-6 inline-block rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5">
+          <Link
+            href="/aluno/atividades"
+            className="mt-6 inline-block rounded-full border border-app-line bg-app-chip px-6 py-3 font-display font-semibold text-app-txt"
+          >
             Voltar às atividades
           </Link>
         </div>
 
         <div className="mt-6 space-y-4">
           {resultado.gabarito.map((item, i) => (
-            <div key={item.questaoId} className="rounded-2xl bg-white p-5 shadow">
+            <div key={item.questaoId} className="rounded-2xl border border-app-line bg-app-card p-5">
               <div className="flex flex-wrap items-baseline gap-x-2">
-                <p className="text-xs font-semibold text-navy-dark/50">
+                <p className="text-xs font-semibold text-app-sub">
                   {provaDaQuestao(questoes[i] ?? { id: item.questaoId }) || `Questão ${i + 1}`}
                 </p>
-                <span className="ml-auto select-all font-mono text-[10px] font-bold text-navy-dark/40">
+                <span className="ml-auto select-all font-mono text-[10px] font-bold text-app-faint">
                   {codigoDaQuestao(item.questaoId)}
                 </span>
               </div>
-              <p className="mt-1 whitespace-pre-line font-display font-semibold text-navy-dark">{item.enunciado}</p>
+              <p className="mt-1 whitespace-pre-line font-display font-semibold text-app-txt">{item.enunciado}</p>
               <ImagensQuestao imagens={item.imagens} />
               <div className="mt-3 space-y-1.5">
-                {item.alternativas.map((alt) => {
-                  const éCorreta = alt.id === item.respostaCorreta;
-                  const éEscolhidaErrada = alt.id === item.escolhida && !item.correta;
-                  return (
-                    <p key={alt.id} className={`rounded-lg p-2 text-sm ${éCorreta ? "bg-green-50 text-green-800" : éEscolhidaErrada ? "bg-red-50 text-red-700" : "text-navy-dark/70"}`}>
-                      <span className="font-bold">{alt.id.toUpperCase()})</span> {alt.texto}
-                    </p>
-                  );
-                })}
+                {item.alternativas.map((alt) => (
+                  <AlternativaDoGabarito
+                    key={alt.id}
+                    alt={alt}
+                    correta={alt.id === item.respostaCorreta}
+                    escolhidaErrada={alt.id === item.escolhida && !item.correta}
+                  />
+                ))}
               </div>
-              {item.explicacao && <p className="mt-3 rounded-lg bg-navy/5 p-3 text-sm text-navy-dark/80">{item.explicacao}</p>}
+              {item.explicacao && (
+                <p className="mt-3 rounded-xl border border-app-line bg-app-bg p-3 text-sm text-app-sub">
+                  {item.explicacao}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -153,13 +159,17 @@ export function AtividadeRunner({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-app-line bg-app-card p-4">
         <div>
-          <p className="font-display font-bold text-navy-dark">{titulo}</p>
-          <p className="text-xs text-navy-dark/50">{respondidas} de {questoes.length} respondidas</p>
+          <p className="font-display font-bold text-app-txt">{titulo}</p>
+          <p className="text-xs text-app-sub">{respondidas} de {questoes.length} respondidas</p>
         </div>
         {tempoFormatado && (
-          <span className={`rounded-full px-4 py-2 font-display text-lg font-bold ${segundosRestantes! < 60 ? "bg-red-50 text-red-600" : "bg-navy/5 text-navy-dark"}`}>
+          <span
+            className={`rounded-full px-4 py-2 font-display text-lg font-bold ${
+              segundosRestantes! < 60 ? "bg-app-red-soft text-app-red" : "bg-app-chip text-app-txt"
+            }`}
+          >
             {tempoFormatado}
           </span>
         )}
@@ -170,13 +180,21 @@ export function AtividadeRunner({
           <button
             key={q.id}
             onClick={() => setIndice(i)}
-            className={`h-9 w-9 rounded-lg text-sm font-semibold ${i === indice ? "bg-orange text-white" : respostas[q.id] ? "bg-navy text-white" : "bg-white text-navy-dark shadow"}`}
+            aria-current={i === indice ? "true" : undefined}
+            className={`h-9 w-9 rounded-lg border text-sm font-bold ${
+              i === indice
+                ? "border-orange bg-orange text-white"
+                : respostas[q.id]
+                ? "border-app-green bg-app-green-soft text-app-green-deep"
+                : "border-app-line bg-app-card text-app-sub"
+            }`}
           >
             {i + 1}
           </button>
         ))}
       </div>
 
+      <div className="mt-4">
       <CartaoQuestao
         questao={questao}
         posicao={indice + 1}
@@ -201,14 +219,19 @@ export function AtividadeRunner({
           <button
             onClick={() => setIndice((i) => Math.max(0, i - 1))}
             disabled={indice === 0}
-            className="rounded-full border border-navy/20 px-5 py-2.5 font-semibold text-navy-dark disabled:opacity-30"
+            className="rounded-full border border-app-line px-5 py-2.5 font-semibold text-app-sub disabled:opacity-30"
           >
             ← Anterior
           </button>
 
           {indice < questoes.length - 1 ? (
-            <button onClick={() => setIndice((i) => i + 1)} className="rounded-full bg-navy px-5 py-2.5 font-semibold text-white">
-              Próxima →
+            // Ação principal da tela: sai do azul discreto e passa a ter o
+            // mesmo peso do "Próxima questão" do Banco de Questões.
+            <button
+              onClick={() => setIndice((i) => i + 1)}
+              className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark"
+            >
+              Próxima questão →
             </button>
           ) : (
             <button
@@ -223,6 +246,7 @@ export function AtividadeRunner({
           )}
         </div>
       </CartaoQuestao>
+      </div>
     </div>
   );
 }

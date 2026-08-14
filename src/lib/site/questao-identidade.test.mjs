@@ -97,6 +97,16 @@ test("sem matéria, a referência não fica com separador solto", () => {
   assert.equal(referenciaDaQuestao({ id: "x", numero_questao: 7 }), "Questão 7");
 });
 
+test("quem já mostra a matéria em destaque pede a referência sem ela", () => {
+  // A faixa de identificação do cartão de questão põe a matéria em destaque,
+  // no eyebrow verde. Sem esta opção a linha saía com a matéria duas vezes:
+  // "BIOLOGIA · Questão 12 · Biologia".
+  assert.equal(referenciaDaQuestao(COMPLETA, 3, { incluirMateria: false }), "Questão 12");
+  // O padrão continua sendo incluir — nenhuma chamada existente muda.
+  assert.equal(referenciaDaQuestao(COMPLETA, 3), "Questão 12 · Biologia");
+  assert.equal(referenciaDaQuestao(COMPLETA, 3, {}), "Questão 12 · Biologia");
+});
+
 test("questão anulada continua identificável", () => {
   const anulada = { ...COMPLETA, anulada: true };
   assert.equal(codigoDaQuestao(anulada.id), "Q3F9A2C");

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { QuestoesPractice } from "@/components/aluno/questoes-practice";
+import { PaginaAluno } from "@/components/aluno/pagina-aluno";
 import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
 import { montarRodada, mensagemDeRetomada } from "@/lib/site/continuidade";
 import type { Questao } from "@/types/database";
@@ -51,20 +52,21 @@ export default async function AlunoQuestoesPage({
     a.localeCompare(b, "pt-BR")
   );
 
+  // A mesma moldura das outras telas do aluno: sem ela esta página nascia
+  // direto sobre o branco do body, e o cartão de questão — que agora usa as
+  // caixas azuis do Banco de Questões — ficava sem fundo nenhum atrás.
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-navy-dark">🎯 Questões</h1>
-        <Link href="/aluno" className="text-sm text-navy hover:underline">
-          ← Voltar ao painel
-        </Link>
-      </div>
-
+    <PaginaAluno
+      titulo="Banco de Questões"
+      descricao="Pratique por matéria. Cada resposta entra no seu desempenho e alimenta o Copiloto."
+      voltarPara="/aluno"
+      rotuloVoltar="Voltar ao painel"
+    >
       {materias.length > 1 && (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mb-5 flex flex-wrap justify-center gap-2">
           <Link
             href="/aluno/questoes"
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${!searchParams.materia ? "bg-orange text-white" : "bg-white text-navy-dark"}`}
+            className={`rounded-full border px-4 py-2 text-sm font-bold ${!searchParams.materia ? "border-orange bg-orange text-white" : "border-app-line bg-app-card text-app-sub"}`}
           >
             Todas
           </Link>
@@ -72,7 +74,7 @@ export default async function AlunoQuestoesPage({
             <Link
               key={m}
               href={`/aluno/questoes?materia=${encodeURIComponent(m)}`}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${mesmaMateria(searchParams.materia, m) ? "bg-orange text-white" : "bg-white text-navy-dark"}`}
+              className={`rounded-full border px-4 py-2 text-sm font-bold ${mesmaMateria(searchParams.materia, m) ? "border-orange bg-orange text-white" : "border-app-line bg-app-card text-app-sub"}`}
             >
               {m}
             </Link>
@@ -80,14 +82,12 @@ export default async function AlunoQuestoesPage({
         </div>
       )}
 
-      <div className="mt-6">
-        {avisoRetomada && (
-          <p className="mb-3 rounded-xl bg-navy/5 px-4 py-2.5 text-xs font-semibold text-navy-dark/70">
-            {avisoRetomada}
-          </p>
-        )}
-        <QuestoesPractice questoes={questoes} />
-      </div>
-    </div>
+      {avisoRetomada && (
+        <p className="mb-3 rounded-xl border border-app-line bg-app-card px-4 py-2.5 text-xs font-semibold text-app-sub">
+          {avisoRetomada}
+        </p>
+      )}
+      <QuestoesPractice questoes={questoes} />
+    </PaginaAluno>
   );
 }

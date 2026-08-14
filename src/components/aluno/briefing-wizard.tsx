@@ -108,7 +108,7 @@ export function BriefingWizard({ briefingInicial, erro, nomeVestibular, materias
             <p className="mt-1 text-sm text-navy-dark/70">Conte como será sua preparação.</p>
 
             {erro && (
-              <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{erro}</p>
+              <p className="mt-4 rounded-lg bg-red-soft p-3 text-sm font-semibold text-red">{erro}</p>
             )}
 
             <div className="mt-5 space-y-3">

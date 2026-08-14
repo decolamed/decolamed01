@@ -174,9 +174,9 @@ export default async function AdminUsuariosPage({
               titulo: "Status",
               celula: (u) =>
                 u.ativo ? (
-                  <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">Ativo</span>
+                  <span className="rounded-full bg-green-soft px-2 py-1 text-xs font-semibold text-green">Ativo</span>
                 ) : (
-                  <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">Desativado</span>
+                  <span className="rounded-full bg-red-soft px-2 py-1 text-xs font-semibold text-red">Desativado</span>
                 )
             }
           ]}
@@ -209,7 +209,7 @@ export default async function AdminUsuariosPage({
                         ? `Desativar o acesso de ${u.nome}? O login será bloqueado imediatamente.`
                         : `Reativar o acesso de ${u.nome}?`
                     }
-                    className={u.ativo ? "text-red-600 hover:underline" : "text-green-700 hover:underline"}
+                    className={u.ativo ? "text-red hover:underline" : "text-green hover:underline"}
                   >
                     {u.ativo ? "Desativar usuário" : "Reativar usuário"}
                   </ConfirmSubmitButton>
@@ -234,7 +234,7 @@ export default async function AdminUsuariosPage({
                     <ConfirmSubmitButton
                       pendingText="..."
                       confirmMessage={`Remover a permissão de administrador de ${u.nome}?`}
-                      className="text-red-600 hover:underline"
+                      className="text-red hover:underline"
                     >
                       Remover permissão de admin
                     </ConfirmSubmitButton>
@@ -260,7 +260,7 @@ export default async function AdminUsuariosPage({
                     <ConfirmSubmitButton
                       pendingText="..."
                       confirmMessage={`Remover a permissão de parceiro de ${u.nome}?`}
-                      className="text-red-600 hover:underline"
+                      className="text-red hover:underline"
                     >
                       Remover permissão de parceiro
                     </ConfirmSubmitButton>
@@ -285,7 +285,7 @@ export default async function AdminUsuariosPage({
                     <ConfirmSubmitButton
                       pendingText="..."
                       confirmMessage={`Remover a permissão de professor de ${u.nome}?`}
-                      className="text-red-600 hover:underline"
+                      className="text-red hover:underline"
                     >
                       Remover permissão de professor
                     </ConfirmSubmitButton>

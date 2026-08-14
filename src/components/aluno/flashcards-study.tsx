@@ -82,13 +82,13 @@ export function FlashcardsStudy({ cards }: { cards: Flashcard[] }) {
         <div className="mt-5 flex gap-3">
           <button
             onClick={() => marcar(false)}
-            className="flex-1 rounded-full border-2 border-red-400 px-6 py-3 font-display font-bold text-red-500 hover:bg-red-50"
+            className="flex-1 rounded-full border-2 border-red px-6 py-3 font-display font-bold text-red hover:bg-red-soft"
           >
             Errei
           </button>
           <button
             onClick={() => marcar(true)}
-            className="flex-1 rounded-full bg-green-600 px-6 py-3 font-display font-bold text-white hover:bg-green-700"
+            className="flex-1 rounded-full bg-green px-6 py-3 font-display font-bold text-white hover:brightness-110"
           >
             Acertei ✓
           </button>

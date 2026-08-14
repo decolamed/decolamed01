@@ -62,9 +62,9 @@ const EVENTO_LABEL: Record<string, string> = {
 
 function StatusBadge({ ativo }: { ativo: boolean }) {
   return ativo ? (
-    <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">Ativo</span>
+    <span className="rounded-full bg-green-soft px-2 py-1 text-xs font-semibold text-green">Ativo</span>
   ) : (
-    <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">Desativado</span>
+    <span className="rounded-full bg-red-soft px-2 py-1 text-xs font-semibold text-red">Desativado</span>
   );
 }
 
@@ -351,7 +351,7 @@ export default async function AdminDetalhesUsuarioPage({
                 <ConfirmSubmitButton
                   pendingText="..."
                   confirmMessage={`Remover a missão "${m.titulo}" do cronograma de ${profile.nome}?`}
-                  className="text-red-600 hover:underline"
+                  className="text-red hover:underline"
                 >
                   Remover
                 </ConfirmSubmitButton>

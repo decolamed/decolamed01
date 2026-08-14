@@ -33,7 +33,11 @@ export function PaginaAluno({
   rotuloVoltar?: string;
 }) {
   return (
-    <div className="min-h-screen bg-navy">
+    // `bg-app-bg` é exatamente o fundo do app imersivo (decola-app.tsx). Estas
+    // rotas ficavam num azul um pouco diferente, e as telas de questão — que
+    // agora usam as caixas azuis do Banco de Questões — precisam do MESMO
+    // fundo, senão as caixas somem contra ele.
+    <div className="min-h-screen bg-app-bg">
       {/* Cabeçalho: o botão de voltar fica numa linha própria, e o título
           ganha espaço acima e abaixo — antes ele nascia colado no canto
           superior, disputando lugar com o link de voltar. */}

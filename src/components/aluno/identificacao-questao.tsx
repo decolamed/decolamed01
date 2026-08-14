@@ -13,9 +13,10 @@ import {
 // original, nem que código informar ao suporte — e "questão 12" não
 // identifica nada, porque existe uma questão 12 em toda prova de todo ano.
 //
-// Uma área só, com tudo junto, em vez da mesma informação repetida em três
-// lugares da tela. Ordem de leitura: prova → questão e matéria → código, do
-// mais legível ao mais técnico, com o código visualmente discreto.
+// A forma é a mesma do Banco de Questões (`questaoMeta` em decola-app.tsx):
+// uma linha de destaque com matéria/assunto e, abaixo, o código em monoespaço
+// junto da prova de origem — discreto, mas sempre disponível. Ordem de
+// leitura do mais legível ao mais técnico.
 // ============================================================================
 
 export function IdentificacaoQuestao({
@@ -29,25 +30,32 @@ export function IdentificacaoQuestao({
   className?: string;
 }) {
   const prova = provaDaQuestao(questao);
-  const referencia = referenciaDaQuestao(questao, posicao);
+  const materia = (questao.materia ?? "").trim();
+  // A matéria já é o primeiro elemento da linha; pedi-la de novo na
+  // referência produzia "BIOLOGIA · Questão 12 · Biologia".
+  const referencia = referenciaDaQuestao(questao, posicao, { incluirMateria: !materia });
   const codigo = codigoDaQuestao(questao.id);
 
   return (
-    <div className={`border-b border-navy/10 pb-3 ${className}`}>
-      {prova && <p className="font-display text-sm font-bold text-navy-dark">{prova}</p>}
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {referencia && <p className="text-xs font-semibold text-navy-dark/60">{referencia}</p>}
+    <div className={className}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {materia && (
+          <span className="text-[11.5px] font-extrabold uppercase tracking-[0.02em] text-app-green">{materia}</span>
+        )}
+        {materia && referencia && <span className="text-[11.5px] text-app-faint">·</span>}
+        {referencia && <span className="text-[12.5px] font-bold text-app-txt">{referencia}</span>}
         {questao.anulada && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-800">
+          <span className="rounded-full bg-app-orange-soft px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-app-orange-txt">
             Anulada
           </span>
         )}
-        {/* Discreto de propósito: precisa estar disponível para o aluno
-            reportar um erro, sem virar o elemento mais visível da tela. */}
-        <span className="ml-auto select-all rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] font-bold text-navy-dark/50">
-          {codigo}
-        </span>
       </div>
+      {/* Discreto de propósito: precisa estar disponível para o aluno reportar
+          um erro, sem virar o elemento mais visível da tela. */}
+      <p className="mt-0.5 font-mono text-[10.5px] font-semibold tracking-[0.01em] text-app-faint">
+        <span className="select-all">{codigo}</span>
+        {prova ? `  ·  ${prova}` : ""}
+      </p>
     </div>
   );
 }
@@ -77,8 +85,8 @@ export function ResultadoDaResposta({
   return (
     <div className="mt-4 space-y-3">
       <div
-        className={`flex items-center gap-2 rounded-xl px-4 py-3 ${
-          correta ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
+        className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl px-4 py-3 ${
+          correta ? "bg-app-green-soft text-app-green-deep" : "bg-app-red-soft text-app-red"
         }`}
         role="status"
       >
@@ -92,9 +100,9 @@ export function ResultadoDaResposta({
       </div>
 
       {explicacao && (
-        <div className="rounded-xl bg-navy/5 p-4">
-          <p className="text-[10px] font-extrabold uppercase tracking-widest text-navy-dark/45">Resolução</p>
-          <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-navy-dark/80">{explicacao}</p>
+        <div className="rounded-2xl border border-app-line bg-app-card p-4">
+          <p className="text-[10px] font-extrabold uppercase tracking-widest text-app-faint">Resolução</p>
+          <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-app-sub">{explicacao}</p>
         </div>
       )}
 
@@ -102,7 +110,7 @@ export function ResultadoDaResposta({
           dizendo "adicionei uma revisão" sem revisão nenhuma no banco seria
           uma promessa que o aluno não encontraria depois. */}
       {revisaoCriada && (
-        <p className="flex items-center gap-2 rounded-xl bg-orange/10 px-4 py-2.5 text-xs font-semibold text-orange-dark">
+        <p className="flex items-center gap-2 rounded-2xl bg-app-orange-soft px-4 py-2.5 text-xs font-semibold text-app-orange-txt">
           <span aria-hidden>🤖</span>
           Erro identificado. O Copiloto adicionou uma revisão.
         </p>

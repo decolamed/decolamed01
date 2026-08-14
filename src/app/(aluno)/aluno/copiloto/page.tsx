@@ -76,7 +76,7 @@ export default async function AlunoCopilotoPage() {
             const descartar = marcarRecomendacaoViaForm.bind(null, r.id, "descartada" as const);
             const linkAtividade = LINK_TIPO[r.tipo]?.(r.materia) ?? "/aluno";
             const icone = ICONE_TIPO[r.tipo] ?? "📌";
-            const corPrioridade = r.prioridade >= 3 ? "border-red-400 bg-red-50" : r.prioridade >= 2 ? "border-orange bg-orange/5" : "border-navy/10 bg-white";
+            const corPrioridade = r.prioridade >= 3 ? "border-red bg-red-soft" : r.prioridade >= 2 ? "border-orange bg-orange/5" : "border-navy/10 bg-white";
             return (
               <div key={r.id} className={`rounded-2xl border-2 p-5 shadow-sm ${corPrioridade}`}>
                 <div className="flex items-start gap-3">
