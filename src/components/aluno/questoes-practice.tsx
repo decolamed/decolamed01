@@ -24,12 +24,21 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
     );
   }
 
+  // Marcar NÃO é responder. Antes, o clique na alternativa chamava
+  // `registrarResposta` na hora: um toque acidental virava resposta
+  // definitiva, contava no desempenho e disparava o Copiloto. Agora o clique
+  // só destaca a alternativa em laranja, e o aluno pode trocar à vontade
+  // até apertar "Confirmar resposta".
   function escolher(alternativaId: string) {
-    if (resultado) return; // já respondeu essa questão, ignora novo clique
+    if (resultado) return; // já corrigida: a escolha está fechada
     setEscolha(alternativaId);
+  }
+
+  function confirmar() {
+    if (resultado || !escolha || pending) return;
     const desde = new Date().toISOString();
     startTransition(async () => {
-      const resposta = await registrarResposta(questao.id, alternativaId);
+      const resposta = await registrarResposta(questao.id, escolha);
       if (!resposta.ok) return;
       setResultado(resposta);
       if (resposta.correta) {
@@ -91,7 +100,10 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
       respostaCorreta={resultado?.respostaCorreta ?? null}
       correta={resultado?.correta}
       onEscolher={escolher}
+      // Só trava depois de corrigida: até lá o aluno troca de alternativa.
       desabilitado={pending || !!resultado}
+      onConfirmar={confirmar}
+      confirmando={pending}
     >
       {resultado && (
         <ResultadoDaResposta
