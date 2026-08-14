@@ -1,6 +1,7 @@
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { diaDaSemana, diffDias, somarDias } from "@/lib/site/data";
 import { minutosDoItem } from "@/lib/trilha/progresso";
+import { chaveMateria } from "@/lib/site/materia-canonica";
 import {
   candidatosDoTemplate,
   contextoVazio,
@@ -430,6 +431,43 @@ export function gerarRota(
   // branco.
   const sobrando = [...naoAlocados, ...descartados];
 
+  // Quanto de cada matéria a rota JÁ tem. O preenchimento de emergência é
+  // servido em ordem de prioridade, e para um aluno que declarou domínio numa
+  // matéria essa ordem deixa os itens dela no fim da fila — em janelas muito
+  // apertadas, onde é o preenchimento que decide quase tudo, a matéria sumia
+  // mesmo com a reserva de cobertura já aplicada na seleção. Aqui vale a
+  // mesma ideia do seletor: entre os que cabem, entra o da matéria menos
+  // presente até agora; empate mantém a ordem de prioridade.
+  const minutosNaRota = new Map<string, number>();
+  const materiaDe = (c: ItemCandidato) =>
+    chaveMateria((c.item as { materia?: string | null }).materia ?? "");
+  const contarNaRota = (c: ItemCandidato) =>
+    minutosNaRota.set(materiaDe(c), (minutosNaRota.get(materiaDe(c)) ?? 0) + c.minutos);
+  conteudoPorIndice.forEach((b) => b.itens.forEach(contarNaRota));
+
+  /**
+   * Índice do melhor item para preencher, ou -1 quando nada cabe.
+   *
+   * Regra em dois passos, e a ordem importa:
+   *
+   *   1. se algum item que cabe é de uma matéria AINDA AUSENTE da rota, ele
+   *      entra — é o que impede uma matéria de ser esquecida por completo;
+   *   2. caso contrário, o primeiro que cabe na ordem de prioridade, como
+   *      sempre foi.
+   *
+   * A primeira versão desta função escolhia sempre a matéria MENOS presente,
+   * e o efeito foi achatar a rota: num caso de 10 dias a 3h, Geografia
+   * terminava com os mesmos 3 itens de Biologia, e Exatas caía de 16 para 12.
+   * Isso é o rateio igual que a personalização não pode virar. Corrigir a
+   * ausência é diferente de equalizar frequência.
+   */
+  const escolherParaPreencher = (limite: number): number => {
+    const cabe = (c: ItemCandidato) => c.minutos <= limite;
+    const ausente = sobrando.findIndex((c) => cabe(c) && (minutosNaRota.get(materiaDe(c)) ?? 0) === 0);
+    if (ausente >= 0) return ausente;
+    return sobrando.findIndex(cabe);
+  };
+
   // O dia de correção depois do simulado também recebe reforço: sozinho, o
   // bloco de revisão ocupava 30 dos 180 minutos do dia e o resto se perdia.
   // Ele continua sendo um dia de revisão — só que com material em cima.
@@ -440,11 +478,12 @@ export function gerarRota(
     const alvo = Math.floor(teto * (1 - fracaoDeReserva(indicesDeEstudo.length)));
     const bucket = { itens: [] as ItemCandidato[], minutos: 0 };
     for (;;) {
-      const cabe = sobrando.findIndex((c) => bucket.minutos + c.minutos <= alvo);
+      const cabe = escolherParaPreencher(alvo - bucket.minutos);
       if (cabe < 0) break;
       const [escolhido] = sobrando.splice(cabe, 1);
       bucket.itens.push(escolhido);
       bucket.minutos += escolhido.minutos;
+      contarNaRota(escolhido);
     }
     bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
     reforcoDaRevisao.set(i, bucket);
@@ -458,11 +497,12 @@ export function gerarRota(
     // a folga que o Copiloto vai precisar.
     const teto = Math.max(1, Math.floor((capacidade.get(i) ?? 0) * (1 - fracaoDeReserva(indicesDeEstudo.length))));
     for (;;) {
-      const cabe = sobrando.findIndex((c) => bucket.minutos + c.minutos <= teto);
+      const cabe = escolherParaPreencher(teto - bucket.minutos);
       if (cabe < 0) break;
       const [escolhido] = sobrando.splice(cabe, 1);
       bucket.itens.push(escolhido);
       bucket.minutos += escolhido.minutos;
+      contarNaRota(escolhido);
     }
     bucket.itens.sort((a, b) => a.templateDay - b.templateDay || a.ordem - b.ordem);
     if (bucket.itens.length === 0) reservados.set(i, "revisao");

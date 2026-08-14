@@ -98,7 +98,13 @@ async function contextoDoAluno(
     const [{ data: pesos }, { data: respostas }, { data: progresso }] = await Promise.all([
       supabase.from("materias_peso").select("materia, peso, qtd_questoes"),
       supabase.from("respostas_aluno").select("correta, questoes(materia)").eq("aluno_id", alunoId),
-      supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", alunoId).eq("concluido", true)
+      // A coluna é `concluida`, não `concluido`. Com o nome errado o
+      // PostgREST devolvia erro em vez de linhas, e o supabase-js não lança:
+      // `progresso` chegava nulo e `ctx.concluidos` ficava sempre vazio. O
+      // fator INEDITISMO da pontuação (10% da nota) nunca saía de 1 — a rota
+      // não sabia o que o aluno já tinha concluído e podia devolver na
+      // regeração o mesmo conteúdo que ele acabou de fazer.
+      supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", alunoId).eq("concluida", true)
     ]);
 
     const ctx = contextoVazio();

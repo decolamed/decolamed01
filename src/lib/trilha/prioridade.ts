@@ -186,6 +186,67 @@ function saturacao(minutosJaSelecionados: number): number {
   return SATURACAO_MINUTOS / (SATURACAO_MINUTOS + Math.max(0, minutosJaSelecionados));
 }
 
+// ============================================================================
+// COBERTURA MÍNIMA — desempenho prioriza, nunca elimina
+//
+// A nota de cada item combina retorno, carência e dificuldade declarada. Os
+// dois últimos empurram para BAIXO a matéria em que o aluno vai bem, e os
+// dois se somam: "Domínio" no briefing vale 0.15 contra 1 de "Turbulência",
+// e uma taxa de acerto alta derruba a carência junto. Numa janela curta isso
+// deixava de ser prioridade e virava exclusão.
+//
+// Medido com os pesos reais desta prova (Biologia é a matéria de MAIOR
+// potencial: peso 3 × 10 questões) e um aluno com dificuldade em Exatas e bom
+// desempenho em Biologia:
+//
+//   10 dias, 3h/dia → Biologia com 3 itens, em 3 dos 10 dias
+//   10 dias, 2h/dia → 2 itens, em 2 dos 10 dias
+//   10 dias, 1h/dia → NENHUM item de Biologia
+//
+// Ou seja: a matéria que mais vale nota na prova saía do cronograma porque o
+// aluno declarou que ia bem nela. Isso é o oposto de estratégico.
+//
+// A correção é uma RESERVA, não um rateio. Antes da disputa livre, uma fatia
+// pequena do orçamento é usada para garantir presença mínima às matérias
+// estrategicamente relevantes — quanto mais a matéria vale na prova, maior a
+// cota. O que sobra (a maior parte) continua sendo decidido exatamente pelo
+// mesmo guloso de sempre, onde a dificuldade do aluno manda.
+//
+// Não é dividir o tempo igualmente: a cota é proporcional à relevância, é um
+// PISO e não um teto, e a matéria difícil continua levando a maior parte do
+// orçamento livre.
+// ============================================================================
+
+/** Itens reservados para a matéria de maior relevância da prova. */
+const COBERTURA_ALVO_ITENS = 3;
+
+/**
+ * Abaixo desta relevância a matéria não recebe cota reservada — continua
+ * disputando normalmente. Sem um corte, uma matéria residual consumiria
+ * reserva que faz falta para as que decidem a nota.
+ */
+const RELEVANCIA_MINIMA_PARA_COTA = 0.15;
+
+/**
+ * Teto da reserva sobre o orçamento acadêmico. O piso não pode virar o
+ * cronograma inteiro: com 35%, a personalização continua mandando em dois
+ * terços do tempo.
+ */
+const TETO_DA_RESERVA = 0.35;
+
+/**
+ * Quantos itens cada matéria tem direito por relevância na prova.
+ *
+ * Proporcional, com piso de 1: a matéria de maior potencial recebe
+ * `COBERTURA_ALVO_ITENS`, as demais recebem a fração correspondente. Nenhum
+ * nome de matéria aparece aqui — quem decide é `materias_peso`.
+ */
+function cotaPorRelevancia(materia: string, ctx: ContextoDoAluno): number {
+  const relevancia = retornoDaMateria(materia, ctx);
+  if (relevancia < RELEVANCIA_MINIMA_PARA_COTA) return 0;
+  return Math.max(1, Math.round(relevancia * COBERTURA_ALVO_ITENS));
+}
+
 /**
  * Tipos que o plano do Voo Guiado EXIGE, independentemente de prioridade.
  *
@@ -212,6 +273,11 @@ export const TIPOS_DA_PROPRIA_ROTA = new Set(["simulado"]);
 
 function tipoDoItem(item: TrilhaItem): string {
   return (item as { tipo?: string }).tipo ?? "";
+}
+
+/** Chave canônica da matéria do candidato ("" quando o item não tem matéria). */
+function materiaDoCandidato(c: ItemCandidato): string {
+  return chaveMateria((c.item as { materia?: string | null }).materia ?? "");
 }
 
 export function ehObrigatorio(c: ItemCandidato): boolean {
@@ -260,6 +326,62 @@ export function selecionarPorPrioridade(
   const selecionados: ItemCandidato[] = [];
   let gasto = 0;
 
+  // ---- Reserva de cobertura ----------------------------------------------
+  // Primeiro passo, antes da disputa: garante presença mínima às matérias que
+  // decidem a nota da prova, na proporção do que cada uma vale. É o que
+  // impede que "o aluno vai bem nisso" apague a matéria do cronograma.
+  //
+  // Percorre em ordem de relevância e vai pegando o MELHOR item de cada
+  // matéria (a mesma nota da disputa, então a escolha dentro da matéria
+  // continua inteligente), rodada a rodada, até a cota de cada uma ou até o
+  // teto da reserva. Se o orçamento é minúsculo, a ordem de relevância
+  // garante que a matéria mais valiosa é atendida primeiro.
+  const tetoReserva = restante * TETO_DA_RESERVA;
+  const materiasComCota = [...new Set(pendentes.map((p) => materiaDoCandidato(p.c)))]
+    .filter((m) => m !== "")
+    .map((m) => ({ materia: m, cota: cotaPorRelevancia(m, ctx), relevancia: retornoDaMateria(m, ctx) }))
+    .filter((x) => x.cota > 0)
+    .sort((a, b) => b.relevancia - a.relevancia || a.materia.localeCompare(b.materia));
+
+  // Em ORDEM DE RELEVÂNCIA, cada matéria completa a sua cota antes da
+  // próxima começar. Servir uma de cada por rodada seria o rateio igual que
+  // esta reserva justamente não quer ser: Geografia levaria uma vaga antes de
+  // a matéria de maior peso da prova completar a dela.
+  let gastoDaReserva = 0;
+  for (const { materia, cota } of materiasComCota) {
+    for (let n = 0; n < cota; n++) {
+      // O melhor item ainda livre desta matéria que caiba no que resta.
+      let melhor = -1;
+      let melhorNota = -Infinity;
+      pendentes.forEach((p, i) => {
+        if (p.usado || materiaDoCandidato(p.c) !== materia) return;
+        if (gasto + p.c.minutos > restante) return;
+        if (p.base > melhorNota) {
+          melhor = i;
+          melhorNota = p.base;
+        }
+      });
+      if (melhor < 0) break;
+
+      // O teto vale para toda a reserva, menos o primeiro item de todos: um
+      // piso que não coloca nem uma aula não é piso nenhum, e é justamente na
+      // janela apertada que a matéria mais valiosa sumia por completo.
+      const primeiroDaReserva = gastoDaReserva === 0;
+      if (!primeiroDaReserva && gastoDaReserva + pendentes[melhor].c.minutos > tetoReserva) break;
+
+      const escolhido = pendentes[melhor];
+      escolhido.usado = true;
+      selecionados.push(escolhido.c);
+      gasto += escolhido.c.minutos;
+      gastoDaReserva += escolhido.c.minutos;
+      minutosPorMateria.set(materia, (minutosPorMateria.get(materia) ?? 0) + escolhido.c.minutos);
+    }
+  }
+
+  // ---- Disputa livre ------------------------------------------------------
+  // Daqui para baixo nada mudou: o mesmo guloso com rendimento decrescente,
+  // agora sobre o orçamento que sobrou. A matéria em que o aluno tem
+  // dificuldade continua levando a maior parte.
   for (;;) {
     let melhor = -1;
     let melhorNota = -Infinity;
