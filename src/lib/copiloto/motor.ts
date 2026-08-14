@@ -12,6 +12,12 @@ import { diaAtualDaRota, gerarRota, parametrosDoBriefing } from "@/lib/trilha/ro
 import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
 import { carregarConfigCopiloto, type ConfigCopiloto } from "@/lib/copiloto/configuracao";
 import { montarAgenda, type AgendaDoAluno } from "@/lib/copiloto/agenda";
+import {
+  escolherReforco,
+  atingiuLimiteDeReforco,
+  MAX_REFORCOS_PENDENTES_POR_MATERIA,
+  type TipoReforco
+} from "@/lib/copiloto/reforco";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 
 // ============================================================================
@@ -150,17 +156,24 @@ interface InventarioMateria {
   aulas: AulaDoInventario[];
 }
 
+// `gemini` e `producao` eram o MESMO booleano, e por isso desligar o texto
+// motivacional no modo cirúrgico desligava junto a produção sob demanda —
+// flashcards gerados e a busca de vídeo-aula real. `copiloto_producoes_ia`
+// tinha zero linhas: a função nunca chegou a rodar para um aluno em reta
+// final, que é exatamente quando ele mais precisa de material dirigido.
+//
+// São coisas diferentes: o texto é enfeite e custa uma chamada por
+// recomendação; a produção é conteúdo e só dispara quando falta material.
 const CFG = {
-  generoso:    { maxRec: 8,  errosMinGatilho: 1, genMin: 0.5,  gemini: true  },
-  equilibrado: { maxRec: 5,  errosMinGatilho: 2, genMin: 2.0,  gemini: true  },
-  cirurgico:   { maxRec: 3,  errosMinGatilho: 2, genMin: 4.0,  gemini: false },
+  generoso:    { maxRec: 8,  errosMinGatilho: 1, genMin: 0.5,  gemini: true,  producao: true },
+  equilibrado: { maxRec: 5,  errosMinGatilho: 2, genMin: 2.0,  gemini: true,  producao: true },
+  cirurgico:   { maxRec: 3,  errosMinGatilho: 2, genMin: 4.0,  gemini: false, producao: true },
 } as const;
 
-const TIPOS_CICLO: Record<ModoAdaptativo, string[]> = {
-  generoso:    ["questoes", "questoes", "flashcards", "revisao", "aula"],
-  equilibrado: ["questoes", "questoes", "flashcards", "revisao"],
-  cirurgico:   ["questoes", "questoes", "questoes"],
-};
+// Não existe mais um ciclo de tipos por MODO. O formato do reforço sai do
+// erro do aluno (lib/copiloto/reforco.ts), não da fase do cronograma — era o
+// ciclo `cirurgico: ["questoes","questoes","questoes"]` que tornava flashcard
+// e aula impossíveis de aparecer na reta final.
 
 // Padrão de duração por tipo. O valor efetivo vem de dados.config
 // (configuracoes → copiloto.duracao.*); isto aqui é só o fallback.
@@ -429,8 +442,20 @@ async function carregarCronogramaDoAluno(alunoId: string): Promise<CronogramaDoA
       return {
         diaHoje: diaAtualDaRota(rota.dias, hoje)?.routeDay ?? null,
         cargaPorData,
+        // Dia de prova, véspera de descanso — e dia de SIMULADO. Um simulado
+        // já ocupa o dia inteiro do aluno; empilhar "Questões · Biologia — 40
+        // min" em cima dele não é adaptação, é excesso. O aluno viu reforço
+        // do Copiloto colado em dia de simulado justamente porque só os dois
+        // primeiros tipos eram considerados intocáveis.
         datasBloqueadas: new Set(
-          rota.dias.filter((d) => d.tipo === "prova" || d.tipo === "descanso").map((d) => d.scheduledDate)
+          rota.dias
+            .filter(
+              (d) =>
+                d.tipo === "prova" ||
+                d.tipo === "descanso" ||
+                (d.itens ?? []).some((it) => it.tipo === "simulado")
+            )
+            .map((d) => d.scheduledDate)
         ),
         // A numeração e a ordem dos itens são as MESMAS que a tela usa, então
         // as chaves de progresso (`trilha:<dia>:<índice>`) batem. Se
@@ -448,17 +473,20 @@ async function carregarCronogramaDoAluno(alunoId: string): Promise<CronogramaDoA
 
   const diaHoje = calcularDiaTrilha(liberado);
   const cargaPorData = new Map<string, number>();
+  const comSimulado = new Set<string>();
   template.forEach((d) => {
     if (d.dia_numero < diaHoje) return;
     const data = somarDias(hoje, d.dia_numero - diaHoje);
     cargaPorData.set(data, (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0));
+    if ((d.itens ?? []).some((it) => it.tipo === "simulado")) comSimulado.add(data);
   });
 
   return {
     diaHoje,
     cargaPorData,
-    // Sem briefing não há data de prova conhecida aqui — nada a bloquear.
-    datasBloqueadas: new Set<string>(),
+    // Sem briefing não há data de prova conhecida aqui; o que dá para
+    // proteger é o dia de simulado, que já ocupa o dia inteiro.
+    datasBloqueadas: comSimulado,
     diasVencidos: template
       .filter((d) => d.dia_numero < diaHoje)
       .map((d) => ({ dia: d.dia_numero, itens: d.itens ?? [] }))
@@ -467,24 +495,71 @@ async function carregarCronogramaDoAluno(alunoId: string): Promise<CronogramaDoA
 
 const INVENTARIO_VAZIO: InventarioMateria = { questoes: 0, flashcards: 0, aulas: [] };
 
-// Devolve um tipo de missão que REALMENTE tem conteúdo para a matéria, ou
-// null quando não há nada — nesse caso a missão simplesmente não é criada,
-// em vez de virar um beco sem saída na tela do aluno.
+/** Acertos/erros/total da matéria, contando questões avulsas E simulados. */
+function desempenhoNaMateria(dados: DadosAluno, materia: string): { a: number; e: number; t: number } {
+  let a = 0, e = 0, t = 0;
+  dados.respostas
+    .filter((r) => mesmaMateria(r.materia, materia))
+    .forEach((r) => { t++; if (r.correta) a++; else e++; });
+
+  dados.tentativas.forEach((tent) => {
+    Object.entries(tent.desempenhoPorMateria ?? {}).forEach(([mat, d]) => {
+      if (!mesmaMateria(mat, materia)) return;
+      const total = Number((d as { total?: number }).total ?? 0);
+      const acertos = Number((d as { acertos?: number }).acertos ?? 0);
+      if (!Number.isFinite(total) || total <= 0) return;
+      t += total;
+      a += acertos;
+      e += Math.max(0, total - acertos);
+    });
+  });
+
+  return { a, e, t };
+}
+
+/**
+ * Que reforços do Copiloto já estão pendentes para esta matéria.
+ *
+ * É esta lista que impede a repetição: um formato já agendado vai para o fim
+ * da fila em `escolherReforco`, e a contagem alimenta o teto por matéria.
+ */
+function reforcosPendentes(dados: DadosAluno, materia: string): TipoReforco[] {
+  return dados.missoesAgendadas
+    .filter((m) => m.origem === "copiloto" && !m.concluida && mesmaMateria(m.materia, materia))
+    .map((m) => m.tipo)
+    .filter((t): t is TipoReforco => t === "questoes" || t === "flashcards" || t === "aula");
+}
+
+/**
+ * Devolve um tipo de missão que REALMENTE tem conteúdo para a matéria e que
+ * faz sentido para o erro do aluno — ou null quando não há material nenhum.
+ *
+ * Antes esta função era o desvio universal: depois de conferir o tipo
+ * preferido, fazia `if (inv.questoes > 0) return "questoes"` ANTES de tentar
+ * os outros formatos. "Prefiro aula, esta matéria não tem aula" virava
+ * questões, pulando os flashcards que existiam.
+ */
 function tipoComConteudo(
   dados: DadosAluno,
   materia: string,
-  preferido: "questoes" | "flashcards" | "aula" | "revisao"
-): "questoes" | "flashcards" | "aula" | null {
+  pendentesExtras: TipoReforco[] = []
+): TipoReforco | null {
   const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
-  // "aula" era pedido pelo ciclo do modo generoso mas nunca era devolvido
-  // aqui: as missões de aula escapavam da checagem de conteúdo e nasciam
-  // sem vínculo nenhum.
-  if (preferido === "aula" && inv.aulas.length > 0) return "aula";
-  if ((preferido === "flashcards" || preferido === "revisao") && inv.flashcards > 0) return "flashcards";
-  if (inv.questoes > 0) return "questoes";
-  if (inv.flashcards > 0) return "flashcards";
-  if (inv.aulas.length > 0) return "aula";
-  return null;
+  const d = desempenhoNaMateria(dados, materia);
+  return escolherReforco(
+    {
+      erros: d.e,
+      precisao: d.t > 0 ? (d.a / d.t) * 100 : 50,
+      respostas: d.t,
+      jaPendentes: [...reforcosPendentes(dados, materia), ...pendentesExtras]
+    },
+    { questoes: inv.questoes, flashcards: inv.flashcards, aulas: inv.aulas.length }
+  );
+}
+
+/** A matéria já acumulou reforço pendente demais? */
+function reforcoSaturado(dados: DadosAluno, materia: string, extras = 0): boolean {
+  return atingiuLimiteDeReforco(reforcosPendentes(dados, materia).length + extras);
 }
 
 /**
@@ -514,15 +589,13 @@ function indiceEstavel(semente: string, tamanho: number): number {
 function resolverConteudoMissao(
   dados: DadosAluno,
   materia: string,
-  tipoPreferido: string
-): { tipo: string; titulo: string; refId: string | null; assunto: string | null } | null {
-  const preferido = (["questoes", "flashcards", "aula", "revisao"] as const).includes(
-    tipoPreferido as "questoes"
-  )
-    ? (tipoPreferido as "questoes" | "flashcards" | "aula" | "revisao")
-    : "questoes";
-
-  const tipo = tipoComConteudo(dados, materia, preferido);
+  pendentesExtras: TipoReforco[] = []
+): { tipo: TipoReforco; titulo: string; refId: string | null; assunto: string | null } | null {
+  // O tipo não é mais escolhido por quem chama. Todos os pontos que criavam
+  // missão passavam "questoes" fixo aqui — cenário 2, check-in de foco,
+  // check-in de tempo, redistribuição —, e o resultado era o cronograma que o
+  // aluno viu: oito sessões de questões de Biologia e nada mais.
+  const tipo = tipoComConteudo(dados, materia, pendentesExtras);
   if (!tipo) return null;
 
   if (tipo === "aula") {
@@ -697,15 +770,25 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
   const minutosDisponiveis = capacidade.reduce((s, d) => s + d.livre, 0);
   if (minutosDisponiveis <= 0) return 0;
 
-  // Quantas missões cabem no tempo total (não mais "uma por dia").
+  // Quantas missões cabem no tempo total (não mais "uma por dia"). A média
+  // é dos TRÊS formatos que existem, porque qualquer um deles pode sair —
+  // antes ela vinha do ciclo do modo, que no cirúrgico só tinha questões.
   const duracaoMedia =
-    TIPOS_CICLO[dados.modo].reduce((s, t) => s + (dados.config.duracaoPorTipo[t] ?? DURACAO_TIPO[t] ?? 40), 0) / TIPOS_CICLO[dados.modo].length;
+    (["questoes", "flashcards", "aula"] as const).reduce(
+      (s, t) => s + (dados.config.duracaoPorTipo[t] ?? DURACAO_TIPO[t] ?? 40),
+      0
+    ) / 3;
   const totalMissoes = Math.max(1, Math.floor(minutosDisponiveis / duracaoMedia));
 
   const totalGen = scores.reduce((s, x) => s + Math.max(x.gen, 0.1), 0);
   const slots: Record<string, number> = {};
   scores.forEach(({ mat, gen }) => {
-    slots[mat] = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * totalMissoes));
+    // O teto por matéria entra JÁ na distribuição das vagas. Sem ele, uma
+    // matéria com GEN 729 contra 100 das outras levava quase todas — foi o
+    // que produziu oito "Questões · Biologia" em dias consecutivos.
+    const proporcional = Math.max(1, Math.round((Math.max(gen, 0.1) / totalGen) * totalMissoes));
+    const cabeAinda = Math.max(0, MAX_REFORCOS_PENDENTES_POR_MATERIA - reforcosPendentes(dados, mat).length);
+    slots[mat] = Math.min(proporcional, cabeAinda);
   });
   let soma = Object.values(slots).reduce((s, n) => s + n, 0);
   for (let i = scores.length - 1; i >= 0 && soma > totalMissoes; i--) {
@@ -714,14 +797,13 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     slots[m] -= red; soma -= red;
   }
 
-  const ciclo = TIPOS_CICLO[dados.modo];
-  const sequencia: { materia: string; tipo: string }[] = [];
-  const cont: Record<string, number> = {};
+  // A sequência carrega só a MATÉRIA. O formato de cada missão é decidido na
+  // hora, pelo erro do aluno e pelo que já foi agendado para aquela matéria
+  // nesta mesma execução — é isso que faz a segunda missão de Biologia sair
+  // diferente da primeira em vez de ser a mesma coisa outra vez.
+  const sequencia: { materia: string }[] = [];
   for (const { mat } of scores) {
-    for (let i = 0; i < (slots[mat] ?? 0); i++) {
-      cont[mat] = cont[mat] ?? 0;
-      sequencia.push({ materia: mat, tipo: ciclo[cont[mat]++ % ciclo.length] });
-    }
+    for (let i = 0; i < (slots[mat] ?? 0); i++) sequencia.push({ materia: mat });
   }
 
   // Intercalar
@@ -744,11 +826,19 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     if (!jaNoDia.has(m.data)) jaNoDia.set(m.data, new Set());
     jaNoDia.get(m.data)!.add(`${chaveMateria(m.materia)}|${m.tipo}`);
   });
+  // Formatos já criados NESTA execução, por matéria. Como o insert só
+  // acontece no fim, sem isto a decisão do reforço enxergaria o banco antigo
+  // e escolheria o mesmo formato todas as vezes.
+  const criadosNaExecucao = new Map<string, TipoReforco[]>();
   const missoes: Record<string, unknown>[] = [];
   for (const item of intercalada) {
+    const chave = chaveMateria(item.materia);
+    const extras = criadosNaExecucao.get(chave) ?? [];
+    if (reforcoSaturado(dados, item.materia, extras.length)) continue;
+
     // Resolve o conteúdo ANTES de reservar o tempo do dia: uma matéria sem
     // material nenhum não deve consumir capacidade de um dia livre.
-    const conteudo = resolverConteudoMissao(dados, item.materia, item.tipo);
+    const conteudo = resolverConteudoMissao(dados, item.materia, extras);
     if (!conteudo) continue;
 
     const min = dados.config.duracaoPorTipo[conteudo.tipo] ?? DURACAO_TIPO[conteudo.tipo] ?? 40;
@@ -756,13 +846,14 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     // Também não repete a mesma matéria+tipo no mesmo dia: "Questões de
     // Biologia" duas vezes na terça é ruído, não reforço — quando isso
     // acontece, a missão vai para o próximo dia disponível.
-    const marca = `${chaveMateria(item.materia)}|${conteudo.tipo}`;
+    const marca = `${chave}|${conteudo.tipo}`;
     const candidatas = datasDisponiveis.filter((d) => !jaNoDia.get(d)?.has(marca));
     const data = dados.agenda.primeiraDataComEspaco(candidatas, min);
     if (!data) break; // acabou a capacidade da janela até a prova
     dados.agenda.reservar(data, min);
     if (!jaNoDia.has(data)) jaNoDia.set(data, new Set());
     jaNoDia.get(data)!.add(marca);
+    criadosNaExecucao.set(chave, [...extras, conteudo.tipo]);
     const dia = { data };
     const sc = scores.find((x) => mesmaMateria(x.mat, item.materia))!;
     missoes.push({
@@ -783,8 +874,31 @@ async function preencherDiasLivres(dados: DadosAluno): Promise<number> {
     });
   }
 
-  if (missoes.length > 0) await supabase.from("aluno_missoes").insert(missoes);
+  if (missoes.length > 0) await inserirMissoesUnicas(missoes);
   return missoes.length;
+}
+
+/**
+ * Grava missões do Copiloto tolerando a colisão do índice único
+ * `aluno_missoes_reforco_unico` (migração 056).
+ *
+ * Duas execuções do motor a 1,9 s de distância criaram missões idênticas —
+ * mesma data, mesma matéria, mesmo GEN — porque a guarda em memória é uma
+ * leitura anterior à escrita e `rodarCopiloto` dispara de vários pontos ao
+ * mesmo tempo. Perder essa corrida não é erro: significa que a outra execução
+ * já criou a missão, e a única coisa errada seria criar a segunda.
+ */
+async function inserirMissoesUnicas(missoes: Record<string, unknown>[]): Promise<number> {
+  const supabase = createAdminClient();
+  let gravadas = 0;
+  // Uma a uma: num insert em lote, a colisão de UMA linha derruba o lote
+  // inteiro e o aluno ficaria sem nenhuma das missões novas.
+  for (const m of missoes) {
+    const { error } = await supabase.from("aluno_missoes").insert(m);
+    if (!error) gravadas++;
+    else if (error.code !== "23505") console.error("[copiloto] falha ao gravar missão:", error.message);
+  }
+  return gravadas;
 }
 
 // ============================================================================
@@ -823,7 +937,11 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     // O conteúdo do cronograma daquele dia ficava de fora, então um dia com
     // 3h de rota e 1h de missão parecia ter 2h livres num limite de 3h — e o
     // aluno terminava com 4h de tarefa. A agenda conta os dois.
-    const conteudoExtra = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
+    // Sem tipo fixo: o formato sai do erro. E a matéria satura — um dia
+    // ocupado não é motivo para furar o teto de reforço por matéria.
+    const conteudoExtra = reforcoSaturado(dados, maisUrgente.mat)
+      ? null
+      : resolverConteudoMissao(dados, maisUrgente.mat);
     const minExtra = conteudoExtra
       ? dados.config.duracaoPorTipo[conteudoExtra.tipo] ?? DURACAO_TIPO[conteudoExtra.tipo] ?? 40
       : 0;
@@ -865,7 +983,7 @@ async function modificarDiasOcupados(dados: DadosAluno): Promise<number> {
     // Substituir: cria a nova missão do Copiloto e remove a antiga. A troca
     // só pode acontecer se a nova tiver conteúdo — trocar uma missão válida
     // por uma vazia deixaria o aluno com menos do que tinha antes.
-    const conteudoSubst = resolverConteudoMissao(dados, maisUrgente.mat, "questoes");
+    const conteudoSubst = resolverConteudoMissao(dados, maisUrgente.mat);
     if (!conteudoSubst) continue;
 
     // A missão nova entra com a duração REAL do seu tipo, não com a da que
@@ -1382,14 +1500,15 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
             // Só considera matérias que têm conteúdo — antes bastava ter GEN
             // alto, e o aluno ganhava uma missão que não abria nada.
             const mat = [...dados.materias.keys()]
-              .filter((m) => tipoComConteudo(dados, m, "questoes") !== null)
+              .filter((m) => !reforcoSaturado(dados, m) && tipoComConteudo(dados, m) !== null)
               .sort((a, b) => genMateria(b, dados) - genMateria(a, dados))[0];
-            const tipoMat = mat ? tipoComConteudo(dados, mat, "questoes") : null;
-            if (mat && tipoMat) {
+            const conteudoTempo = mat ? resolverConteudoMissao(dados, mat) : null;
+            if (mat && conteudoTempo) {
               await supabase.from("aluno_missoes").insert({
                 aluno_id: dados.alunoId, data: iso,
-                titulo: `${tipoMat === "flashcards" ? "Flashcards" : "Questões"} · ${mat} — Copiloto (+tempo)`,
-                materia: mat, assunto: null, tipo: tipoMat,
+                titulo: `${conteudoTempo.titulo} — Copiloto (+tempo)`,
+                materia: mat, assunto: conteudoTempo.assunto, tipo: conteudoTempo.tipo,
+                ref_id: conteudoTempo.refId,
                 duracao_minutos: 40, duracao_estimada_min: 40,
                 prioridade: 2, origem: "copiloto",
                 motivo_copiloto: `[checkin] aluno aceitou aumentar tempo de estudo`,
@@ -1405,25 +1524,32 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         const mat = acao_payload.materia as string;
         const dias = Number(acao_payload.dias ?? 7);
         let adicionados = 0;
+        const tiposCriadosNoFoco: TipoReforco[] = [];
         for (let d = 1; d <= Math.min(dias, dados.diasRestantes ?? dias) && adicionados < 5; d++) {
           const iso = somarDias(hojeISO(), d);
           const missoesNoDia = dados.missoesAgendadas.filter((m) => m.data === iso);
           const jaTemMateria = missoesNoDia.some((m) => mesmaMateria(m.materia, mat));
           if (jaTemMateria) continue;
-          const tipoFoco = tipoComConteudo(dados, mat, "questoes");
-          if (!tipoFoco) break; // matéria pedida no check-in não tem conteúdo
+          // Foco pedido pelo aluno também varia de formato: cinco sessões
+          // iguais de questões não são um plano de reforço.
+          const jaCriados = adicionados;
+          if (reforcoSaturado(dados, mat, jaCriados)) break;
+          const conteudoFoco = resolverConteudoMissao(dados, mat, tiposCriadosNoFoco);
+          if (!conteudoFoco) break; // matéria pedida no check-in não tem conteúdo
           // Foco pedido pelo aluno não é licença para estourar o dia dele:
           // se não couber aqui, o laço tenta o dia seguinte.
           if (dados.agenda.cabe(iso, 40)) {
             await supabase.from("aluno_missoes").insert({
               aluno_id: dados.alunoId, data: iso,
-              titulo: `${tipoFoco === "flashcards" ? "Flashcards" : "Questões"} · ${mat} — Copiloto (foco)`,
-              materia: mat, assunto: null, tipo: tipoFoco,
+              titulo: `${conteudoFoco.titulo} — Copiloto (foco)`,
+              materia: mat, assunto: conteudoFoco.assunto, tipo: conteudoFoco.tipo,
+              ref_id: conteudoFoco.refId,
               duracao_minutos: 40, duracao_estimada_min: 40,
               prioridade: 3, origem: "copiloto",
               motivo_copiloto: `[checkin] aluno pediu foco em ${mat}`,
             });
             dados.agenda.reservar(iso, 40);
+            tiposCriadosNoFoco.push(conteudoFoco.tipo);
             adicionados++;
           }
         }
@@ -1440,15 +1566,16 @@ async function aplicarCheckinsRespondidos(dados: DadosAluno): Promise<void> {
         // Redistribuir apaga missões existentes: se a matéria de destino não
         // tem conteúdo, o aluno terminaria com menos missões válidas do que
         // começou.
-        const tipoPara = tipoComConteudo(dados, para, "questoes");
+        const conteudoPara = resolverConteudoMissao(dados, para);
         // Troca 1-para-1 na mesma data e com a mesma duração: o total do dia
         // não muda, então o limite continua respeitado por construção.
-        for (const m of tipoPara ? missoesParaSubstituir : []) {
+        for (const m of conteudoPara ? missoesParaSubstituir : []) {
           await supabase.from("aluno_missoes").delete().eq("id", m.id);
           await supabase.from("aluno_missoes").insert({
             aluno_id: dados.alunoId, data: m.data,
-            titulo: `${tipoPara === "flashcards" ? "Flashcards" : "Questões"} · ${para} — Copiloto (redistribuído)`,
-            materia: para, assunto: null, tipo: tipoPara,
+            titulo: `${conteudoPara!.titulo} — Copiloto (redistribuído)`,
+            materia: para, assunto: conteudoPara!.assunto, tipo: conteudoPara!.tipo,
+            ref_id: conteudoPara!.refId,
             duracao_minutos: m.duracao_minutos, duracao_estimada_min: m.duracao_estimada_min,
             prioridade: 2, origem: "copiloto",
             motivo_copiloto: `[checkin] redistribuído de ${de} para ${para}`,
@@ -1521,12 +1648,10 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     // ferramenta certa justamente para lacuna de memorização — erro por não
     // lembrar, não por não saber resolver. Erro em volume (>=3) continua
     // pedindo questões, que é treino de aplicação.
-    const inv = dados.inventario.get(chaveMateria(materia)) ?? INVENTARIO_VAZIO;
-    const preferido = dados.modo === "cirurgico" ? "questoes"
-      : d.e >= 3 ? "questoes"
-      : precisao < 60 && inv.flashcards > 0 ? "flashcards"
-      : "questoes";
-    const tipo = tipoComConteudo(dados, materia, preferido);
+    // O modo NÃO decide mais o formato. `dados.modo === "cirurgico" ?
+    // "questoes"` era o segundo dos três portões que faziam toda recomendação
+    // virar questões na reta final.
+    const tipo = tipoComConteudo(dados, materia);
     if (!tipo) continue; // sem conteúdo para essa matéria: nada a recomendar
     lista.push({ materia, assunto, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipo, urgencia: gen > 15 ? 3 : gen > 6 ? 2 : 1, descricao: gerarDescricao({ assunto, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
@@ -1563,7 +1688,7 @@ function calcularIntervencoes(dados: DadosAluno): Intervencao[] {
     const sentimento = dados.briefing?.sentimentos[chaveMateria(materia)] ?? "Atenção";
     const gen = calcularGEN({ relevancia: m.relevancia, precisao, qtdErros: d.e, diasRestantes: dados.diasRestantes, sentimento }) * 0.7;
     if (gen < cfg.genMin) continue;
-    const tipoMat = tipoComConteudo(dados, materia, "questoes");
+    const tipoMat = tipoComConteudo(dados, materia);
     if (!tipoMat) continue; // sem questões nem flashcards: não vira missão
     lista.push({ materia, assunto: null, gen, precisaoAtual: precisao, qtdErros: d.e, qtdTotal: d.t, relevancia: m.relevancia, tipoRecomendado: tipoMat, urgencia: gen > 12 ? 3 : gen > 5 ? 2 : 1, descricao: gerarDescricao({ assunto: null, materia, qtdErros: d.e, total: d.t, precisao, relevancia: m.relevancia, diasRestantes: dados.diasRestantes }) });
   }
@@ -1654,7 +1779,7 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
     // banco: as revisões em vídeo eram produzidas e descartadas na última
     // linha.
     let tipoFinal: string = iv.tipoRecomendado;
-    if (cfg.gemini && iv.assunto && iv.gen > 8) {
+    if (cfg.producao && iv.assunto && iv.gen > 8) {
       try {
         const producao = await produzirMaterialSobDemanda(
           dados.alunoId, iv.materia, iv.assunto,

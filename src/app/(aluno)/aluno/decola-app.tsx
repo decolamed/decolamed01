@@ -1087,7 +1087,18 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       if (conteudo) this.abrirAula(conteudo.id, conteudo.titulo, conteudo.url || "", "mapa");
       else if (m.materia) this.avisar(`Ainda não há aulas de ${m.materia} publicadas.`);
       else this.nav("conteudo", { contTitle: "Videoaulas", contTipo: "aula", contBack: "mapa" });
-    } else this.nav("estudos");
+    } else {
+      // Missão "livre" com material anexado pelo administrador. O painel
+      // passou a permitir escolher um conteúdo da biblioteca (ou colar um
+      // link, que vira um conteúdo) ao criar a missão manual — sem este
+      // caminho, o `ref_id` gravado lá não abriria nada e o clique cairia na
+      // aba Estudos, como se a missão não tivesse ação.
+      const anexado = m.ref_id
+        ? this.props.dados.conteudos.find((c) => c.id === m.ref_id && c.url)
+        : null;
+      if (anexado) this.abrirAula(anexado.id, anexado.titulo, anexado.url || "", "mapa");
+      else this.nav("estudos");
+    }
   }
   toggleMissao(id: string) {
     const atual = this.state.missoesLocal.find((m: AlunoMissao) => m.id === id);
@@ -2106,18 +2117,29 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ]),
           S.upcomingOpen
             ? h("div", { key: "up", style: { padding: "12px 16px", background: C.card2, borderBottom: "1px solid " + C.line } }, [
-                h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 8 } }, "Próximas missões planejadas"),
+                h("div", { key: "l", style: { fontSize: 10.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 8 } }, "Próximas missões · o que vem depois de hoje"),
+                // Sem cadeado: nada aqui está bloqueado. O ícone e a frase
+                // "são liberadas quando você conclui a missão do dia"
+                // descreviam uma regra de progressão que não existe no
+                // código — qualquer uma dessas missões abre pelo cronograma.
+                // Prometer bloqueio inexistente confunde duas vezes: sugere
+                // que o aluno não pode adiantar, e faz a lista parecer um
+                // segundo cronograma.
                 ...upcoming.map((u, i) =>
                   h("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: i < upcoming.length - 1 ? "1px solid " + C.line : "none" } }, [
-                    h("span", { key: "l" }, I("lock", 14, C.faint)),
+                    h("span", { key: "c" }, I("calendar", 13, C.faint)),
                     h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 700, color: C.sub } }, u[0]),
                     h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 700, color: C.faint } }, u[1])
                   ])
                 ),
                 h(
                   "div",
-                  { key: "n", style: { marginTop: 8, fontSize: 10, fontWeight: 600, color: C.faint, lineHeight: 1.5 } },
-                  "As próximas missões são liberadas quando você conclui a missão do dia."
+                  {
+                    key: "n",
+                    onClick: () => this.nav("plano"),
+                    style: { marginTop: 8, fontSize: 10, fontWeight: 700, color: C.orange, cursor: "pointer" }
+                  },
+                  "Ver no cronograma, dia a dia →"
                 )
               ])
             : null,
@@ -4355,10 +4377,45 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                 { key: "itens", style: { display: "flex", flexDirection: "column", gap: 6 } },
                 itens.map((item, i) => this.linhaItemTrilha(dia.dia_numero, item, i))
               )
-            : null
+            : null,
+          // O que o Copiloto marcou PARA ESTE DIA entra aqui dentro, e não
+          // numa lista solta no fim da página. Uma revisão marcada para
+          // sexta pertence ao bloco de sexta: fora dele, o aluno lia duas
+          // agendas concorrentes e não sabia qual valia.
+          ...this.missoesDoDia(dia)
         ]
       )
     );
+  }
+
+  /**
+   * As missões individuais (Copiloto ou admin) agendadas para a data deste
+   * dia da rota, já renderizadas — vazio quando não há nenhuma.
+   *
+   * A ligação é pela DATA: `scheduled_date` do dia da rota contra `data` da
+   * missão. É o mesmo par que o Copiloto usa ao agendar, então o que ele
+   * decidiu para sexta aparece na sexta.
+   */
+  missoesDoDia(dia: DiaDoCronograma) {
+    const { C, h } = this.ui();
+    const data = (dia as { scheduled_date?: string }).scheduled_date ?? this.dataDoDia(dia.dia_numero);
+    if (!data) return [];
+    const doDia = (this.state.missoesLocal as AlunoMissao[]).filter((m) => m.data === data);
+    if (doDia.length === 0) return [];
+    return [
+      h(
+        "div",
+        { key: "missoes", style: { marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + C.line } },
+        [
+          h(
+            "div",
+            { key: "l", style: { fontSize: 9.5, fontWeight: 900, color: C.orange, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 4 } },
+            doDia.some((m) => m.origem === "copiloto") ? "Adicionado pelo Copiloto" : "Atividades extras"
+          ),
+          ...doDia.map((m, i) => this.linhaMissao(m, i, doDia.length))
+        ]
+      )
+    ];
   }
   scrPlano() {
     const { C, h, I, card, btn, iconBox } = this.ui();
@@ -4384,8 +4441,22 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const proximas = (this.state.missoesLocal as AlunoMissao[])
       .filter((m) => m.data > hojeStr && !(dataProvaPlano && m.data === dataProvaPlano))
       .sort((a, b) => a.data.localeCompare(b.data) || b.prioridade - a.prioridade);
+    // Datas que já têm um cartão de dia na tela — as missões delas são
+    // renderizadas DENTRO do cartão (missoesDoDia). Aqui sobra só o que não
+    // tem dia correspondente, que sem esta lista simplesmente sumiria.
+    const datasComCartao = new Set(
+      [
+        ...(this.props.dados.trilhaHoje ? [this.props.dados.trilhaHoje] : []),
+        ...this.props.dados.trilhaProximos,
+        ...this.props.dados.trilhaAnteriores
+      ]
+        .map((d) => (d as { scheduled_date?: string }).scheduled_date ?? this.dataDoDia(d.dia_numero))
+        .filter(Boolean) as string[]
+    );
     const porDia = new Map<string, AlunoMissao[]>();
-    proximas.forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
+    proximas
+      .filter((m) => !datasComCartao.has(m.data))
+      .forEach((m) => porDia.set(m.data, [...(porDia.get(m.data) || []), m]));
     const semNada = !diaTrilha && hoje.length === 0 && proximas.length === 0 && this.props.dados.trilhaProximos.length === 0;
     return this.screenWrap([
       this.head("Cronograma de Estudos", { back: "mapa" }),
@@ -4530,6 +4601,10 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             "Próximos dias · " + this.props.dados.trilhaProximos.length)
         : null,
       ...this.props.dados.trilhaProximos.map((dia) => this.cartaoDiaTrilha(dia, false)),
+      porDia.size
+        ? h("div", { key: "lblFora", style: { margin: "20px 20px 8px", fontSize: 11.5, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } },
+            "Agendado para depois do cronograma")
+        : null,
       ...Array.from(porDia.entries()).map(([data, ms]) =>
         h(
           "div",

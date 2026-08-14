@@ -18,8 +18,8 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
 
   if (!questao) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow">
-        <p className="text-navy-dark/70">Nenhuma questão disponível com esse filtro no momento.</p>
+      <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
+        <p className="text-app-sub">Nenhuma questão disponível com esse filtro no momento.</p>
       </div>
     );
   }
@@ -59,10 +59,10 @@ export function QuestoesPractice({ questoes }: { questoes: Questao[] }) {
 
   if (terminou) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow">
+      <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
         <span className="text-4xl">🏁</span>
-        <h2 className="mt-3 font-display text-xl font-bold text-navy-dark">Rodada concluída!</h2>
-        <p className="mt-2 text-navy-dark/70">
+        <h2 className="mt-3 font-display text-xl font-bold text-app-txt">Rodada concluída!</h2>
+        <p className="mt-2 text-app-sub">
           Você acertou {acertos} de {questoes.length} questões.
         </p>
         <button

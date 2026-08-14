@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { submeterSimulado, type ItemGabarito, type ResultadoSimulado } from "@/app/(aluno)/aluno/simulados/[id]/actions";
 import { ImagensQuestao } from "./imagens-questao";
-import { CartaoQuestao } from "./cartao-questao";
+import { CartaoQuestao, AlternativaDoGabarito } from "./cartao-questao";
 import { filtrarPorIdioma } from "@/lib/site/idioma-aluno";
 
 interface QuestaoSimulado {
@@ -116,18 +116,18 @@ export function SimuladoRunner({
   if (resultado) {
     return (
       <div>
-        <div className="rounded-2xl bg-white p-8 text-center shadow">
+        <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
           <span className="mx-auto block h-1 w-10 rounded-full bg-orange" />
-          <h1 className="mt-2 font-display text-2xl font-bold text-navy-dark">Simulado concluído!</h1>
-          <p className="mt-2 text-navy-dark/70">
+          <h1 className="mt-2 font-display text-2xl font-bold text-app-txt">Simulado concluído!</h1>
+          <p className="mt-2 text-app-sub">
             Você acertou {resultado.acertos} de {resultado.total} questões.
           </p>
 
           {/* Nota ponderada em destaque + nota simples menor */}
           <div className="mt-4 flex flex-col items-center gap-1">
-            <p className="text-xs font-bold uppercase tracking-widest text-navy-dark/50">{rotuloNota}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-app-faint">{rotuloNota}</p>
             <p className="font-display text-5xl font-extrabold text-orange">{resultado.notaFacape}%</p>
-            <p className="text-xs text-navy-dark/50">
+            <p className="text-xs text-app-faint">
               Acerto simples: {resultado.nota}% · calculado pelos pesos oficiais das disciplinas
             </p>
           </div>
@@ -141,7 +141,7 @@ export function SimuladoRunner({
             </button>
             <Link
               href="/aluno/atividades"
-              className="rounded-full border border-navy/20 px-6 py-3 font-display font-semibold text-navy-dark hover:bg-navy/5"
+              className="rounded-full border border-app-line bg-app-chip px-6 py-3 font-display font-semibold text-app-txt"
             >
               Voltar às atividades
             </Link>
@@ -150,30 +150,33 @@ export function SimuladoRunner({
 
         {/* Desempenho por matéria — o "raio-x" do simulado */}
         {resultado.desempenhoPorMateria.length > 0 && (
-          <div className="mt-6 rounded-2xl bg-white p-6 shadow">
-            <h2 className="font-display font-bold text-navy-dark">Desempenho por matéria</h2>
-            <p className="mt-1 text-xs text-navy-dark/50">
+          <div className="mt-6 rounded-2xl border border-app-line bg-app-card p-6">
+            <h2 className="font-display font-bold text-app-txt">Desempenho por matéria</h2>
+            <p className="mt-1 text-xs text-app-faint">
               {`Ordenado do maior peso ${nomeVestibular === "vestibular" ? "no vestibular" : `na ${nomeVestibular}`} pro menor.`}
             </p>
             <div className="mt-4 space-y-3">
               {[...resultado.desempenhoPorMateria]
                 .sort((a, b) => b.peso - a.peso || b.precisao - a.precisao)
                 .map((m) => {
-                  const cor = m.precisao >= 70 ? "bg-green-500" : m.precisao >= 40 ? "bg-orange" : "bg-red-400";
+                  // Classes escritas por inteiro e que EXISTEM neste tema:
+                  // `bg-green-500`/`bg-red-400` não são geradas (ver
+                  // tailwind.config.ts), e a barra saía sem cor nenhuma.
+                  const cor = m.precisao >= 70 ? "bg-app-green" : m.precisao >= 40 ? "bg-orange" : "bg-app-red";
                   return (
                     <div key={m.materia}>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="font-semibold text-navy-dark">
+                        <span className="font-semibold text-app-txt">
                           {m.materia}
-                          <span className="ml-2 rounded-full bg-navy/5 px-2 py-0.5 text-xs font-bold text-navy-dark/60">
+                          <span className="ml-2 rounded-full bg-app-chip px-2 py-0.5 text-xs font-bold text-app-sub">
                             peso {m.peso}
                           </span>
                         </span>
-                        <span className="text-navy-dark/60">
+                        <span className="text-app-sub">
                           {m.precisao}% ({m.acertos}/{m.total})
                         </span>
                       </div>
-                      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-navy/10">
+                      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-app-chip">
                         <div className={`h-full ${cor}`} style={{ width: `${m.precisao}%` }} />
                       </div>
                     </div>
@@ -186,31 +189,27 @@ export function SimuladoRunner({
         {verGabarito && (
           <div className="mt-6 space-y-4">
             {resultado.gabarito.map((item, i) => (
-              <div key={item.questaoId} className="rounded-2xl bg-white p-5 shadow">
-                <p className="text-xs font-semibold text-navy-dark/50">Questão {i + 1}</p>
-                <p className="mt-1 whitespace-pre-line font-display font-semibold text-navy-dark">{item.enunciado}</p>
+              <div key={item.questaoId} className="rounded-2xl border border-app-line bg-app-card p-5">
+                <p className="text-xs font-semibold text-app-faint">Questão {i + 1}</p>
+                <p className="mt-1 whitespace-pre-line font-display font-semibold text-app-txt">{item.enunciado}</p>
                 <ImagensQuestao imagens={item.imagens} />
                 <div className="mt-3 space-y-1.5">
-                  {item.alternativas.map((alt) => {
-                    const éCorreta = alt.id === item.respostaCorreta;
-                    const éEscolhidaErrada = alt.id === item.escolhida && !item.correta;
-                    return (
-                      <p
-                        key={alt.id}
-                        className={`rounded-lg p-2 text-sm ${
-                          éCorreta ? "bg-green-50 text-green-800" : éEscolhidaErrada ? "bg-red-50 text-red-700" : "text-navy-dark/70"
-                        }`}
-                      >
-                        <span className="font-bold">{alt.id.toUpperCase()})</span> {alt.texto}
-                      </p>
-                    );
-                  })}
+                  {item.alternativas.map((alt) => (
+                    <AlternativaDoGabarito
+                      key={alt.id}
+                      alt={alt}
+                      correta={alt.id === item.respostaCorreta}
+                      escolhidaErrada={alt.id === item.escolhida && !item.correta}
+                    />
+                  ))}
                 </div>
                 {!item.escolhida && (
-                  <p className="mt-2 text-xs font-semibold text-orange-dark">Você não respondeu esta questão.</p>
+                  <p className="mt-2 text-xs font-semibold text-orange">Você não respondeu esta questão.</p>
                 )}
                 {item.explicacao && (
-                  <p className="mt-3 rounded-lg bg-navy/5 p-3 text-sm text-navy-dark/80">{item.explicacao}</p>
+                  <p className="mt-3 rounded-xl border border-app-line bg-app-bg p-3 text-sm text-app-sub">
+                    {item.explicacao}
+                  </p>
                 )}
               </div>
             ))}
@@ -226,12 +225,12 @@ export function SimuladoRunner({
   // depois que o aluno sabe qual prova vai fazer.
   if (variavelIdioma && !idioma) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow">
-        <h1 className="font-display text-xl font-bold text-navy-dark">{titulo}</h1>
-        <p className="mt-3 text-sm text-navy-dark/70">
+      <div className="mx-auto max-w-md rounded-2xl border border-app-line bg-app-card p-8 text-center">
+        <h1 className="font-display text-xl font-bold text-app-txt">{titulo}</h1>
+        <p className="mt-3 text-sm text-app-sub">
           Este simulado tem questões de língua estrangeira. Qual idioma você vai fazer?
         </p>
-        <p className="mt-1 text-xs text-navy-dark/50">
+        <p className="mt-1 text-xs text-app-faint">
           Você responde apenas às questões do idioma escolhido, e só elas contam na sua nota.
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3">
@@ -242,7 +241,7 @@ export function SimuladoRunner({
             <button
               key={op.valor}
               onClick={() => setIdioma(op.valor)}
-              className="rounded-xl border-2 border-navy/15 p-4 font-display font-bold text-navy-dark transition hover:border-orange hover:bg-orange/5"
+              className="rounded-[14px] border-[1.5px] border-app-line bg-app-bg p-4 font-display font-bold text-app-txt transition hover:border-orange"
             >
               {op.rotulo}
             </button>
@@ -254,10 +253,10 @@ export function SimuladoRunner({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-app-line bg-app-card p-4">
         <div>
-          <p className="font-display font-bold text-navy-dark">{titulo}</p>
-          <p className="text-xs text-navy-dark/50">
+          <p className="font-display font-bold text-app-txt">{titulo}</p>
+          <p className="text-xs text-app-sub">
             {respondidas} de {questoesDaProva.length} respondidas
             {redacao ? " · + redação" : ""}
             {idioma ? ` · ${idioma === "ingles" ? "Inglês" : "Espanhol"}` : ""}
@@ -265,7 +264,7 @@ export function SimuladoRunner({
         </div>
         <span
           className={`rounded-full px-4 py-2 font-display text-lg font-bold ${
-            segundosRestantes < 60 ? "bg-red-50 text-red-600" : "bg-navy/5 text-navy-dark"
+            segundosRestantes < 60 ? "bg-app-red-soft text-app-red" : "bg-app-chip text-app-txt"
           }`}
         >
           {tempoFormatado}
@@ -278,12 +277,13 @@ export function SimuladoRunner({
           <button
             key={q.id}
             onClick={() => setIndice(i)}
-            className={`h-9 w-9 rounded-lg text-sm font-semibold ${
+            aria-current={i === indice ? "true" : undefined}
+            className={`h-9 w-9 rounded-lg border text-sm font-bold ${
               i === indice
-                ? "bg-orange text-white"
+                ? "border-orange bg-orange text-white"
                 : respostas[q.id]
-                ? "bg-navy text-white"
-                : "bg-white text-navy-dark shadow"
+                ? "border-app-green bg-app-green-soft text-app-green-deep"
+                : "border-app-line bg-app-card text-app-sub"
             }`}
           >
             {i + 1}
@@ -292,8 +292,8 @@ export function SimuladoRunner({
         {redacao && (
           <button
             onClick={() => setIndice(questoesDaProva.length)}
-            className={`h-9 rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide ${
-              naRedacao ? "bg-orange text-white" : "bg-white text-navy-dark shadow"
+            className={`h-9 rounded-lg border px-3 text-xs font-extrabold uppercase tracking-wide ${
+              naRedacao ? "border-orange bg-orange text-white" : "border-app-line bg-app-card text-app-sub"
             }`}
           >
             Redação
@@ -306,16 +306,16 @@ export function SimuladoRunner({
           propósito: o aluno escreve à mão, dentro do mesmo cronômetro, e
           envia depois pelo fluxo de correção que já existe. */}
       {naRedacao && redacao ? (
-        <div className="mt-4 rounded-2xl bg-white p-6 shadow sm:p-8">
-          <span className="rounded-full bg-orange/10 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-orange">
+        <div className="mt-4 rounded-2xl border border-app-line bg-app-card p-6 sm:p-8">
+          <span className="rounded-full bg-app-orange-soft px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-orange">
             Redação
           </span>
-          <h2 className="mt-4 font-display text-lg font-bold text-navy-dark">{redacao.tema}</h2>
+          <h2 className="mt-4 font-display text-lg font-bold text-app-txt">{redacao.tema}</h2>
 
           {redacao.textos_motivadores && (
             <div className="mt-4">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Textos motivadores</p>
-              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-navy-dark">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-app-faint">Textos motivadores</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-app-txt">
                 {redacao.textos_motivadores}
               </p>
             </div>
@@ -323,13 +323,13 @@ export function SimuladoRunner({
 
           {redacao.instrucoes && (
             <div className="mt-4">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-navy-dark/40">Instruções</p>
-              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-navy-dark">{redacao.instrucoes}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-app-faint">Instruções</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-app-txt">{redacao.instrucoes}</p>
             </div>
           )}
 
-          <div className="mt-5 rounded-xl bg-navy/5 p-4 text-sm leading-relaxed text-navy-dark/80">
-            <p className="font-bold text-navy-dark">Como fazer esta redação</p>
+          <div className="mt-5 rounded-xl border border-app-line bg-app-bg p-4 text-sm leading-relaxed text-app-sub">
+            <p className="font-bold text-app-txt">Como fazer esta redação</p>
             <p className="mt-1">
               Não há espaço para escrever aqui na plataforma. Escreva à mão, no caderno, durante o próprio tempo deste
               simulado — o cronômetro acima é o mesmo. Ao terminar, você pode enviar sua redação para a professora pelo
@@ -340,7 +340,7 @@ export function SimuladoRunner({
           <div className="mt-6 flex items-center justify-between">
             <button
               onClick={() => setIndice((i) => Math.max(0, i - 1))}
-              className="rounded-full border border-navy/20 px-5 py-2.5 font-semibold text-navy-dark"
+              className="rounded-full border border-app-line px-5 py-2.5 font-semibold text-app-sub"
             >
               ← Anterior
             </button>
@@ -373,7 +373,7 @@ export function SimuladoRunner({
           <button
             onClick={() => setIndice((i) => Math.max(0, i - 1))}
             disabled={indice === 0}
-            className="rounded-full border border-navy/20 px-5 py-2.5 font-semibold text-navy-dark disabled:opacity-30"
+            className="rounded-full border border-app-line px-5 py-2.5 font-semibold text-app-sub disabled:opacity-30"
           >
             ← Anterior
           </button>
@@ -381,9 +381,9 @@ export function SimuladoRunner({
           {indice < totalItens - 1 ? (
             <button
               onClick={() => setIndice((i) => i + 1)}
-              className="rounded-full bg-navy px-5 py-2.5 font-semibold text-white"
+              className="rounded-full bg-orange px-6 py-2.5 font-display font-bold text-white hover:bg-orange-dark"
             >
-              {indice === questoesDaProva.length - 1 && redacao ? "Ir para a redação →" : "Próxima →"}
+              {indice === questoesDaProva.length - 1 && redacao ? "Ir para a redação →" : "Próxima questão →"}
             </button>
           ) : (
             <button

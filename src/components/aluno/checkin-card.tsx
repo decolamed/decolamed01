@@ -73,7 +73,7 @@ export function CheckinCard({ checkin }: { checkin: Checkin }) {
         ))}
       </div>
       {erro && (
-        <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+        <p className="mt-3 rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm font-semibold text-red">
           Não foi possível registrar sua resposta. Verifique sua conexão e tente de novo.
         </p>
       )}

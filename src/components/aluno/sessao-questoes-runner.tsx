@@ -86,20 +86,23 @@ export function SessaoQuestoesRunner({
 
   if (terminou) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow">
+      <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
         <span className="text-4xl">🏁</span>
-        <h2 className="mt-3 font-display text-xl font-bold text-navy-dark">Atividade concluída!</h2>
-        <p className="mt-2 text-navy-dark/70">
+        <h2 className="mt-3 font-display text-xl font-bold text-app-txt">Atividade concluída!</h2>
+        <p className="mt-2 text-app-sub">
           Você acertou {acertos} de {total} {total === 1 ? "questão" : "questões"} de {materia}.
         </p>
-        <p className="mt-1 text-sm text-navy-dark/50">
+        <p className="mt-1 text-sm text-app-faint">
           Na próxima atividade de {materia}, você recebe questões novas — estas não se repetem.
         </p>
+        {/* O rótulo tem de dizer para onde o botão VAI. Ele leva ao painel do
+            aluno (`voltarPara`), não a uma tela de cronograma — dizer
+            "cronograma" aqui era a mesma promessa quebrada do botão do topo. */}
         <Link
           href={voltarPara}
           className="mt-5 inline-block rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
         >
-          Voltar ao cronograma
+          Voltar ao painel
         </Link>
       </div>
     );
@@ -109,12 +112,12 @@ export function SessaoQuestoesRunner({
     // Sem questões inéditas: a atividade não vira "o banco inteiro". O aluno
     // recebe a explicação e o caminho para revisar por conta própria.
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow">
+      <div className="rounded-2xl border border-app-line bg-app-card p-8 text-center">
         <span className="text-4xl">✅</span>
-        <h2 className="mt-3 font-display text-xl font-bold text-navy-dark">
+        <h2 className="mt-3 font-display text-xl font-bold text-app-txt">
           Você já respondeu todas as questões de {materia}
         </h2>
-        <p className="mt-2 text-navy-dark/70">
+        <p className="mt-2 text-app-sub">
           Não há questões inéditas para montar esta atividade. Você pode revisar as que já fez no Banco de Questões.
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
@@ -124,8 +127,11 @@ export function SessaoQuestoesRunner({
           >
             Revisar no Banco de Questões
           </Link>
-          <Link href={voltarPara} className="rounded-full bg-navy/5 px-6 py-3 font-display font-bold text-navy-dark">
-            Voltar
+          <Link
+            href={voltarPara}
+            className="rounded-full border border-app-line bg-app-chip px-6 py-3 font-display font-bold text-app-txt"
+          >
+            Voltar ao painel
           </Link>
         </div>
       </div>

@@ -76,7 +76,7 @@ export function CronogramaCopiloto({ missoes, hojeStr }: { missoes: Missao[]; ho
   return (
     <div className="mt-6 space-y-6">
       {erro && (
-        <p className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{erro}</p>
+        <p className="rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm font-semibold text-red">{erro}</p>
       )}
       {Array.from(porData.entries()).map(([data, lista]) => {
         const éHoje = data === hojeStr;
@@ -96,7 +96,7 @@ export function CronogramaCopiloto({ missoes, hojeStr }: { missoes: Missao[]; ho
                 const éCopiloto = m.origem === "copiloto";
                 const corBorda =
                   m.prioridade >= 3
-                    ? "border-red-400 bg-red-50"
+                    ? "border-red bg-red-soft"
                     : éCopiloto
                     ? "border-orange bg-orange/5"
                     : "border-navy/10 bg-white";
@@ -112,7 +112,7 @@ export function CronogramaCopiloto({ missoes, hojeStr }: { missoes: Missao[]; ho
                       disabled={pending}
                       aria-label={concluidaExibida ? "Marcar como não concluída" : "Marcar como concluída"}
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 ${
-                        concluidaExibida ? "border-green-600 bg-green-600 text-white" : "border-navy/30 bg-white"
+                        concluidaExibida ? "border-green bg-green text-white" : "border-navy/30 bg-white"
                       }`}
                     >
                       {concluidaExibida ? "✓" : ""}

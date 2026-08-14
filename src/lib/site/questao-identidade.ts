@@ -71,11 +71,18 @@ export function provaDaQuestao(q: OrigemDaQuestao): string {
  * O número é o da PROVA de origem, não a posição na atividade — é por ele que
  * o aluno acha a questão no caderno original.
  */
-export function referenciaDaQuestao(q: OrigemDaQuestao, posicaoNaLista?: number): string {
+export function referenciaDaQuestao(
+  q: OrigemDaQuestao,
+  posicaoNaLista?: number,
+  opcoes: { incluirMateria?: boolean } = {}
+): string {
   const partes: string[] = [];
   if (q.numero_questao != null) partes.push(`Questão ${q.numero_questao}`);
   else if (posicaoNaLista != null) partes.push(`Questão ${posicaoNaLista}`);
-  const materia = (q.materia ?? "").trim();
+  // Quem já mostra a matéria em destaque (a faixa de identificação do cartão)
+  // pede `incluirMateria: false` — senão ela aparece duas vezes na mesma
+  // linha: "BIOLOGIA · Questão 12 · Biologia".
+  const materia = opcoes.incluirMateria === false ? "" : (q.materia ?? "").trim();
   if (materia) partes.push(materia);
   return partes.join(" · ");
 }

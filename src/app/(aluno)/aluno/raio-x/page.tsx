@@ -148,7 +148,7 @@ export default async function AlunoRaioXPage() {
             </p>
             <div className="mt-4 space-y-3">
               {desempenhoMaterias.map((m) => {
-                const cor = m.precisao >= 70 ? "bg-green-500" : m.precisao >= 40 ? "bg-orange" : "bg-red-400";
+                const cor = m.precisao >= 70 ? "bg-green" : m.precisao >= 40 ? "bg-orange" : "bg-red";
                 return (
                   <div key={m.materia}>
                     <div className="flex items-center justify-between text-sm">
@@ -189,10 +189,10 @@ export default async function AlunoRaioXPage() {
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-bold ${
                         a.precisao >= 70
-                          ? "bg-green-100 text-green-700"
+                          ? "bg-green-soft text-green"
                           : a.precisao >= 40
                           ? "bg-orange/20 text-orange-dark"
-                          : "bg-red-100 text-red-600"
+                          : "bg-red-soft text-red"
                       }`}
                     >
                       {a.precisao}% ({a.acertos}/{a.total})

@@ -91,7 +91,7 @@ export default async function AlunoDesempenhoPage() {
                       </div>
                       <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-navy/10">
                         <div
-                          className={`h-full ${pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-orange" : "bg-red-400"}`}
+                          className={`h-full ${pct >= 70 ? "bg-green" : pct >= 40 ? "bg-orange" : "bg-red"}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
