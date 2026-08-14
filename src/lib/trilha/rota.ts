@@ -266,7 +266,12 @@ export function gerarRota(
   template: TrilhaDia[],
   p: ParametrosRota,
   opcoes: {
-    simulados?: SimuladoDisponivel[];
+    /**
+     * Qual simulado vai em cada posição: índice 0 = 1º simulado, índice 1 =
+     * 2º. Aceita `null` numa posição — o dia continua reservado e o item vai
+     * sem `ref_id`, levando o aluno à lista. Ver simulados-da-rota.ts.
+     */
+    simulados?: (SimuladoDisponivel | null)[];
     nomeVestibular?: string | null;
     /** Pesos, briefing, desempenho e progresso — o que decide a seleção. */
     contexto?: ContextoDoAluno;
@@ -515,8 +520,14 @@ export function gerarRota(
 
     if (reservado === "simulado") {
       const ordem = indiceSim1 >= 0 && i === indiceSim1 ? 1 : 2;
-      // Simulado real, escolhido por posição — determinístico como o resto.
-      const simulado = simulados[ordem - 1] ?? simulados[0] ?? null;
+      // Qual simulado vai em cada posição já vem decidido de fora (ver
+      // lib/trilha/simulados-da-rota.ts). Aqui é só posição → item.
+      //
+      // Sem `?? simulados[0]`: esse fallback existia e fazia os dois dias
+      // abrirem o MESMO simulado sempre que houvesse só um cadastrado — uma
+      // duplicação silenciosa, que o aluno não tinha como perceber. Posição
+      // sem simulado agora vira dia sem `ref_id`, que leva à lista.
+      const simulado = simulados[ordem - 1] ?? null;
       const item = itemSimulado(ordem, simulado);
       return {
         routeDay,

@@ -481,6 +481,20 @@ function DiaEditor({
                     remover
                   </button>
                 </div>
+                {/* Simulado: este item vale para o plano Decolando. O Voo
+                    Guiado monta os próprios dias de simulado e usa os que
+                    estiverem escolhidos nas Configurações — sem o aviso, o
+                    admin edita aqui e não entende por que a rota do Copiloto
+                    não mudou. */}
+                {item.tipo === "simulado" && (
+                  <p className="w-full text-[11px] text-navy-dark/50">
+                    Vale para o plano <strong>Decolando</strong>. No Voo Guiado quem manda é{" "}
+                    <a href="/admin/configuracoes" className="font-semibold text-navy hover:underline">
+                      Configurações → Simulados do Voo Guiado
+                    </a>
+                    .
+                  </p>
+                )}
                 {/* Resumo de livro: o endereço não é editado aqui. Sem este
                     aviso o item parece um bloco sem link, e é justamente o
                     contrário — ele usa o link das Configurações. */}
