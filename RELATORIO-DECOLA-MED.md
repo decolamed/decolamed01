@@ -3,18 +3,19 @@
 Data: 14/08/2026 · Branch `claude/decola-med-report-ei7u3i`
 Projeto Supabase: `cdoukrnmdsrlcbxusojm`
 
-Este documento consolida, num só lugar, as cinco rodadas de trabalho da
+Este documento consolida, num só lugar, as seis rodadas de trabalho da
 plataforma. Ele substitui `RELATORIO-AUDITORIA-FINAL.md` e
 `RELATORIO-CORRECOES.md`, cujo conteúdo integral permanece no histórico do
 Git.
 
 | Parte | Rodada | Quando |
 |---|---|---|
-| I | Reforço que responde ao erro e questões dependentes | 14/08/2026 |
-| II | Rota por capacidade, requisitos fixos e desempenho | 13/08/2026 |
-| III | Rota do aluno, sessão de questões e autoavaliação | 13/08/2026 |
-| IV | As 22 correções do documento `PROMPT DE CORREÇÃO — DECOLA` | 09/08/2026 |
-| V | Auditoria de segurança, dados, desempenho e produção | 03/08/2026 |
+| I | Simulados do admin, resumos com endereço e cobertura | 14/08/2026 |
+| II | Reforço que responde ao erro e questões dependentes | 14/08/2026 |
+| III | Rota por capacidade, requisitos fixos e desempenho | 13/08/2026 |
+| IV | Rota do aluno, sessão de questões e autoavaliação | 13/08/2026 |
+| V | As 22 correções do documento `PROMPT DE CORREÇÃO — DECOLA` | 09/08/2026 |
+| VI | Auditoria de segurança, dados, desempenho e produção | 03/08/2026 |
 
 **Como ler.** Cada item registra *o que estava causando o problema de
 verdade*, não só o que foi trocado. Em vários casos o componente apontado como
@@ -29,16 +30,131 @@ outro lugar — é por isso que algumas correções anteriores não pegavam.
 |---|---|
 | `npx tsc --noEmit` | **limpo**, zero erros |
 | `npx next build` | **limpo**, zero erros e zero avisos — 63 rotas, 54 páginas estáticas |
-| `npm test` | **212 testes, 212 passando, 0 falhando** (13 arquivos) |
+| `npm test` | **274 testes, 274 passando, 0 falhando** (17 arquivos) |
 | Chaves de API reais em arquivo versionado | **nenhuma** (varredura `AIza…`, `eyJhbGciOi…`, `sk-…`, `$aact_…`) |
 | Arquivo `.env` no repositório | **nenhum**; só `.env.example` em branco |
 
-As migrações `041`–`058` **já estão aplicadas em produção**; foram escritas e
+As migrações `041`–`062` **já estão aplicadas em produção**; foram escritas e
 executadas contra o banco na rodada em que nasceram.
 
 ---
 
-# Parte I — Reforço que responde ao erro e questões dependentes
+# Parte I — Simulados do admin, resumos com endereço e cobertura
+
+Quatro migrações (`059`–`062`), três módulos novos com testes. O fio comum é
+tirar decisões da mão do acaso — data de criação, ausência de link, algoritmo
+sem piso — e devolvê-las a quem deve tomá-las.
+
+## 1. O admin passou a escolher os dois simulados do Voo Guiado
+
+**Como era.** `contextoDaRota` pegava os dois simulados mais antigos da tabela:
+
+```js
+.order("created_at", { ascending: true }).order("id").slice(0, 2)
+```
+
+Três problemas nisso:
+
+1. **o administrador não escolhia nada.** Cadastrar um simulado novo não dava
+   jeito de usá-lo — a única alavanca era a data de criação, que a interface
+   não deixa editar;
+2. **com um único simulado utilizável** (que é o caso hoje), o fallback
+   `simulados[ordem - 1] ?? simulados[0]` fazia os **dois** dias de simulado
+   abrirem o mesmo simulado, em silêncio;
+3. **a escolha era refeita a cada leitura da tela**, porque a rota é regerada.
+   Desativar um simulado trocava o simulado de todo mundo no meio do caminho,
+   inclusive de quem já o tinha feito.
+
+**Agora** quem escolhe é o admin, em `/admin/configuracoes`, sob
+`voo_guiado.simulado_1_id` e `voo_guiado.simulado_2_id`, e o vínculo do aluno
+fica gravado. Isso é **separado** dos itens de simulado do cronograma padrão
+(`trilha_dias`), que continuam valendo só para o plano Decolando — os dois
+sistemas não se tocam. O *posicionamento* não mudou: `posicionarSimulados`
+continua decidindo em que dia cada um cai. (`simulados-da-rota.ts`, 22 testes.)
+
+**A migração `062` existe por causa do instante do deploy.** A `061` cria a
+escolha e a tabela de vínculo, mas as duas nascem vazias — e sem mais nada,
+no segundo do deploy: nenhum aluno tem vínculo → a rota consulta a
+configuração → a configuração está vazia → **as duas posições ficam sem
+simulado**. Quem estava com "Simulado 1" no dia 3 passaria a ver um dia de
+simulado sem prova nenhuma, que é exatamente a troca inesperada de conteúdo
+que a mudança existe para evitar. A `062` faz a configuração nascer valendo o
+simulado que a regra antiga usaria.
+
+## 2. Os quatro resumos de livro ganharam endereço (`060`)
+
+Os quatro itens obrigatórios de leitura estavam assim em `trilha_dias`:
+
+```json
+{"tipo":"leitura","titulo":"Leitura do resumo do Livro 1","url":null,"ref_id":null}
+```
+
+Nenhum tinha endereço, nenhum tinha conteúdo correspondente em
+`conteudos_biblioteca`, e `abrirItemTrilha` trazia a linha explícita
+`// "leitura" e "livre" não abrem nada`. O aluno via o item, marcava como
+concluído e **não havia para onde ir** — não era link errado, era ausência de
+link.
+
+Os endereços passaram a morar em `configuracoes`
+(`livros.resumo_1_url` … `resumo_4_url`), que é a **fonte oficial**: quem
+exibe um resumo não guarda link nenhum, resolve por
+`lib/site/resumos-livros.ts` (14 testes). Trocar o link no painel muda o
+destino em todos os cronogramas ao mesmo tempo — template, rota do Voo Guiado,
+plano Decolando — sem republicar nada. As chaves **nascem com string vazia,
+não com um endereço inventado**.
+
+## 3. Questões de simulado passaram a contar como feitas (`059`)
+
+`submeterSimulado` gravava a tentativa em `simulado_tentativas` mas **nunca
+gravava `respostas_aluno`** — que é a tabela que responde "o aluno já fez esta
+questão?". Tudo que ele respondia num simulado continuava inédito para o resto
+da plataforma:
+
+* a questão **voltava** no Banco de Questões e na atividade de 5 questões como
+  se ele nunca a tivesse visto (`continuidade.ts` lê `respostas_aluno.questao_id`);
+* o **desempenho por assunto** não a enxergava — o agregado da tentativa só
+  guarda matéria, então o Raio-X não sabia *qual* conteúdo foi errado;
+* o **Copiloto** só conseguia mirar a matéria inteira, nunca o assunto.
+
+O código foi corrigido e a migração preenche as tentativas **anteriores** à
+correção — sem isso, quem já fez simulado continuaria recebendo aquelas
+questões como novas. A conversão é fiel ao que está gravado.
+
+## 4. O desempenho passou a priorizar sem excluir
+
+**Caso relatado:** aluno com dificuldade em Exatas e bom desempenho em
+Biologia, janela de 10 dias. O algoritmo priorizava Exatas corretamente — **e
+apagava Biologia do cronograma**. Com os pesos reais desta prova, Biologia é a
+matéria de **maior potencial** (peso 3 × 10 questões); zerá-la porque o aluno
+vai bem nela é o oposto de estratégico.
+
+Medido antes da correção, com o mesmo template e os mesmos pesos:
+
+| Janela | Itens de Biologia | Em quantos dias |
+|---|---|---|
+| 10 dias, 3h/dia | 3 | 3 de 10 |
+| 10 dias, 2h/dia | 2 | 2 de 10 |
+
+A regra passou a ser explícita — **priorizar, nunca excluir** — e está fixada
+por 10 testes em `cobertura-materias.test.mjs`.
+
+## 5. Itens do cronograma resolvidos pela fonte
+
+Um item do cronograma guarda uma **cópia** do título e da URL do conteúdo,
+para o dia poder ser renderizado sem join. O efeito colateral: corrigir o link
+de uma aula em "Cursos e Aulas" **não chegava ao cronograma** — o item
+continuava apontando para o vídeo antigo, e as duas telas divergiam em
+silêncio.
+
+A regra agora: quando o item tem `ref_id`, o registro em
+`conteudos_biblioteca` é a fonte da verdade — **menos pelo título**, se o admin
+o tiver personalizado. É para isso que existe `titulo_custom`: sem essa marca
+não há como distinguir um título personalizado de uma cópia desatualizada.
+(`resolver-itens.ts`, com a parte pura separada para poder ser testada.)
+
+---
+
+# Parte II — Reforço que responde ao erro e questões dependentes
 
 Três migrações (`056`–`058`), dois módulos novos com testes e a paleta do app
 do aluno virando token. O tema desta rodada é o Copiloto deixar de dar sempre
@@ -145,9 +261,9 @@ os estados de acerto/erro das telas do aluno usam `app-green` / `app-red`.
 
 ---
 
-# Parte II — Rota por capacidade, requisitos fixos e desempenho
+# Parte III — Rota por capacidade, requisitos fixos e desempenho
 
-Rodada imediatamente posterior à Parte III, no mesmo dia. Onde a Parte III fez a
+Rodada imediatamente posterior à Parte IV, no mesmo dia. Onde a Parte IV fez a
 rota **existir**, esta faz a rota **caber** — e acrescenta a rede que impede
 uma rota impossível de chegar ao aluno.
 
@@ -272,7 +388,7 @@ Dois padrões escolhidos de propósito:
 
 ---
 
-# Parte III — Rota do aluno, sessão de questões e autoavaliação
+# Parte IV — Rota do aluno, sessão de questões e autoavaliação
 
 Rodada posterior ao commit `DECOLA 2.0 OK`. São 14 migrações (`041`–`054`),
 três módulos novos com testes, e a remoção do canal de relatos.
@@ -475,7 +591,7 @@ vocabulários, sempre dentro da matéria canônica.
   recalibragem do briefing, então uma execução do Copiloto entre duas
   recalibragens podia agendar estudo para depois do vestibular.
 * **`046` — missão de aula exige vínculo com o conteúdo.** O código que criava
-  missão de aula sem `ref_id` já tinha sido corrigido (Parte IV, item 7), mas
+  missão de aula sem `ref_id` já tinha sido corrigido (Parte V, item 7), mas
   as linhas antigas continuaram no banco — dado órfão sobrevivendo à correção
   do código. A migração remove as pendentes (só as do Copiloto e não
   concluídas: histórico do aluno e o que o admin agendou à mão não são
@@ -495,31 +611,35 @@ pior do que não ter o canal.
 
 Conferido antes de remover (migração `043`): nenhuma view, função ou chave
 estrangeira de outra tabela dependia dela, e as 9 linhas existentes eram todas
-de teste. **Isto substitui o item 1 da Parte IV.**
+de teste. **Isto substitui o item 1 da Parte V.**
 
 ## 9. Suíte de testes
 
 O projeto ganhou `npm test` (`scripts/testes.sh`), rodando os arquivos
 `*.test.mjs` com o test runner do próprio Node. Esta rodada criou a suíte com
-99 testes em 6 arquivos; as rodadas seguintes a levaram a **212 em 13
+99 testes em 6 arquivos; as rodadas seguintes a levaram a **274 em 17
 arquivos**, que é o estado atual:
 
 | Arquivo | Testes | Nasceu na |
 |---|---|---|
-| `lib/copiloto/agenda.test.mjs` | 11 | Parte III |
-| `lib/copiloto/reforco.test.mjs` | 16 | Parte I |
-| `lib/site/assunto.test.mjs` | 15 | Parte III |
-| `lib/site/continuidade.test.mjs` | 11 | Parte II |
-| `lib/site/desempenho.test.mjs` | 19 | Parte II |
-| `lib/site/materia-canonica.test.mjs` | 11 | Parte III |
-| `lib/site/questao-dependente.test.mjs` | 10 | Parte I |
-| `lib/site/questao-identidade.test.mjs` | 14 | Parte II |
-| `lib/site/sentimentos.test.mjs` | 15 | Parte III |
-| `lib/trilha/requisitos-fixos.test.mjs` | 17 | Parte II |
-| `lib/trilha/rota-capacidade.test.mjs` | 26 | Parte II |
-| `lib/trilha/rota.test.mjs` | 34 | Parte III |
-| `lib/trilha/sessao-questoes.test.mjs` | 13 | Parte III |
-| **Total** | **212, todos passando** | |
+| `lib/copiloto/agenda.test.mjs` | 11 | Parte IV |
+| `lib/copiloto/reforco.test.mjs` | 16 | Parte II |
+| `lib/site/assunto.test.mjs` | 15 | Parte IV |
+| `lib/site/continuidade.test.mjs` | 11 | Parte III |
+| `lib/site/desempenho.test.mjs` | 19 | Parte III |
+| `lib/site/materia-canonica.test.mjs` | 11 | Parte IV |
+| `lib/site/questao-dependente.test.mjs` | 10 | Parte II |
+| `lib/site/questao-identidade.test.mjs` | 14 | Parte III |
+| `lib/site/resumos-livros.test.mjs` | 14 | Parte I |
+| `lib/site/sentimentos.test.mjs` | 15 | Parte IV |
+| `lib/trilha/cobertura-materias.test.mjs` | 10 | Parte I |
+| `lib/trilha/requisitos-fixos.test.mjs` | 17 | Parte III |
+| `lib/trilha/resumos-no-cronograma.test.mjs` | 13 | Parte I |
+| `lib/trilha/rota-capacidade.test.mjs` | 26 | Parte III |
+| `lib/trilha/rota.test.mjs` | 37 | Parte IV |
+| `lib/trilha/sessao-questoes.test.mjs` | 13 | Parte IV |
+| `lib/trilha/simulados-da-rota.test.mjs` | 22 | Parte I |
+| **Total** | **274, todos passando** | |
 
 A lógica testável foi deliberadamente mantida pura e separada da persistência
 — é o que permite testar rota, sessão, agenda, prioridade e desempenho sem
@@ -527,7 +647,7 @@ banco.
 
 ---
 
-# Parte IV — As 22 correções
+# Parte V — As 22 correções
 
 Referência: documento `PROMPT DE CORREÇÃO — DECOLA`.
 Legenda: ✅ corrigido · ⚠️ parcial · ⏹ substituído por trabalho posterior
@@ -547,9 +667,9 @@ gravado); e removida a mensagem falsa *"enviado ao e-mail configurado pela
 equipe"*, que descrevia um disparo que não existia.
 
 **Hoje isto não se aplica mais:** o canal virou WhatsApp e a fila interna foi
-removida (Parte III, item 8).
+removida (Parte IV, item 8).
 
-### 2. Voo Guiado recebe o cronograma fixo de 40 dias — ✅ (refeito na Parte III)
+### 2. Voo Guiado recebe o cronograma fixo de 40 dias — ✅ (refeito na Parte IV)
 
 Um aluno com 20 dias até a prova recebia os mesmos 40 dias do template, e
 metade do conteúdo caía depois da prova. A correção desta rodada projetava o
@@ -557,7 +677,7 @@ cronograma na janela real do aluno a cada leitura.
 
 **A rodada seguinte substituiu a abordagem:** projetar a cada leitura ainda
 deixava a linha do tempo ancorada na matrícula. Hoje a rota é persistida e
-ancorada no início informado pelo aluno (Parte III, item 1), e
+ancorada no início informado pelo aluno (Parte IV, item 1), e
 `lib/trilha/ajuste-voo-guiado.ts` deu lugar a `lib/trilha/rota.ts`.
 
 ### 3. Revisão do Copiloto carrega questões da matéria errada — ✅
@@ -600,7 +720,7 @@ gravava o vínculo, e o app caía sempre em "Esta aula não está mais
 disponível". A aula existia; o vínculo é que nunca foi criado. Corrigido em
 três frentes: o inventário do Copiloto carrega as aulas com id e título, a
 missão nasce apontando para o conteúdo real, e as 11 missões antigas foram
-vinculadas. (A migração `046`, na Parte III, fechou a porta no banco.)
+vinculadas. (A migração `046`, na Parte IV, fechou a porta no banco.)
 
 ### 8. Flashcards: 300 importados, 60 disponíveis — ✅
 
@@ -677,7 +797,7 @@ era o que vinha depois: a função preservava o briefing e a ação chamava o
 Copiloto na sequência, que **reconstruía missões e recomendações na mesma
 hora**. Corrigido: o briefing vai junto, o Copiloto não roda no reset, e o
 aluno é levado por navegação completa até `/aluno/briefing`. (As migrações
-`042` e `049`, na Parte III, acrescentaram a rota e as sessões de questões ao
+`042` e `049`, na Parte IV, acrescentaram a rota e as sessões de questões ao
 que o reset apaga.)
 
 ### 20. Símbolos corrompidos nas questões — ✅
@@ -727,7 +847,7 @@ Chromium:
 1. **"Literatura" era matéria fantasma nos flashcards** — 13 flashcards numa
    matéria que não existe em `materias_peso`. Nenhum peso casava e a
    autoavaliação do aluno em Linguagens não os alcançava.
-2. **Banco de conteúdo aberto a visitantes anônimos** (ver Parte V, §1.3).
+2. **Banco de conteúdo aberto a visitantes anônimos** (ver Parte VI, §1.3).
 3. **Missões de aula nasciam sem verificação de conteúdo** — o ciclo do modo
    generoso pedia "aula", mas a função que valida existência nunca devolvia
    esse tipo. Sem aula na matéria, o tipo passou a ser rebaixado para questões
@@ -737,7 +857,7 @@ Chromium:
 
 ---
 
-# Parte V — Auditoria
+# Parte VI — Auditoria
 
 ## 1. Segurança
 
@@ -889,21 +1009,31 @@ nenhum `min-w-[...]` capaz de forçar rolagem horizontal no celular.
 **Resolvidas desde os relatórios anteriores:**
 
 * ~~`git push` bloqueado no contêiner (403 no proxy git); os commits estão
-  locais~~ — o código das cinco rodadas está no repositório e na `main`.
-* ~~Item 1 da Parte IV (fila de relatos)~~ — o canal virou WhatsApp e a fila
+  locais~~ — o código das seis rodadas está no repositório e na `main`.
+* ~~Item 1 da Parte V (fila de relatos)~~ — o canal virou WhatsApp e a fila
   foi removida (migração `043`).
 * ~~Rota entregando 154 passos num único dia~~ — a rota passou a ser limitada
   pela capacidade declarada do aluno, e o validador recusa rota inválida antes
-  de gravar (Parte II, itens 1 e 2).
+  de gravar (Parte III, itens 1 e 2).
 * ~~Requisitos fixos do Voo Guiado sumindo em janelas curtas~~ — 2 simulados,
-  4 redações e 4 leituras passaram a sobreviver a qualquer janela (Parte II,
+  4 redações e 4 leituras passaram a sobreviver a qualquer janela (Parte III,
   item 3).
 * ~~Copiloto entregando sempre "Questões · 40 min", com 160 flashcards e 108
   aulas paradas no acervo~~ — o reforço passou a ser escolhido pelo erro, e um
-  tipo já pendente na matéria vai para o fim da fila (Parte I, item 1).
+  tipo já pendente na matéria vai para o fim da fila (Parte II, item 1).
 * ~~7 questões impossíveis de responder por dependerem do texto de outra~~ —
   o texto-base foi incorporado a partir da questão-fonte já cadastrada
-  (Parte I, item 3).
+  (Parte II, item 3).
+* ~~Os quatro resumos de livro não abriam nada~~ — os endereços passaram a
+  morar em `configuracoes`, editáveis pelo admin (Parte I, item 2).
+* ~~Os dois dias de simulado abrindo o mesmo simulado, escolhido por data de
+  criação~~ — quem escolhe passou a ser o admin, e o vínculo do aluno fica
+  gravado (Parte I, item 1).
+* ~~Questões respondidas em simulado voltando como inéditas~~ —
+  `submeterSimulado` passou a gravar `respostas_aluno`, e as tentativas
+  antigas foram preenchidas (Parte I, item 3).
+* ~~Cronograma zerando a matéria em que o aluno vai bem~~ — a regra passou a
+  ser priorizar sem excluir (Parte I, item 4).
 
 ---
 
