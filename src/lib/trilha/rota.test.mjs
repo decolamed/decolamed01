@@ -297,6 +297,43 @@ test("sem simulado cadastrado o dia continua existindo (a rota promete dois)", (
   assert.equal(doDia[0].itens[0].ref_id, null);
 });
 
+test("cada posição usa o SEU simulado — a lista chega já decidida", () => {
+  const { dias } = gerarRota(template(), base, {
+    simulados: [
+      { id: "sim-1", titulo: "Simulado ENEM 01" },
+      { id: "sim-2", titulo: "Simulado ENEM 02" }
+    ]
+  });
+  const doDia = dias.filter((d) => d.tipo === "simulado");
+  assert.deepEqual(
+    doDia.map((d) => d.itens[0].ref_id),
+    ["sim-1", "sim-2"]
+  );
+});
+
+test("só um simulado: a 2ª posição fica sem ref_id em vez de repetir a 1ª", () => {
+  // Era o `?? simulados[0]`: com um único simulado cadastrado os DOIS dias
+  // abriam a mesma prova, sem nada na tela indicando isso. Agora a posição
+  // vazia leva à lista de simulados — e quem decide o conteúdo da lista é
+  // simulados-da-rota.ts, não este módulo.
+  const { dias } = gerarRota(template(), base, {
+    simulados: [{ id: "sim-1", titulo: "Simulado ENEM 01" }, null]
+  });
+  const refs = dias.filter((d) => d.tipo === "simulado").map((d) => d.itens[0].ref_id);
+  assert.deepEqual(refs, ["sim-1", null]);
+  assert.notEqual(refs[0], refs[1], "a duplicação silenciosa não pode voltar");
+});
+
+test("posição 1 vazia e posição 2 preenchida não desloca o simulado", () => {
+  const { dias } = gerarRota(template(), base, {
+    simulados: [null, { id: "sim-2", titulo: "Simulado ENEM 02" }]
+  });
+  assert.deepEqual(
+    dias.filter((d) => d.tipo === "simulado").map((d) => d.itens[0].ref_id),
+    [null, "sim-2"]
+  );
+});
+
 // ----------------------------------------------------------- FORMATO DE TELA
 test("o que chega na tela usa o routeDay, nunca o dia do template", () => {
   const rota = gerarRota(template(), base);

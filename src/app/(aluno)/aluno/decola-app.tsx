@@ -4,6 +4,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { formatarNota } from "@/lib/site/nota";
+import { numeroDoLivro, urlDoResumo, type LinksDosResumos } from "@/lib/site/resumos-livros";
 import { registrarResposta } from "./questoes/actions";
 import { registrarRevisao } from "./flashcards/actions";
 import { submeterSimulado, buscarGabaritoTentativa, type ResultadoSimulado, type ItemGabarito } from "./simulados/[id]/actions";
@@ -107,6 +108,11 @@ interface DecolaAppDados {
   // Destino do botão "Termos de Uso" nas configurações do aluno. Vazio =
   // botão escondido, em vez de apontar pra um endereço inventado.
   termosUsoUrl: string | null;
+  // Endereço dos quatro resumos de livro, indexado pelo número do livro e
+  // cadastrado em /admin/configuracoes. Os itens do cronograma já chegam
+  // resolvidos por `resolverCronograma`; este mapa cobre o que não passa
+  // por lá — as missões do Copiloto, que copiam só o título.
+  linksDosResumos: LinksDosResumos;
   // Nome do vestibular/instituição vindo de /admin/configuracoes (ver
   // lib/site/marca.ts) — nada de instituição escrita no código, pra
   // plataforma poder atender outros processos seletivos.
@@ -1096,8 +1102,16 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       const anexado = m.ref_id
         ? this.props.dados.conteudos.find((c) => c.id === m.ref_id && c.url)
         : null;
-      if (anexado) this.abrirAula(anexado.id, anexado.titulo, anexado.url || "", "mapa");
-      else this.nav("estudos");
+      if (anexado) return this.abrirAula(anexado.id, anexado.titulo, anexado.url || "", "mapa");
+
+      // Sem material anexado, mas o título nomeia um dos quatro resumos: o
+      // endereço sai das Configurações, o mesmo que o item do cronograma
+      // usa. Uma missão dessas não passa por `resolverCronograma` (copia só
+      // o título), então a resolução tem de acontecer aqui.
+      const resumo = urlDoResumo(numeroDoLivro(m.titulo), this.props.dados.linksDosResumos ?? {});
+      if (resumo) return this.openBrowser(m.titulo, resumo, "mapa");
+
+      this.nav("estudos");
     }
   }
   toggleMissao(id: string) {
@@ -1362,10 +1376,26 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.startReview();
     } else if (item.tipo === "redacao") {
       this.nav("redacao");
+    } else if (item.tipo === "leitura") {
+      // Resumo de livro. O endereço vem das Configurações do painel e chega
+      // aqui já resolvido em `resolverCronograma` — antes estes quatro itens
+      // tinham `url` nula e esta função os ignorava de propósito ("leitura
+      // não abre nada"), então o aluno via o resumo e não tinha para onde ir.
+      //
+      // Cai para o link do número do livro quando o item vier de um caminho
+      // que não passou pelo resolvedor (uma missão remarcada pelo Copiloto,
+      // por exemplo, que copia só o título).
+      const url = item.url || urlDoResumo(numeroDoLivro(item.titulo), this.props.dados.linksDosResumos ?? {});
+      if (!url) {
+        return this.avisar(
+          "O link deste resumo ainda não foi cadastrado. Assim que o administrador informar o endereço, este botão abre direto."
+        );
+      }
+      this.openBrowser(item.titulo, url, "plano");
     }
-    // "leitura" e "livre" não abrem nada: são itens de marcar/desmarcar
-    // (ler o resumo de um livro, dia de descanso). O toque no círculo de
-    // conclusão continua funcionando normalmente pela chave de progresso.
+    // "livre" continua sem ação: é o dia de descanso, item de marcar e
+    // desmarcar. O toque no círculo de conclusão segue funcionando pela
+    // chave de progresso.
   }
   // Chave estável de progresso por item — a mesma aula aberta de qualquer
   // tela (cronograma, Estudos, missão do Copiloto) precisa cair na mesma

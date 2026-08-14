@@ -57,16 +57,30 @@ export function AtividadeRunner({
     setEnviando(false);
   }
 
-  async function responder(altId: string) {
-    if (gabaritoModo === "imediato" && feedbackImediato[questao.id]) return; // já respondida
+  // Marcar a alternativa NÃO corrige mais nada. No modo de gabarito imediato
+  // o clique disparava `corrigirQuestaoAtividade` na hora — um toque
+  // acidental fechava a questão com a resposta errada e não havia volta.
+  // Agora a marcação é só marcação, nos dois modos.
+  function responder(altId: string) {
+    if (gabaritoModo === "imediato" && feedbackImediato[questao.id]) return; // já corrigida
     setRespostas((r) => ({ ...r, [questao.id]: altId }));
-    if (gabaritoModo === "imediato") {
-      setCorrigindo(true);
-      const res = await corrigirQuestaoAtividade(questao.id, altId);
-      setCorrigindo(false);
-      if (res.ok) {
-        setFeedbackImediato((f) => ({ ...f, [questao.id]: { correta: res.correta, respostaCorreta: res.respostaCorreta, explicacao: res.explicacao } }));
-      }
+  }
+
+  // Só existe no modo imediato: é ele que corrige questão a questão. No modo
+  // "gabarito após o envio" a confirmação da prova inteira é o botão
+  // "Enviar atividade", e marcar continua reversível até lá.
+  async function confirmarQuestao() {
+    if (gabaritoModo !== "imediato" || corrigindo) return;
+    const escolhida = respostas[questao.id];
+    if (!escolhida || feedbackImediato[questao.id]) return;
+    setCorrigindo(true);
+    const res = await corrigirQuestaoAtividade(questao.id, escolhida);
+    setCorrigindo(false);
+    if (res.ok) {
+      setFeedbackImediato((f) => ({
+        ...f,
+        [questao.id]: { correta: res.correta, respostaCorreta: res.respostaCorreta, explicacao: res.explicacao }
+      }));
     }
   }
 
@@ -206,6 +220,10 @@ export function AtividadeRunner({
         correta={feedback?.correta}
         onEscolher={responder}
         desabilitado={!!feedback || corrigindo}
+        // No modo "após o envio" não há botão de confirmar por questão: a
+        // resposta só é enviada com a atividade inteira.
+        onConfirmar={gabaritoModo === "imediato" ? confirmarQuestao : undefined}
+        confirmando={corrigindo}
       >
         {feedback && (
           <ResultadoDaResposta

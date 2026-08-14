@@ -10,6 +10,9 @@ import { getGeminiApiKey, salvarGeminiApiKey, removerGeminiApiKey, gerarTextoGem
 import { getYoutubeApiKey, salvarYoutubeApiKey, removerYoutubeApiKey } from "@/lib/youtube/client";
 import { CAMPOS_CONFIG_COPILOTO } from "@/lib/copiloto/configuracao";
 import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
+import { CHAVES_DOS_RESUMOS, TOTAL_DE_LIVROS, chaveDoResumo } from "@/lib/site/resumos-livros";
+import { CHAVES_DOS_SIMULADOS, ORDENS_DE_SIMULADO, chaveDoSimulado } from "@/lib/trilha/simulados-da-rota";
+import { disponivelParaAluno, motivoIndisponivel } from "@/lib/site/avaliacoes";
 
 const CAMPOS = [
   { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
@@ -48,6 +51,75 @@ async function salvarConfigCopiloto(formData: FormData) {
     redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os parâmetros do Copiloto."));
   }
   redirect("/admin/configuracoes?sucesso=" + encodeURIComponent("Parâmetros do Copiloto salvos — valem na próxima rodada."));
+}
+
+// Os quatro links dos resumos de livro. Ficam numa gravação própria para o
+// admin poder salvar só esta seção sem passar pelo formulário inteiro — e
+// para a mensagem de sucesso dizer exatamente o que foi salvo.
+async function salvarResumosDosLivros(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const resultados = await Promise.all(
+    CHAVES_DOS_RESUMOS.map((chave) => {
+      const bruto = String(formData.get(chave) ?? "").trim();
+      // Sem protocolo, o link vira caminho relativo no `<a href>` da tela de
+      // cronograma (o app do aluno normaliza sozinho, a página não). O campo
+      // é type="url" e o navegador já cobra o https://, mas isto protege quem
+      // grava por outro caminho.
+      const url = bruto && !/^https?:\/\//i.test(bruto) ? `https://${bruto}` : bruto;
+      return supabase.from("configuracoes").upsert({ chave, valor: valorConfig(url) }, { onConflict: "chave" });
+    })
+  );
+
+  // Todo lugar que mostra cronograma passa por `resolverCronograma`, que lê
+  // estas chaves. Revalidar as telas do aluno é o que faz a troca de link
+  // aparecer sem o aluno precisar sair e voltar.
+  revalidatePath("/admin/configuracoes");
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  revalidatePath("/admin/trilha");
+  revalidatePath("/preview-aluno");
+  if (resultados.some((r) => r.error)) {
+    redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os links dos resumos."));
+  }
+  redirect(
+    "/admin/configuracoes?sucesso=" +
+      encodeURIComponent("Links dos resumos salvos — já valem em todos os cronogramas.")
+  );
+}
+
+// Os dois simulados que a rota do Voo Guiado usa. Gravação própria, para o
+// admin salvar só esta seção — e para a mensagem dizer o que mudou e para
+// quem passa a valer.
+async function salvarSimuladosDoVooGuiado(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const resultados = await Promise.all(
+    CHAVES_DOS_SIMULADOS.map((chave) => {
+      const id = String(formData.get(chave) ?? "").trim();
+      return supabase.from("configuracoes").upsert({ chave, valor: valorConfig(id) }, { onConflict: "chave" });
+    })
+  );
+
+  // A rota é regerada na leitura da tela do aluno, então basta revalidar.
+  // Quem já tem vínculo em `aluno_simulados_rota` continua com o simulado
+  // que recebeu — é a regra, não um efeito da revalidação.
+  revalidatePath("/admin/configuracoes");
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  if (resultados.some((r) => r.error)) {
+    redirect("/admin/configuracoes?erro=" + encodeURIComponent("Não foi possível salvar os simulados do Voo Guiado."));
+  }
+  redirect(
+    "/admin/configuracoes?sucesso=" +
+      encodeURIComponent(
+        "Simulados do Voo Guiado salvos — valem para os cronogramas gerados a partir de agora."
+      )
+  );
 }
 
 async function salvarConfiguracoes(formData: FormData) {
@@ -176,6 +248,37 @@ export default async function AdminConfiguracoesPage({
   const { data: config } = await supabase.from("configuracoes").select("chave, valor");
 
   const valores = new Map((config ?? []).map((c) => [c.chave, textoConfig(c.valor)]));
+
+  // Catálogo de simulados para a seção do Voo Guiado. Traz TODOS (inclusive
+  // os desativados) e diz por que cada um não serve — é a informação que o
+  // admin precisa para entender por que um simulado não aparece na rota.
+  const [{ data: simuladosData }, { data: vinculosSimulado }] = await Promise.all([
+    supabase.from("simulados").select("id, titulo, ativo, redacao").order("titulo"),
+    supabase.from("simulado_questoes").select("simulado_id")
+  ]);
+  const questoesPorSimulado = new Map<string, number>();
+  ((vinculosSimulado as { simulado_id: string }[]) ?? []).forEach((v) => {
+    questoesPorSimulado.set(v.simulado_id, (questoesPorSimulado.get(v.simulado_id) ?? 0) + 1);
+  });
+  const simuladosDoCatalogo = ((simuladosData as { id: string; titulo: string; ativo: boolean; redacao?: unknown }[]) ?? []).map(
+    (s) => {
+      const avaliacao = {
+        ativo: Boolean(s.ativo),
+        totalQuestoes: questoesPorSimulado.get(s.id) ?? 0,
+        temRedacao: Boolean(s.redacao)
+      };
+      return {
+        id: s.id,
+        titulo: s.titulo,
+        totalQuestoes: avaliacao.totalQuestoes,
+        utilizavel: disponivelParaAluno(avaliacao),
+        motivo: motivoIndisponivel(avaliacao)
+      };
+    }
+  );
+  const escolhidosVooGuiado = ORDENS_DE_SIMULADO.map((ordem) => valores.get(chaveDoSimulado(ordem)) ?? "");
+  const repetido =
+    escolhidosVooGuiado[0] !== "" && escolhidosVooGuiado[0] === escolhidosVooGuiado[1];
   const geminiConfigurada = Boolean(await getGeminiApiKey());
   const geminiViaEnv = Boolean(process.env.GEMINI_API_KEY);
   const youtubeConfigurada = Boolean(await getYoutubeApiKey());
@@ -243,6 +346,144 @@ export default async function AdminConfiguracoesPage({
         <SubmitButton
           pendingText="Salvando..."
           className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        >
+          Salvar alterações
+        </SubmitButton>
+      </form>
+
+      {/* ----------------------------------------------------------------
+          Resumos dos livros
+
+          Fonte oficial dos quatro endereços. Todo cronograma passa por
+          `resolverCronograma`, que lê estas chaves — então trocar o link
+          aqui muda o destino em todos os lugares que mostram o resumo, em
+          qualquer plano e em qualquer variação de cronograma.
+          ---------------------------------------------------------------- */}
+      <form action={salvarResumosDosLivros} className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Resumos dos livros</h2>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Endereço de cada um dos quatro resumos obrigatórios. É a fonte única: o botão do resumo abre este link em
+          todos os cronogramas — personalizado pelo Copiloto, padrão, Decolando ou Voo Guiado. Trocar aqui vale
+          imediatamente para todos os alunos.
+        </p>
+        <div className="mt-4 space-y-3">
+          {Array.from({ length: TOTAL_DE_LIVROS }, (_, i) => i + 1).map((numero) => {
+            const chave = chaveDoResumo(numero);
+            const atual = valores.get(chave) ?? "";
+            return (
+              <div key={chave}>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor={chave}>
+                  Resumo do Livro {numero} → URL
+                </label>
+                <input
+                  id={chave}
+                  name={chave}
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://..."
+                  defaultValue={atual}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+                {atual !== "" && (
+                  <a
+                    href={atual}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-xs font-bold text-navy hover:underline"
+                  >
+                    Testar link ↗
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs text-navy-dark/50">
+          Campo em branco deixa o resumo sem botão — melhor do que um botão que abre uma página vazia.
+        </p>
+        <SubmitButton
+          pendingText="Salvando..."
+          className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        >
+          Salvar alterações
+        </SubmitButton>
+      </form>
+
+      {/* ----------------------------------------------------------------
+          Simulados do Voo Guiado
+
+          Antes a rota pegava os dois simulados mais antigos por `created_at`
+          e o admin não escolhia nada. Aqui ele escolhe.
+
+          Isto NÃO é o simulado do cronograma padrão: os itens de simulado de
+          /admin/trilha continuam valendo só para o plano Decolando. São dois
+          sistemas separados de propósito, e a tela diz isso.
+          ---------------------------------------------------------------- */}
+      <form action={salvarSimuladosDoVooGuiado} className="mt-8 max-w-xl rounded-2xl bg-white p-6 shadow">
+        <h2 className="font-display font-bold text-navy-dark">Simulados do Voo Guiado</h2>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Quais simulados a rota personalizada do Copiloto usa. O Copiloto continua decidindo <strong>quando</strong>{" "}
+          cada um cai no cronograma, de acordo com a janela até a prova; aqui você define <strong>quais</strong> são.
+        </p>
+        <p className="mt-2 rounded-xl bg-navy-dark/5 p-3 text-xs text-navy-dark/60">
+          Não confundir com os itens de simulado do <strong>cronograma padrão</strong> (Conteúdo → Cronograma), que
+          valem para o plano Decolando. Os dois são independentes: mudar um não mexe no outro.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          {ORDENS_DE_SIMULADO.map((ordem) => {
+            const chave = chaveDoSimulado(ordem);
+            const atual = valores.get(chave) ?? "";
+            return (
+              <div key={chave}>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor={chave}>
+                  Simulado {ordem} do Voo Guiado
+                </label>
+                <select
+                  id={chave}
+                  name={chave}
+                  defaultValue={atual}
+                  className="mt-1 w-full rounded-lg border bg-white p-3 text-sm"
+                >
+                  <option value="">— nenhum —</option>
+                  {simuladosDoCatalogo.map((s) => (
+                    <option key={s.id} value={s.id} disabled={!s.utilizavel && s.id !== atual}>
+                      {s.titulo}
+                      {s.utilizavel ? ` · ${s.totalQuestoes} questões` : ` · ${s.motivo}`}
+                    </option>
+                  ))}
+                </select>
+                {atual === "" && (
+                  <p className="mt-1 text-xs font-semibold text-orange-dark">
+                    Sem simulado escolhido: o dia continua reservado na rota, mas leva o aluno à lista de simulados em
+                    vez de abrir uma prova. Ele <strong>não</strong> repete o Simulado {ordem === 1 ? 2 : 1}.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {repetido && (
+          <p className="mt-3 rounded-xl border border-orange/40 bg-orange/5 p-3 text-xs font-semibold text-orange-dark">
+            Os dois estão apontando para o mesmo simulado. O aluno vai fazer a mesma prova duas vezes — se for
+            intencional, tudo bem; se não, escolha outro para uma das posições.
+          </p>
+        )}
+        {simuladosDoCatalogo.filter((s) => s.utilizavel).length < 2 && (
+          <p className="mt-3 rounded-xl border border-orange/40 bg-orange/5 p-3 text-xs font-semibold text-orange-dark">
+            Só há {simuladosDoCatalogo.filter((s) => s.utilizavel).length} simulado(s) que o aluno consegue abrir.
+            Cadastre outro em Conteúdo → Simulados para preencher as duas posições.
+          </p>
+        )}
+
+        <p className="mt-3 text-xs text-navy-dark/50">
+          A troca vale para os cronogramas gerados a partir de agora. Alunos que já receberam um simulado continuam com
+          o que foi atribuído — e um simulado já realizado nunca é substituído.
+        </p>
+        <SubmitButton
+          pendingText="Salvando..."
+          className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
         >
           Salvar alterações
         </SubmitButton>

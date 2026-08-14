@@ -48,12 +48,20 @@ export function SessaoQuestoesRunner({
   const questao = questoes[indice];
   const terminou = indice >= total;
 
+  // Marcar é reversível; responder não. O clique só destaca a alternativa —
+  // quem envia é "Confirmar resposta". Vale mais aqui do que em qualquer
+  // outro lugar: a atividade é fechada em N questões e cada resposta conta no
+  // desempenho e no Copiloto.
   function escolher(alternativaId: string) {
     if (resultado || !questao) return;
     setEscolha(alternativaId);
+  }
+
+  function confirmar() {
+    if (resultado || !questao || !escolha || pending) return;
     const desde = new Date().toISOString();
     startTransition(async () => {
-      const resposta = await registrarResposta(questao.id, alternativaId);
+      const resposta = await registrarResposta(questao.id, escolha);
       if (!resposta.ok) return;
       setResultado(resposta);
       if (resposta.correta) {
@@ -150,6 +158,8 @@ export function SessaoQuestoesRunner({
       correta={resultado?.correta}
       onEscolher={escolher}
       desabilitado={pending || !!resultado}
+      onConfirmar={confirmar}
+      confirmando={pending}
     >
       {resultado && (
         <ResultadoDaResposta

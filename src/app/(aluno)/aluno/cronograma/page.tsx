@@ -12,6 +12,13 @@ import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questo
 import { nomeDoDiaDaSemana, dataBR } from "@/lib/site/data";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
+import {
+  CHAVES_DOS_RESUMOS,
+  lerLinksDosResumos,
+  numeroDoLivro,
+  urlDoResumo,
+  type LinksDosResumos
+} from "@/lib/site/resumos-livros";
 
 import { ICONE_TIPO } from "@/lib/trilha/catalogo";
 
@@ -21,13 +28,19 @@ const ICONE_TRILHA = ICONE_TIPO;
 // a lista fica só de leitura; com isso o aluno toca no item e vai direto pra
 // aula/atividade/simulado/redação real.
 function montarHref(
-  missao: { id: string; tipo: string; ref_id: string | null },
-  urlsAula: Map<string, string>
+  missao: { id: string; tipo: string; titulo: string; ref_id: string | null },
+  urlsAula: Map<string, string>,
+  linksDosResumos: LinksDosResumos
 ): string | null {
   const refId = missao.ref_id;
+  // Uma missão individual copia só o título — não passa por
+  // `resolverCronograma`. Quando o título nomeia um dos quatro livros, o
+  // destino é o mesmo endereço cadastrado em /admin/configuracoes que o item
+  // do cronograma usa, seja qual for o tipo da missão.
+  const resumo = urlDoResumo(numeroDoLivro(missao.titulo), linksDosResumos);
   switch (missao.tipo) {
     case "aula":
-      return refId ? urlsAula.get(refId) ?? null : null;
+      return refId ? urlsAula.get(refId) ?? null : resumo;
     case "questoes":
       // Sem atividade cadastrada, a missão vira uma sessão fechada de
       // questões — não mais o Banco de Questões inteiro.
@@ -39,7 +52,9 @@ function montarHref(
     case "flashcards":
       return "/aluno/flashcards";
     default:
-      return null;
+      // "revisao" e "livre": sem destino próprio. Se for um resumo de livro,
+      // abre o resumo; senão continua sem link, como antes.
+      return resumo;
   }
 }
 
@@ -68,11 +83,22 @@ function montarHrefTrilha(item: TrilhaItem, diaNumero: number, indice: number): 
       return item.url || "/aluno";
     case "redacao":
       return "/aluno/redacao";
+    case "leitura":
+      // Resumo de livro. O endereço é o cadastrado em /admin/configuracoes e
+      // chega aqui já aplicado por `resolverCronograma` — ver
+      // lib/site/resumos-livros.ts. Antes este caso caía no `default` e o
+      // item ficava sem destino nenhum, mesmo com o link preenchido.
+      return item.url || null;
     default:
-      // "leitura", "revisao" e "livre" não abrem nada de propósito: são
-      // blocos de marcar como feito, não conteúdo com destino.
+      // "revisao" e "livre" não abrem nada de propósito: são blocos de
+      // marcar como feito, não conteúdo com destino.
       return null;
   }
+}
+
+/** O destino sai da plataforma? Só esses abrem em outra aba. */
+function abreForaDaPlataforma(item: TrilhaItem): boolean {
+  return item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" || item.tipo === "leitura";
 }
 
 // O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive de
@@ -184,7 +210,14 @@ export default async function AlunoCronogramaPage() {
     const { data: conteudos } = await supabase.from("conteudos_biblioteca").select("id, url").in("id", idsAula);
     (conteudos ?? []).forEach((c) => c.url && urlsAula.set(c.id, c.url));
   }
-  const missoes = (missoesBrutas ?? []).map((m) => ({ ...m, href: montarHref(m, urlsAula) }));
+  // Os itens do cronograma já vieram resolvidos de `resolverCronograma`; as
+  // missões individuais não passam por lá, então o mapa é lido aqui também.
+  const { data: linksResumosData } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", CHAVES_DOS_RESUMOS);
+  const linksDosResumos = lerLinksDosResumos(linksResumosData as { chave: string; valor: unknown }[]);
+  const missoes = (missoesBrutas ?? []).map((m) => ({ ...m, href: montarHref(m, urlsAula, linksDosResumos) }));
 
   const semNada = !diaTrilha && missoes.length === 0;
 
@@ -269,7 +302,7 @@ export default async function AlunoCronogramaPage() {
                 <a
                   key={i}
                   href={href}
-                  target={item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" ? "_blank" : undefined}
+                  target={abreForaDaPlataforma(item) ? "_blank" : undefined}
                   rel="noreferrer"
                   className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow hover:bg-navy-dark/5"
                 >
@@ -404,7 +437,7 @@ export default async function AlunoCronogramaPage() {
                         <a
                           key={i}
                           href={href}
-                          target={item.tipo === "aula" || item.tipo === "pdf" || item.tipo === "link" ? "_blank" : undefined}
+                          target={abreForaDaPlataforma(item) ? "_blank" : undefined}
                           rel="noreferrer"
                           className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-navy-dark/5"
                         >

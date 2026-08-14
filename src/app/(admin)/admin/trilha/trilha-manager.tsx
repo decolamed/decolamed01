@@ -10,6 +10,7 @@ import {
   buscarNoCatalogo, itemDoCatalogo, ROTULO_TIPO, ICONE_TIPO,
   type ItemCatalogo
 } from "@/lib/trilha/catalogo";
+import { ehResumoDeLivro } from "@/lib/site/resumos-livros";
 import type { TrilhaDia, TrilhaItem, TrilhaItemTipo } from "@/types/database";
 
 // Tipos que não vêm do catálogo porque não referenciam conteúdo nenhum — são
@@ -476,10 +477,36 @@ function DiaEditor({
                   >
                     ↓
                   </button>
-                  <button type="button" onClick={() => removerItem(i)} className="text-xs font-bold text-red-500">
+                  <button type="button" onClick={() => removerItem(i)} className="text-xs font-bold text-red">
                     remover
                   </button>
                 </div>
+                {/* Simulado: este item vale para o plano Decolando. O Voo
+                    Guiado monta os próprios dias de simulado e usa os que
+                    estiverem escolhidos nas Configurações — sem o aviso, o
+                    admin edita aqui e não entende por que a rota do Copiloto
+                    não mudou. */}
+                {item.tipo === "simulado" && (
+                  <p className="w-full text-[11px] text-navy-dark/50">
+                    Vale para o plano <strong>Decolando</strong>. No Voo Guiado quem manda é{" "}
+                    <a href="/admin/configuracoes" className="font-semibold text-navy hover:underline">
+                      Configurações → Simulados do Voo Guiado
+                    </a>
+                    .
+                  </p>
+                )}
+                {/* Resumo de livro: o endereço não é editado aqui. Sem este
+                    aviso o item parece um bloco sem link, e é justamente o
+                    contrário — ele usa o link das Configurações. */}
+                {ehResumoDeLivro(item) && (
+                  <p className="w-full text-[11px] text-navy-dark/50">
+                    Abre o link cadastrado em{" "}
+                    <a href="/admin/configuracoes" className="font-semibold text-navy hover:underline">
+                      Configurações → Resumos dos livros
+                    </a>
+                    .
+                  </p>
+                )}
               </div>
             ))}
             {itens.length === 0 && <p className="text-xs text-navy-dark/40">Dia livre — nenhum item anexado ainda.</p>}

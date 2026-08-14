@@ -9,6 +9,12 @@ import {
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
 import { descreverViolacoes, requisitosDoTemplate, validarRota } from "@/lib/trilha/validador-rota";
+import {
+  CHAVES_DOS_SIMULADOS,
+  decidirSimuladosDaRota,
+  lerSimuladosConfigurados,
+  type SimuladoDoCatalogo
+} from "@/lib/trilha/simulados-da-rota";
 import { contextoVazio, type ContextoDoAluno } from "@/lib/trilha/prioridade";
 import { chaveMateria } from "@/lib/site/materia-canonica";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
@@ -69,7 +75,7 @@ export async function rotaDoAluno(
   if (!parametros) return null;
 
   const rota = gerarRota(opcoes.template, parametros, {
-    ...(await contextoDaRota(supabase)),
+    ...(await contextoDaRota(supabase, alunoId)),
     contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
   });
   if (rota.dias.length === 0) return null;
@@ -98,7 +104,13 @@ async function contextoDoAluno(
     const [{ data: pesos }, { data: respostas }, { data: progresso }] = await Promise.all([
       supabase.from("materias_peso").select("materia, peso, qtd_questoes"),
       supabase.from("respostas_aluno").select("correta, questoes(materia)").eq("aluno_id", alunoId),
-      supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", alunoId).eq("concluido", true)
+      // A coluna é `concluida`, não `concluido`. Com o nome errado o
+      // PostgREST devolvia erro em vez de linhas, e o supabase-js não lança:
+      // `progresso` chegava nulo e `ctx.concluidos` ficava sempre vazio. O
+      // fator INEDITISMO da pontuação (10% da nota) nunca saía de 1 — a rota
+      // não sabia o que o aluno já tinha concluído e podia devolver na
+      // regeração o mesmo conteúdo que ele acabou de fazer.
+      supabase.from("aluno_progresso_itens").select("chave").eq("aluno_id", alunoId).eq("concluida", true)
     ]);
 
     const ctx = contextoVazio();
@@ -134,43 +146,80 @@ async function contextoDoAluno(
  * O que a rota precisa saber do resto da plataforma: quais simulados os dois
  * dias de simulado abrem e como nomear o dia da prova.
  *
- * Os simulados vêm em ordem fixa (data de criação, depois id) para a geração
- * continuar determinística: sem `order` explícito o Postgres não garante
- * ordem, e a mesma rota poderia apontar para simulados diferentes a cada
- * leitura.
+ * QUAIS simulados não vem mais de `created_at`. Vem da escolha do admin em
+ * /admin/configuracoes, e é fixado por aluno na primeira geração da rota —
+ * a regra inteira, com o porquê de cada caso, está em
+ * lib/trilha/simulados-da-rota.ts. Aqui só se lê o banco, se aplica a
+ * decisão e se grava o vínculo novo.
  *
  * O nome do vestibular sai de `configuracoes` — nunca escrito no código, para
  * a plataforma servir a outro processo seletivo sem alteração de código.
  */
 async function contextoDaRota(
-  supabase: ClienteSupabase
-): Promise<{ simulados: SimuladoDisponivel[]; nomeVestibular: string | null }> {
-  const [{ data: simulados, error }, { data: vinculos }, { data: marca }] = await Promise.all([
-    supabase
-      .from("simulados")
-      .select("id, titulo, redacao")
-      .eq("ativo", true)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true }),
-    supabase.from("simulado_questoes").select("simulado_id"),
-    supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle()
-  ]);
+  supabase: ClienteSupabase,
+  alunoId: string
+): Promise<{ simulados: (SimuladoDisponivel | null)[]; nomeVestibular: string | null }> {
+  const [{ data: simulados, error }, { data: vinculos }, { data: marca }, { data: configs }, { data: fixadosData }, { data: tentativas }] =
+    await Promise.all([
+      supabase.from("simulados").select("id, titulo, ativo, redacao"),
+      supabase.from("simulado_questoes").select("simulado_id"),
+      supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle(),
+      supabase.from("configuracoes").select("chave, valor").in("chave", CHAVES_DOS_SIMULADOS),
+      supabase.from("aluno_simulados_rota").select("ordem, simulado_id").eq("aluno_id", alunoId),
+      supabase.from("simulado_tentativas").select("simulado_id").eq("aluno_id", alunoId)
+    ]);
 
   if (error) console.error("Rota: falha ao carregar simulados:", error.message);
 
-  // Só simulados que o aluno consegue de fato abrir — a mesma regra da aba
-  // Atividades. Reservar o dia para um simulado vazio mandaria o aluno para
-  // uma tela sem questões justamente no dia marcado para ele fazer a prova.
+  // O catálogo traz TODOS os simulados, inclusive os desativados: um simulado
+  // que o aluno já fez precisa continuar tendo nome no cronograma dele mesmo
+  // depois de sair do ar. `utilizavel` é que aplica a régua da aba Atividades
+  // — reservar o dia para um simulado vazio mandaria o aluno a uma tela sem
+  // questões justamente no dia marcado para fazer a prova.
   const comQuestoes = new Set(((vinculos as { simulado_id: string }[]) ?? []).map((v) => v.simulado_id));
-  const utilizaveis = (((simulados as (SimuladoDisponivel & { redacao?: unknown })[]) ?? [])
-    .filter((s) => disponivelParaAluno({ ativo: true, totalQuestoes: comQuestoes.has(s.id) ? 1 : 0, temRedacao: Boolean(s.redacao) }))
-    .slice(0, 2));
+  const catalogo = new Map<string, SimuladoDoCatalogo>();
+  (((simulados as { id: string; titulo: string; ativo: boolean; redacao?: unknown }[]) ?? [])).forEach((s) => {
+    catalogo.set(s.id, {
+      id: s.id,
+      titulo: s.titulo,
+      utilizavel: disponivelParaAluno({
+        ativo: Boolean(s.ativo),
+        totalQuestoes: comQuestoes.has(s.id) ? 1 : 0,
+        temRedacao: Boolean(s.redacao)
+      })
+    });
+  });
+
+  const fixados: Record<number, string | null> = {};
+  (((fixadosData as { ordem: number; simulado_id: string | null }[]) ?? [])).forEach((f) => {
+    fixados[f.ordem] = f.simulado_id;
+  });
+
+  const decisao = decidirSimuladosDaRota({
+    configurados: lerSimuladosConfigurados(configs as { chave: string; valor: unknown }[], textoConfig),
+    fixados,
+    catalogo,
+    realizados: new Set(((tentativas as { simulado_id: string }[]) ?? []).map((t) => t.simulado_id))
+  });
+
+  // Fixa o vínculo assim que ele é decidido. É o que faz a rota deste aluno
+  // parar de depender da configuração do painel a partir de agora: mudar o
+  // simulado em /admin/configuracoes vale para quem ainda não tem vínculo,
+  // não para quem já recebeu. Falha aqui não pode derrubar a tela — a rota
+  // desta leitura segue válida e o vínculo é tentado de novo na próxima.
+  if (decisao.aFixar.length > 0) {
+    const { error: erroFixar } = await supabase.from("aluno_simulados_rota").upsert(
+      decisao.aFixar.map((f) => ({ aluno_id: alunoId, ordem: f.ordem, simulado_id: f.simuladoId })),
+      { onConflict: "aluno_id,ordem" }
+    );
+    if (erroFixar) console.error("Rota: falha ao fixar simulados do aluno:", erroFixar.message);
+  }
 
   // `textoConfig` desembrulha os valores jsonb escapados que existem no
   // banco desde antes da padronização.
   const nome = textoConfig((marca as { valor?: unknown } | null)?.valor).trim();
 
-  return { simulados: utilizaveis.map((s) => ({ id: s.id, titulo: s.titulo })), nomeVestibular: nome || null };
+  return { simulados: decisao.simulados, nomeVestibular: nome || null };
 }
 
 /**
@@ -285,7 +334,7 @@ export async function regerarRotaDoAluno(
   }
 
   const rota = gerarRota(opcoes.template, parametros, {
-    ...(await contextoDaRota(supabase)),
+    ...(await contextoDaRota(supabase, alunoId)),
     contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
   });
   if (rota.dias.length === 0) {

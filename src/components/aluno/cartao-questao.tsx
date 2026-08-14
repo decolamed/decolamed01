@@ -43,6 +43,9 @@ export function CartaoQuestao({
   correta,
   onEscolher,
   desabilitado,
+  onConfirmar,
+  confirmando,
+  rotuloConfirmar = "Confirmar resposta",
   children
 }: {
   questao: QuestaoDoCartao;
@@ -57,12 +60,30 @@ export function CartaoQuestao({
   /** Gabarito, quando já revelado. Nulo enquanto a questão não foi corrigida. */
   respostaCorreta?: string | null;
   correta?: boolean;
+  /** Marca a alternativa. NÃO envia nada — quem envia é `onConfirmar`. */
   onEscolher: (alternativaId: string) => void;
   desabilitado?: boolean;
+  /**
+   * Envia a resposta marcada. Quando presente, o cartão exibe o botão de
+   * confirmação abaixo das alternativas e a correção só acontece no clique
+   * dele — um toque acidental numa alternativa deixa de valer como resposta
+   * definitiva.
+   *
+   * Fluxos sem correção na hora (simulado, atividade com gabarito só após o
+   * envio) não passam esta prop: neles a marcação é reversível até o botão
+   * de enviar a prova inteira, que já é a confirmação.
+   */
+  onConfirmar?: () => void;
+  /** Envio em andamento — trava o botão e avisa o aluno. */
+  confirmando?: boolean;
+  rotuloConfirmar?: string;
   /** Bloco de resultado/ações abaixo das alternativas. */
   children?: React.ReactNode;
 }) {
   const revelado = !!respostaCorreta;
+  // O botão some depois da correção: o passo seguinte é "Próxima questão",
+  // que cada fluxo desenha no lugar do resultado.
+  const mostrarConfirmar = !!onConfirmar && !revelado;
 
   return (
     <div>
@@ -144,6 +165,16 @@ export function CartaoQuestao({
           );
         })}
       </div>
+
+      {mostrarConfirmar && (
+        <button
+          onClick={onConfirmar}
+          disabled={!escolhida || confirmando}
+          className="mt-4 w-full rounded-full bg-orange px-6 py-3 font-display font-bold text-white transition hover:bg-orange-dark disabled:cursor-not-allowed disabled:bg-app-chip disabled:text-app-faint"
+        >
+          {confirmando ? "Enviando..." : !escolhida ? "Escolha uma alternativa" : rotuloConfirmar}
+        </button>
+      )}
 
       {children}
     </div>

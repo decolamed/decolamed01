@@ -4,6 +4,7 @@ import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { hojeISO } from "@/lib/site/data";
 import { textoConfig } from "@/lib/site/configuracoes";
+import { CHAVES_DOS_RESUMOS, lerLinksDosResumos } from "@/lib/site/resumos-livros";
 import DecolaApp from "@/app/(aluno)/aluno/decola-app";
 import type { Questao, Flashcard, Simulado, Banner, ConteudoBiblioteca, LinkExterno, ImagemQuestao } from "@/types/database";
 
@@ -28,7 +29,8 @@ export default async function PreviewAlunoPage() {
     { data: bannersData },
     { data: conteudosData },
     { data: linksData },
-    { data: baseTemasData }
+    { data: baseTemasData },
+    { data: resumosLivrosData }
   ] = await Promise.all([
     // Sem teto: a vitrine precisa mostrar o mesmo acervo que o aluno vê.
     // Um corte aqui faria o admin conferir uma versão reduzida da própria
@@ -41,7 +43,10 @@ export default async function PreviewAlunoPage() {
     supabase.from("banners").select("*").eq("ativo", true).order("ordem"),
     supabase.from("conteudos_biblioteca").select("*").eq("ativo", true).order("created_at", { ascending: false }),
     supabase.from("links_externos").select("*").eq("ativo", true).order("ordem"),
-    supabase.from("configuracoes").select("valor").eq("chave", "redacao.base_temas_url").maybeSingle()
+    supabase.from("configuracoes").select("valor").eq("chave", "redacao.base_temas_url").maybeSingle(),
+    // A vitrine usa os mesmos links de resumo que o aluno: um endereço
+    // diferente aqui daria ao admin a impressão de que o cadastro não pegou.
+    supabase.from("configuracoes").select("chave, valor").in("chave", CHAVES_DOS_RESUMOS)
   ]);
 
   return (
@@ -92,6 +97,7 @@ export default async function PreviewAlunoPage() {
         estudosBotoes: [],
         baseTemasUrl: textoConfig(baseTemasData?.valor) || null,
         termosUsoUrl: null,
+        linksDosResumos: lerLinksDosResumos(resumosLivrosData as { chave: string; valor: unknown }[]),
         nomeVestibular,
         materias,
         hojeStr: hojeISO()
