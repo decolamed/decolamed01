@@ -4,6 +4,8 @@ import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { formatarNota } from "@/lib/site/nota";
+import { acervoPesquisavel, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "@/lib/site/busca-estudos";
+import { ICONE_TIPO, ROTULO_TIPO } from "@/lib/trilha/catalogo";
 import { numeroDoLivro, urlDoResumo, type LinksDosResumos } from "@/lib/site/resumos-livros";
 import { registrarResposta } from "./questoes/actions";
 import { registrarRevisao } from "./flashcards/actions";
@@ -205,6 +207,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     missTab: "diarias",
     upcomingOpen: false,
     qMateria: null,
+    // Texto do campo de busca da aba Estudos. Ele existia sem estado
+    // nenhum: o aluno digitava e a tela não reagia (ver scrEstudos).
+    buscaEstudos: "",
     resetConfirmando: false,
     resetEmAndamento: false,
     achTab: "brasoes",
@@ -2694,17 +2699,164 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     return list;
   }
 
+  /**
+   * O acervo do aluno no formato do catálogo, para a busca da aba Estudos.
+   *
+   * Inclui `conteudosTrilha` de propósito: praticamente todo o material desta
+   * plataforma vive dentro dos dias do cronograma, não em
+   * `conteudos_biblioteca` — buscar só na biblioteca não acharia quase nada.
+   */
+  acervoDaBusca() {
+    const d = this.props.dados;
+    return acervoPesquisavel({
+      conteudos: d.conteudos.map((c) => ({
+        id: c.id,
+        tipo: c.tipo,
+        titulo: c.titulo,
+        materia: c.materia,
+        assunto: (c as { assunto?: string | null }).assunto ?? null,
+        url: c.url
+      })),
+      conteudosTrilha: d.conteudosTrilha,
+      questoes: this.data().questions.map((q: any) => ({ materia: q.materia, assunto: q.assunto })),
+      flashcards: d.flashcards.map((f) => ({ materia: f.materia, assunto: f.assunto })),
+      simulados: d.simulados.map((s) => ({ id: s.id, titulo: s.titulo, descricao: s.descricao })),
+      botoes: d.estudosBotoes.map((b) => ({ id: b.id, titulo: b.titulo }))
+    });
+  }
+
+  /** Abre o que a busca encontrou, cada tipo no destino que já existe. */
+  abrirResultadoDaBusca(item: any) {
+    if (item.tipo === "questoes") {
+      return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
+    }
+    if (item.tipo === "flashcards") {
+      const pool = this.props.dados.flashcards.filter((c) => mesmaMateria(c.materia, item.materia));
+      if (pool.length === 0) return this.avisar(`Ainda não há flashcards de ${item.materia}.`);
+      return this.iniciarFlashcards(this.embaralhar(pool), false);
+    }
+    if (item.tipo === "simulado") {
+      return this.setState({ simId: item.ref_id, simView: "run", simIdx: 0, simAns: {}, simGrid: false, simSec: 0, screen: "simulados" });
+    }
+    if (item.chave?.startsWith("botao:")) {
+      const botao = this.props.dados.estudosBotoes.find((b) => b.id === item.ref_id);
+      if (botao) return this.abrirBotaoEstudos(botao);
+    }
+    if (item.tipo === "aula") return this.abrirAula(item.ref_id, item.titulo, item.url || "", "estudos");
+    if (item.url) return this.openBrowser(item.titulo, item.url, "estudos");
+    this.avisar("Este material ainda não tem um endereço cadastrado.");
+  }
+
+  /** A lista de resultados que substitui as seções da aba Estudos. */
+  resultadosDaBusca(resultados: any[]) {
+    const { C, h, I, card, iconBox } = this.ui();
+
+    if (resultados.length === 0) {
+      return [
+        h(
+          "div",
+          { key: "vazio", style: { margin: "14px 18px 0" } },
+          card({ textAlign: "center", padding: 26 }, [
+            h("div", { key: "t", style: { fontSize: 13.5, fontWeight: 800 } }, "Nada encontrado"),
+            h(
+              "div",
+              { key: "d", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 6 } },
+              `Nenhum conteúdo, matéria ou simulado com "${this.state.buscaEstudos.trim()}". Tente outra palavra — o nome da matéria costuma funcionar bem.`
+            )
+          ])
+        )
+      ];
+    }
+
+    return [
+      h(
+        "div",
+        { key: "res-lbl", style: { margin: "16px 20px 8px", fontSize: 12, fontWeight: 800, color: C.faint, letterSpacing: ".07em", textTransform: "uppercase" } },
+        `${resultados.length} ${resultados.length === 1 ? "resultado" : "resultados"}`
+      ),
+      h(
+        "div",
+        { key: "res", style: { margin: "0 18px 4px" } },
+        card({}, resultados.map((item, i) =>
+          h(
+            "div",
+            {
+              key: item.chave,
+              onClick: () => this.abrirResultadoDaBusca(item),
+              style: {
+                display: "flex",
+                gap: 11,
+                alignItems: "center",
+                padding: "10px 0",
+                borderBottom: i === resultados.length - 1 ? "none" : "1px solid " + C.line,
+                cursor: "pointer"
+              }
+            },
+            [
+              h(
+                "div",
+                { key: "ic", style: { width: 38, height: 38, borderRadius: 11, background: C.chip, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 } },
+                ICONE_TIPO[item.tipo as keyof typeof ICONE_TIPO] ?? "📌"
+              ),
+              h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                h("div", { key: "a", style: { fontSize: 12.5, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, item.titulo),
+                h(
+                  "div",
+                  { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 } },
+                  // Rótulo do tipo primeiro: é o que diz ao aluno se aquilo é
+                  // uma aula, um baralho ou o banco de questões da matéria.
+                  [ROTULO_TIPO[item.tipo as keyof typeof ROTULO_TIPO], item.nota, item.materia, item.detalhe]
+                    .filter(Boolean)
+                    .join(" · ")
+                )
+              ]),
+              I("chevR", 16, C.faint)
+            ]
+          )
+        ))
+      )
+    ];
+  }
+
   scrEstudos() {
     const { C, h, I, card, iconBox } = this.ui();
     const d = this.data();
+    // `null` = ainda não digitou o suficiente; lista vazia = digitou e não
+    // achou nada. São coisas diferentes na tela.
+    const resultados = buscarNosEstudos(this.acervoDaBusca(), this.state.buscaEstudos);
     const continuar = this.continuarAssistindo();
     const ultimaAula = !continuar ? this.props.dados.conteudos.filter((c) => c.tipo === "aula")[0] : null;
     return this.screenWrap([
       this.head("Estudos", { back: "mapa" }),
       h("div", { key: "search", style: { margin: "6px 18px 0", display: "flex", gap: 10, alignItems: "center", background: C.card, border: "1px solid " + C.line, borderRadius: 14, padding: "12px 14px" } }, [
         I("search", 17, C.faint),
-        h("input", { key: "i", placeholder: "Buscar conteúdo, assuntos...", style: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: C.txt, fontWeight: 600, fontFamily: "inherit" } })
+        h("input", {
+          key: "i",
+          value: this.state.buscaEstudos,
+          onChange: (e: any) => this.setState({ buscaEstudos: e.target.value }),
+          placeholder: "Buscar aula, matéria, assunto...",
+          "aria-label": "Buscar conteúdo",
+          style: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: C.txt, fontWeight: 600, fontFamily: "inherit" }
+        }),
+        this.state.buscaEstudos
+          ? h(
+              "div",
+              {
+                key: "x",
+                onClick: () => this.setState({ buscaEstudos: "" }),
+                role: "button",
+                "aria-label": "Limpar busca",
+                style: { fontSize: 16, fontWeight: 800, color: C.faint, cursor: "pointer", padding: "0 2px", lineHeight: 1 }
+              },
+              "×"
+            )
+          : null
       ]),
+      // Com busca ativa a tela vira resultado: as seções normais saem do
+      // caminho em vez de ficarem embaixo de uma lista que não conversa com
+      // elas.
+      ...(resultados ? this.resultadosDaBusca(resultados) : []),
+      ...(resultados ? [] : [
       continuar
         ? h(
             "div",
@@ -2855,6 +3007,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             )
           )
         : null
+      ])
     ]);
   }
 
