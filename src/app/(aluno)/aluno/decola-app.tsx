@@ -15,9 +15,9 @@ import { salvarBriefingApp } from "./briefing/actions";
 import { salvarProgressoVideo, alternarConclusaoItem } from "./progresso-actions";
 import { OnboardingCarousel } from "@/components/onboarding/onboarding-carousel";
 import { dataISO, hojeISO, somarDias, dataBR, nomeDoDiaDaSemana, dataDoDiaTrilha } from "@/lib/site/data";
-import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, youtubeVideoId } from "@/lib/trilha/progresso";
+import { chaveAula, chaveDeAula, chaveItemTrilha, chaveDeItemTrilha, itensQueContam, youtubeVideoId } from "@/lib/trilha/progresso";
 import { tituloDaProva } from "@/lib/trilha/rota";
-import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
+import { chaveSessaoExtra, chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import { escreverSentimentos } from "@/lib/site/sentimentos";
 import { codigoDaQuestao } from "@/lib/site/questao-identidade";
@@ -1356,7 +1356,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         // Questões continua sendo o destino honesto nesse caso.
         return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
       }
-      this.irParaRota("/aluno/sessao/" + encodeURIComponent(chaveSessaoTrilha(diaNumero, indice)));
+      // O bloco extra não tem posição fixa no dia — a chave dele é por dia.
+      this.irParaRota(
+        "/aluno/sessao/" +
+          encodeURIComponent(item.extra ? chaveSessaoExtra(diaNumero) : chaveSessaoTrilha(diaNumero, indice))
+      );
     } else if (item.tipo === "flashcards") {
       const pool = this.props.dados.flashcards;
       if (item.materia) this.iniciarFlashcards(this.embaralhar(pool.filter((c) => mesmaMateria(c.materia, item.materia))), false);
@@ -2591,8 +2595,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     const emOrdem = [...(d.trilhaAnteriores || []), ...(d.trilhaHoje ? [d.trilhaHoje] : []), ...(d.trilhaProximos || [])];
     const pendente = emOrdem.find((dia) => {
       const itens = dia.itens || [];
-      if (itens.length === 0) return false;
-      return !itens.every((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item)));
+      const contam = itensQueContam(itens);
+      if (contam.length === 0) return false;
+      return !contam.every(({ item, indice }) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, indice, item)));
     });
     return pendente ?? d.trilhaHoje ?? emOrdem[emOrdem.length - 1] ?? null;
   }
@@ -4349,8 +4354,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // Véspera reservada para descanso — sem itens, e é assim de propósito.
     if (dia.tipo_rota === "descanso") return this.cartaoVespera(dia);
     const itens = dia.itens || [];
-    const feitos = itens.filter((item, i) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, i, item))).length;
-    const concluido = itens.length > 0 && feitos === itens.length;
+    // O bloco de questões extras não entra na conta: é complementar, e
+    // deixá-lo por fazer não pode segurar o dia em "4/5" para sempre.
+    const contam = itensQueContam(itens);
+    const feitos = contam.filter(({ item, indice }) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, indice, item))).length;
+    const concluido = contam.length > 0 && feitos === contam.length;
     // Um dia cumprido continua na trilha — não some, fica marcado. A opacidade
     // reduzida some quando o dia está concluído: apagar um dia que o aluno
     // completou é o oposto do reconhecimento que ele merece ali.
@@ -4378,7 +4386,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               : null,
             h("span", { key: "d", style: { fontSize: 10.5, fontWeight: 800, color: concluido ? C.green : C.faint, letterSpacing: ".06em", textTransform: "uppercase" } }, "Dia " + dia.dia_numero),
             itens.length
-              ? h("span", { key: "c", style: { fontSize: 10, fontWeight: 800, color: concluido ? C.green : C.faint } }, feitos + "/" + itens.length)
+              ? h("span", { key: "c", style: { fontSize: 10, fontWeight: 800, color: concluido ? C.green : C.faint } }, feitos + "/" + contam.length)
               : null,
             concluido
               ? h("span", { key: "lbl", style: { marginLeft: "auto", fontSize: 9, fontWeight: 900, color: "#fff", background: C.green, padding: "3px 8px", borderRadius: 99, letterSpacing: ".05em" } }, "CONCLUÍDO")
@@ -4395,7 +4403,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             ? h(
                 "div",
                 { key: "bar", style: { height: 4, borderRadius: 99, background: C.chip, overflow: "hidden", marginBottom: 8 } },
-                h("div", { key: "f", style: { width: Math.round((feitos / itens.length) * 100) + "%", height: "100%", background: C.green, borderRadius: 99, transition: "width .25s" } })
+                h("div", { key: "f", style: { width: Math.round((feitos / Math.max(1, contam.length)) * 100) + "%", height: "100%", background: C.green, borderRadius: 99, transition: "width .25s" } })
               )
             : null,
           // Itens do dia numa coluna com respiro entre eles: empilhados sem
@@ -4615,8 +4623,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
               h("span", { key: "t", style: { flex: 1, fontSize: 12, fontWeight: 800, color: C.sub } },
                 this.props.dados.trilhaAnteriores.length + (this.props.dados.trilhaAnteriores.length === 1 ? " dia anterior" : " dias anteriores")
                   + " · " + this.props.dados.trilhaAnteriores.filter((d) => {
-                      const its = d.itens || [];
-                      return its.length > 0 && its.every((item, i) => this.estaConcluido(this.chaveDeItemTrilha(d.dia_numero, i, item)));
+                      const its = itensQueContam(d.itens || []);
+                      return its.length > 0 && its.every(({ item, indice }) => this.estaConcluido(this.chaveDeItemTrilha(d.dia_numero, indice, item)));
                     }).length + " concluído(s)")
             ]
           )

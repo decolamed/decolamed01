@@ -9,6 +9,7 @@ import {
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
 import { descreverViolacoes, requisitosDoTemplate, validarRota } from "@/lib/trilha/validador-rota";
+import { aplicarQuestoesExtras } from "@/lib/trilha/questoes-extras-servidor";
 import {
   CHAVES_DOS_SIMULADOS,
   decidirSimuladosDaRota,
@@ -74,11 +75,16 @@ export async function rotaDoAluno(
   const parametros = parametrosDoBriefing(opcoes.briefing, opcoes.hoje);
   if (!parametros) return null;
 
+  const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
-    contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
+    contexto
   });
   if (rota.dias.length === 0) return null;
+
+  // Camada complementar, aplicada DEPOIS que a rota está montada — nenhum
+  // item principal muda de lugar por causa dela. Ver questoes-extras.ts.
+  await aplicarQuestoesExtras(supabase, alunoId, rota, contexto);
 
   await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
@@ -333,14 +339,17 @@ export async function regerarRotaDoAluno(
     return null;
   }
 
+  const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
-    contexto: await contextoDoAluno(supabase, alunoId, opcoes.briefing)
+    contexto
   });
   if (rota.dias.length === 0) {
     await limparRotaDoAluno(supabase, alunoId);
     return null;
   }
+
+  await aplicarQuestoesExtras(supabase, alunoId, rota, contexto);
 
   await limparRotaDoAluno(supabase, alunoId);
   await sincronizarRota(supabase, alunoId, rota, opcoes.template);

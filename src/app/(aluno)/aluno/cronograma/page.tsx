@@ -7,8 +7,8 @@ import { calcularDiaTrilha } from "@/lib/trilha/dia";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
 import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
-import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
-import { chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
+import { chaveDeItemTrilha, itensQueContam } from "@/lib/trilha/progresso";
+import { chaveSessaoExtra, chaveSessaoMissao, chaveSessaoTrilha } from "@/lib/trilha/sessao-questoes";
 import { nomeDoDiaDaSemana, dataBR } from "@/lib/site/data";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { CronogramaCopiloto } from "@/components/aluno/cronograma-copiloto";
@@ -71,7 +71,12 @@ function montarHrefTrilha(item: TrilhaItem, diaNumero: number, indice: number): 
       // Sessão fechada de N questões, não o Banco de Questões filtrado. O
       // link antigo (`/aluno/questoes?materia=Biologia`) abria o acervo
       // inteiro da matéria — ver lib/trilha/sessao-questoes.ts.
-      return `/aluno/sessao/${encodeURIComponent(chaveSessaoTrilha(diaNumero, indice))}`;
+      //
+      // O bloco extra tem chave por dia, não por posição: ele é acrescentado
+      // depois que a rota está montada e o índice dele não é estável.
+      return `/aluno/sessao/${encodeURIComponent(
+        item.extra ? chaveSessaoExtra(diaNumero) : chaveSessaoTrilha(diaNumero, indice)
+      )}`;
     case "flashcards":
       return item.materia ? `/aluno/flashcards?materia=${encodeURIComponent(item.materia)}` : "/aluno/flashcards";
     case "simulado":
@@ -367,8 +372,11 @@ export default async function AlunoCronogramaPage() {
               const passado = diaAtual != null && d.dia_numero < diaAtual;
               const hoje = d.dia_numero === diaAtual;
               const itensDoDia = d.itens ?? [];
-              const feitos = itensDoDia.filter((it, i) => itemConcluido(d.dia_numero, i, it)).length;
-              const diaConcluido = itensDoDia.length > 0 && feitos === itensDoDia.length;
+              // O bloco de questões extras não conta: é complementar, e não
+              // fazê-lo não pode impedir o dia de aparecer como concluído.
+              const contam = itensQueContam(itensDoDia);
+              const feitos = contam.filter(({ item, indice }) => itemConcluido(d.dia_numero, indice, item)).length;
+              const diaConcluido = contam.length > 0 && feitos === contam.length;
               return (
                 <details
                   key={d.dia_numero}
@@ -400,7 +408,7 @@ export default async function AlunoCronogramaPage() {
                       )}
                     </span>
                     <span className={`text-xs font-semibold ${diaConcluido ? "text-green" : "text-navy-dark/40"}`}>
-                      {itensDoDia.length > 0 ? `${feitos}/${itensDoDia.length}` : "0 itens"}
+                      {contam.length > 0 ? `${feitos}/${contam.length}` : "0 itens"}
                     </span>
                   </summary>
                   <div className="mt-3 space-y-1.5">
