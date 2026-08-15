@@ -1,0 +1,139 @@
+<!--
+  DECOLA MED — Redefinição de senha
+  Cole em: Authentication > Emails > Templates > Reset Password
+  Assunto:  Redefinição de senha | Decola MED
+
+  Variáveis do Supabase usadas aqui:
+    {{ .ConfirmationURL }}  o link de ação (já respeita o redirectTo do app)
+    {{ .SiteURL }}          a Site URL do projeto — usada para carregar a logo
+
+  A logo é branca sobre fundo transparente, por isso vive dentro da faixa
+  navy. Se as imagens estiverem bloqueadas no cliente de e-mail, o texto
+  alternativo continua legível em branco sobre o navy.
+-->
+<!--[if mso]><style>body,table,td,a{font-family:Arial,Helvetica,sans-serif !important}</style><![endif]-->
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+
+<style>
+  @media only screen and (max-width: 620px) {
+    .dm-wrap   { width: 100% !important; }
+    .dm-pad    { padding-left: 24px !important; padding-right: 24px !important; }
+    .dm-title  { font-size: 24px !important; line-height: 32px !important; }
+    .dm-btn a  { display: block !important; }
+  }
+</style>
+
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
+  Recebemos um pedido para redefinir a senha da sua conta Decola MED.
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background-color:#F2F7FB;margin:0;padding:24px 12px;">
+  <tr>
+    <td align="center">
+
+      <table role="presentation" class="dm-wrap" cellpadding="0" cellspacing="0" border="0" width="600"
+             style="width:600px;max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;
+                    font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+        <!-- ============ Cabeçalho ============ -->
+        <tr>
+          <td align="center" bgcolor="#01395E" style="background-color:#01395E;padding:32px 24px 28px 24px;">
+            <img src="{{ .SiteURL }}/assets/logo.png" width="140" height="140" alt="Decola MED"
+                 style="display:block;border:0;outline:none;text-decoration:none;width:140px;height:140px;
+                        color:#ffffff;font-size:22px;font-weight:700;">
+          </td>
+        </tr>
+
+        <!-- Faixa laranja da identidade -->
+        <tr><td height="5" bgcolor="#F36C21" style="background-color:#F36C21;height:5px;line-height:5px;font-size:0;">&nbsp;</td></tr>
+
+        <!-- ============ Conteúdo ============ -->
+        <tr>
+          <td class="dm-pad" style="padding:40px 48px 8px 48px;">
+            <h1 class="dm-title" style="margin:0;font-size:28px;line-height:36px;font-weight:700;color:#01395E;">
+              Redefinir sua senha
+            </h1>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="dm-pad" style="padding:16px 48px 0 48px;font-size:16px;line-height:26px;color:#3f5568;">
+            <p style="margin:0 0 16px 0;">Olá!</p>
+            <p style="margin:0 0 16px 0;">
+              Recebemos um pedido para redefinir a senha da sua conta na
+              <strong style="color:#01395E;">Decola MED</strong>. É rápido: clique no botão abaixo
+              e escolha a sua nova senha.
+            </p>
+          </td>
+        </tr>
+
+        <!-- ============ Botão ============ -->
+        <tr>
+          <td class="dm-pad" align="center" style="padding:32px 48px;">
+            <table role="presentation" class="dm-btn" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="#F36C21"
+                    style="background-color:#F36C21;border-radius:999px;">
+                  <a href="{{ .ConfirmationURL }}"
+                     style="display:inline-block;padding:16px 40px;font-size:17px;font-weight:700;
+                            color:#ffffff;text-decoration:none;border-radius:999px;
+                            font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                    Redefinir minha senha
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ============ Link alternativo ============ -->
+        <tr>
+          <td class="dm-pad" style="padding:0 48px 8px 48px;font-size:14px;line-height:22px;color:#6b7f8f;">
+            <p style="margin:0 0 8px 0;">Se o botão não funcionar, copie e cole este endereço no navegador:</p>
+            <p style="margin:0;word-break:break-all;">
+              <a href="{{ .ConfirmationURL }}" style="color:#01395E;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+            </p>
+          </td>
+        </tr>
+
+        <!-- ============ Aviso de segurança ============ -->
+        <tr>
+          <td class="dm-pad" style="padding:28px 48px 0 48px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+                   style="background-color:#EAF3FB;border-radius:12px;">
+              <tr>
+                <td style="padding:16px 20px;font-size:14px;line-height:22px;color:#3f5568;">
+                  Por segurança, este link é de <strong>uso único</strong> e expira depois de um tempo.
+                  Se ele não funcionar, é só pedir um novo na tela de acesso.
+                  <br><br>
+                  <strong style="color:#01395E;">Não foi você quem pediu?</strong>
+                  Pode ignorar esta mensagem — sua senha atual continua valendo e nada muda na sua conta.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ============ Rodapé ============ -->
+        <tr>
+          <td class="dm-pad" style="padding:32px 48px 40px 48px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr><td height="1" bgcolor="#e2ebf3" style="background-color:#e2ebf3;height:1px;line-height:1px;font-size:0;">&nbsp;</td></tr>
+            </table>
+            <p style="margin:20px 0 0 0;font-size:13px;line-height:20px;color:#8a9bab;">
+              Boa decolagem rumo à sua vaga em Medicina. 🛫<br>
+              <strong style="color:#01395E;">Equipe Decola MED</strong>
+            </p>
+            <p style="margin:12px 0 0 0;font-size:12px;line-height:18px;color:#a3b2c0;">
+              Esta é uma mensagem automática — não é necessário respondê-la.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
