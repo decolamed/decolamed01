@@ -61,9 +61,9 @@ export function contextoVazio(): ContextoDoAluno {
  * o que faz uma matéria difícil de peso médio passar à frente de uma matéria
  * fácil de peso alto.
  */
-const PESO_RETORNO = 0.4;
-const PESO_CARENCIA = 0.25;
-const PESO_DIFICULDADE = 0.2;
+export const PESO_RETORNO = 0.4;
+export const PESO_CARENCIA = 0.25;
+export const PESO_DIFICULDADE = 0.2;
 const PESO_INEDITISMO = 0.1;
 const PESO_FUNDAMENTO = 0.05;
 
@@ -81,7 +81,7 @@ const NOTA_POR_SENTIMENTO: Record<string, number> = {
 const RESPOSTAS_PARA_CONFIAR = 8;
 
 /** Potencial de nota da matéria, normalizado pelo maior potencial da prova. */
-function retornoDaMateria(materia: string | null | undefined, ctx: ContextoDoAluno): number {
+export function retornoDaMateria(materia: string | null | undefined, ctx: ContextoDoAluno): number {
   if (ctx.pesos.size === 0) return 0.5; // sem pesos cadastrados, ninguém tem vantagem
   const potenciais = [...ctx.pesos.values()].map((p) => Math.max(0, p.peso) * Math.max(0, p.qtdQuestoes));
   const maior = Math.max(...potenciais, 1);
@@ -97,7 +97,7 @@ function retornoDaMateria(materia: string | null | undefined, ctx: ContextoDoAlu
  * evita que a primeira questão respondida jogue a matéria para o topo ou para
  * o fundo da fila.
  */
-function carenciaDaMateria(materia: string | null | undefined, ctx: ContextoDoAluno): number {
+export function carenciaDaMateria(materia: string | null | undefined, ctx: ContextoDoAluno): number {
   const d = ctx.desempenho.get(chaveMateria(materia ?? ""));
   const total = (d?.acertos ?? 0) + (d?.erros ?? 0);
   if (total === 0) return 0.5;
@@ -107,7 +107,7 @@ function carenciaDaMateria(materia: string | null | undefined, ctx: ContextoDoAl
 }
 
 /** O que o aluno declarou no briefing. Sem declaração, o meio-termo. */
-function dificuldadeDeclarada(materia: string | null | undefined, ctx: ContextoDoAluno): number {
+export function dificuldadeDeclarada(materia: string | null | undefined, ctx: ContextoDoAluno): number {
   const alvo = Object.keys(ctx.sentimentos).find((m) => mesmaMateria(m, materia));
   const sentimento = alvo ? ctx.sentimentos[alvo] : null;
   return NOTA_POR_SENTIMENTO[sentimento ?? ""] ?? NOTA_POR_SENTIMENTO["Atenção"];

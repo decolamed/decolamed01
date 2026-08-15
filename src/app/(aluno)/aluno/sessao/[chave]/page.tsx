@@ -50,6 +50,15 @@ export default async function SessaoDeQuestoesPage({ params }: { params: { chave
     materia = item.materia ?? null;
     quantidade = quantidadeDoItem(item.titulo);
     titulo = item.titulo || "Atividade";
+  } else if (lida.tipo === "extra") {
+    // Bloco de questões extras do dia. Não tem índice: é procurado pela
+    // marca `extra` dentro do dia, porque a posição dele muda conforme o
+    // algoritmo escolhe mais ou menos itens principais.
+    const item = await blocoExtraDoDia(profile.id, lida.dia);
+    if (!item) notFound();
+    materia = item.materia ?? null;
+    quantidade = quantidadeDoItem(item.titulo);
+    titulo = item.titulo || "Questões extras";
   } else {
     const { data: missao } = await supabase
       .from("aluno_missoes")
@@ -99,6 +108,19 @@ export default async function SessaoDeQuestoesPage({ params }: { params: { chave
  * chave `trilha:<dia>:<índice>` aponta sempre para o mesmo item nas três.
  */
 async function itemDoCronograma(alunoId: string, dia: number, indice: number): Promise<TrilhaItem | null> {
+  const dias = await diasDoAluno(alunoId);
+  const doDia = dias.find((d) => d.dia_numero === dia);
+  return doDia?.itens?.[indice] ?? null;
+}
+
+/** O bloco de questões extras daquele dia, se a camada tiver posto um lá. */
+async function blocoExtraDoDia(alunoId: string, dia: number): Promise<TrilhaItem | null> {
+  const dias = await diasDoAluno(alunoId);
+  const doDia = dias.find((d) => d.dia_numero === dia);
+  return (doDia?.itens ?? []).find((i) => i.extra && i.tipo === "questoes") ?? null;
+}
+
+async function diasDoAluno(alunoId: string): Promise<TrilhaDia[]> {
   const supabase = createClient();
   const hoje = hojeISO();
 
@@ -121,7 +143,5 @@ async function itemDoCronograma(alunoId: string, dia: number, indice: number): P
     hoje
   });
 
-  const dias = rota ? cronogramaDeTela(rota) : template;
-  const doDia = dias.find((d) => d.dia_numero === dia);
-  return doDia?.itens?.[indice] ?? null;
+  return rota ? (cronogramaDeTela(rota) as TrilhaDia[]) : template;
 }

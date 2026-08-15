@@ -129,12 +129,27 @@ export function chaveSessaoMissao(missaoId: string): string {
   return `missao:${missaoId}`;
 }
 
+/**
+ * Bloco de questões extras do dia. Namespace próprio porque o bloco não tem
+ * posição fixa dentro do dia — ver `chaveItemExtra` em progresso.ts.
+ */
+export function chaveSessaoExtra(diaNumero: number): string {
+  return `extra:${diaNumero}`;
+}
+
 /** Interpreta a chave de volta. Devolve null se não for uma chave conhecida. */
 export function lerChaveSessao(
   chave: string
-): { tipo: "trilha"; dia: number; indice: number } | { tipo: "missao"; id: string } | null {
+):
+  | { tipo: "trilha"; dia: number; indice: number }
+  | { tipo: "extra"; dia: number }
+  | { tipo: "missao"; id: string }
+  | null {
   const trilha = /^trilha:(\d+):(\d+)$/.exec(chave);
   if (trilha) return { tipo: "trilha", dia: Number(trilha[1]), indice: Number(trilha[2]) };
+
+  const extra = /^extra:(\d+)$/.exec(chave);
+  if (extra) return { tipo: "extra", dia: Number(extra[1]) };
 
   const missao = /^missao:([0-9a-f-]{36})$/i.exec(chave);
   if (missao) return { tipo: "missao", id: missao[1] };

@@ -365,6 +365,11 @@ export interface TrilhaItem {
   // do conteúdo — e o cronograma continuaria mostrando o nome antigo depois
   // que o admin corrigisse a aula em "Cursos e Aulas". Ver lib/trilha/resolver.
   titulo_custom?: boolean;
+  // Bloco de questões EXTRA, acrescentado pela camada de acompanhamento
+  // (lib/trilha/questoes-extras.ts). Não conta na carga horária do dia, não
+  // deixa o dia incompleto se ficar por fazer e não é reagendado como
+  // pendência — é oportunidade, não obrigação.
+  extra?: boolean;
 }
 
 export interface TrilhaDia {

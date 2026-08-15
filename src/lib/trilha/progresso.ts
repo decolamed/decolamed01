@@ -30,9 +30,36 @@ export function chaveItemTrilha(diaNumero: number, indice: number): string {
   return "trilha:" + diaNumero + ":" + indice;
 }
 
+// Chave do bloco de questões extras do dia. Namespace próprio, e não a chave
+// posicional: o bloco é acrescentado depois que a rota está montada, então o
+// índice dele dentro do dia muda sempre que o algoritmo escolhe outra
+// quantidade de itens principais. Com a chave posicional, a sessão que o
+// aluno já respondeu passaria a apontar para outro lugar.
+export function chaveItemExtra(diaNumero: number): string {
+  return "extra:" + diaNumero;
+}
+
 export function chaveDeItemTrilha(diaNumero: number, indice: number, item: TrilhaItem): string | null {
+  if (item.extra) return chaveItemExtra(diaNumero);
   if (item.tipo === "aula") return chaveDeAula(item.ref_id, item.url);
   return chaveItemTrilha(diaNumero, indice);
+}
+
+/** O item é um bloco de questões extras? */
+export function ehQuestaoExtra(item: TrilhaItem): boolean {
+  return Boolean(item.extra);
+}
+
+/**
+ * Os itens que contam para "o dia está concluído", com o índice original.
+ *
+ * O bloco de questões extras fica DE FORA: deixar de fazê-lo não pode marcar
+ * o dia como incompleto nem travar a barra de progresso em 4/5 para sempre.
+ * O índice original é devolvido junto porque a chave de progresso dos demais
+ * itens depende da posição deles no dia.
+ */
+export function itensQueContam<T extends TrilhaItem>(itens: T[]): { item: T; indice: number }[] {
+  return itens.map((item, indice) => ({ item, indice })).filter(({ item }) => !item.extra);
 }
 
 // Quanto tempo estimar para cada tipo de item ao reagendá-lo. Aproximação
@@ -60,5 +87,9 @@ export function minutosDoItem(item: TrilhaItem): number {
 // Itens que não valem reagendamento: "livre" é descanso e "revisao" é
 // genérico o bastante para o Copiloto recriar quando fizer sentido.
 export function itemReagendavel(item: TrilhaItem): boolean {
+  // Bloco extra não vira pendência: deixar de fazer não pode gerar dívida
+  // nem empilhar 5 questões no dia seguinte. É a regra que separa a camada
+  // complementar do cronograma principal.
+  if (item.extra) return false;
   return item.tipo !== "livre" && item.tipo !== "revisao";
 }
