@@ -13,6 +13,22 @@ function erro(mensagem: string): never {
   redirect(`${PATH}?erro=${encodeURIComponent(mensagem)}`);
 }
 
+/**
+ * Para onde voltar depois de enviar o e-mail.
+ *
+ * As ações de envio nasceram na lista e sempre voltavam para ela. Chamadas da
+ * página do aluno — que é de onde se troca o e-mail e se entrega o acesso —
+ * isso tirava o administrador da tela no meio do processo. O formulário diz
+ * para onde voltar; sem dizer nada, continua indo para a lista.
+ *
+ * O valor é restrito a caminhos internos de /admin/usuarios: um destino vindo
+ * do formulário não pode virar redirecionamento para fora da plataforma.
+ */
+function destinoDeRetorno(formData: FormData): string {
+  const pedido = String(formData.get("voltarPara") ?? "");
+  return /^\/admin\/usuarios(\/[0-9a-f-]{36})?$/i.test(pedido) ? pedido : PATH;
+}
+
 function sucesso(mensagem: string): never {
   redirect(`${PATH}?sucesso=${encodeURIComponent(mensagem)}`);
 }
@@ -161,12 +177,28 @@ export async function criarAlunoManual(formData: FormData) {
 // 2. Ações administrativas de usuário
 // ----------------------------------------------------------------------------
 
+/**
+ * O e-mail e o nome do destinatário SEMPRE vêm do banco, pelo id — nunca do
+ * formulário.
+ *
+ * Antes vinham dos campos ocultos da linha da tabela. Isso funcionava até o
+ * momento em que o e-mail da conta muda: a página aberta antes da troca
+ * continua carregando o endereço antigo, e o clique mandaria o acesso para
+ * ele. É exatamente o caso de uso de trocar o e-mail provisório pelo real —
+ * o envio precisa ir para o endereço que está valendo agora.
+ */
+async function destinatario(supabase: ReturnType<typeof createAdminClient>, id: string) {
+  const { data } = await supabase.from("profiles").select("nome, email").eq("id", id).maybeSingle();
+  const email = ((data?.email as string | undefined) ?? "").trim();
+  if (!email) erro("Não foi possível identificar o e-mail desta conta.");
+  return { email, nome: (data?.nome as string | undefined) ?? "" };
+}
+
 export async function reenviarConvite(formData: FormData) {
   const admin = await requireAdmin();
   const supabase = createAdminClient();
   const id = String(formData.get("id"));
-  const email = String(formData.get("email"));
-  const nome = String(formData.get("nome") ?? "");
+  const { email, nome } = await destinatario(supabase, id);
 
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`,
@@ -192,14 +224,14 @@ export async function reenviarConvite(formData: FormData) {
   });
 
   revalidatePath(PATH);
-  sucesso("E-mail de acesso reenviado.");
+  redirect(`${destinoDeRetorno(formData)}?sucesso=${encodeURIComponent(`E-mail de acesso enviado para ${email}.`)}`);
 }
 
 export async function reenviarSenha(formData: FormData) {
   const admin = await requireAdmin();
   const supabase = createAdminClient();
   const id = String(formData.get("id"));
-  const email = String(formData.get("email"));
+  const { email } = await destinatario(supabase, id);
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`
@@ -214,7 +246,7 @@ export async function reenviarSenha(formData: FormData) {
   });
 
   revalidatePath(PATH);
-  sucesso("E-mail de redefinição de senha reenviado.");
+  redirect(`${destinoDeRetorno(formData)}?sucesso=${encodeURIComponent(`E-mail de redefinição de senha enviado para ${email}.`)}`);
 }
 
 export async function desativarUsuario(formData: FormData) {

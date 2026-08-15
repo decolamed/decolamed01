@@ -15,7 +15,12 @@ export type TipoHistoricoAdmin =
   | "usuario_rebaixado_parceiro"
   | "professor_criado_manual"
   | "usuario_promovido_professor"
-  | "usuario_rebaixado_professor";
+  | "usuario_rebaixado_professor"
+  // Edição de perfil pelo painel. `email_alterado` é registrado à parte
+  // porque é a única que mexe na autenticação da conta — e é a que alguém
+  // vai querer auditar depois ("por que este aluno entra com outro e-mail?").
+  | "perfil_editado"
+  | "email_alterado";
 
 /**
  * Grava uma linha de auditoria. Nunca deve derrubar a ação principal caso
