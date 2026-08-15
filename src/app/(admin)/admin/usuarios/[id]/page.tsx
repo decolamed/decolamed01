@@ -12,7 +12,8 @@ import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { DesempenhoDoAluno } from "@/components/admin/desempenho-aluno";
 import { carregarDesempenho } from "@/lib/site/desempenho-servidor";
 import { hojeISO } from "@/lib/site/data";
-import { adicionarMissaoIndividual, excluirMissaoIndividual } from "./actions";
+import { adicionarMissaoIndividual, excluirMissaoIndividual, atualizarPerfilDoUsuario } from "./actions";
+import { reenviarConvite, reenviarSenha } from "../actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
 
 const TIPO_MISSAO_LABEL: Record<string, string> = {
@@ -213,6 +214,9 @@ export default async function AdminDetalhesUsuarioPage({
           <div className="mt-2">
             <WhatsappButton telefone={profile.telefone} nome={profile.nome} />
           </div>
+          <a href="#editar-perfil" className="mt-3 inline-block text-xs font-bold text-navy hover:underline">
+            Editar perfil ↓
+          </a>
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow">
@@ -295,6 +299,108 @@ export default async function AdminDetalhesUsuarioPage({
               </SubmitButton>
             </form>
           )}
+        </div>
+      </div>
+
+      {/* ----------------------------------------------------------------
+          Editar perfil
+
+          Existe para o fluxo de preparar a conta com um e-mail provisório e
+          trocar pelo real na entrega. A troca mexe na AUTENTICAÇÃO junto —
+          ver `atualizarPerfilDoUsuario`; alterar só a exibição deixaria o
+          aluno entrando pelo e-mail antigo.
+          ---------------------------------------------------------------- */}
+      <h2 id="editar-perfil" className="mt-10 font-display text-lg font-bold text-navy-dark">
+        Editar perfil
+      </h2>
+      <form
+        action={atualizarPerfilDoUsuario.bind(null, params.id)}
+        className="mt-3 max-w-xl rounded-2xl bg-white p-6 shadow"
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-semibold text-navy-dark" htmlFor="perfil-nome">
+              Nome completo
+            </label>
+            <input
+              id="perfil-nome"
+              name="nome"
+              defaultValue={profile.nome}
+              required
+              minLength={3}
+              className="mt-1 w-full rounded-lg border p-3"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-navy-dark" htmlFor="perfil-email">
+              E-mail da conta
+            </label>
+            <input
+              id="perfil-email"
+              name="email"
+              type="email"
+              defaultValue={profile.email}
+              required
+              className="mt-1 w-full rounded-lg border p-3"
+            />
+            <p className="mt-1 text-xs text-navy-dark/55">
+              É o endereço usado para <strong>entrar na plataforma</strong> e recuperar a senha. Trocar aqui muda os
+              dois — a conta continua sendo a mesma, com o mesmo cronograma, progresso e histórico.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-navy-dark" htmlFor="perfil-telefone">
+              Telefone/WhatsApp
+            </label>
+            <input
+              id="perfil-telefone"
+              name="telefone"
+              defaultValue={profile.telefone ?? ""}
+              className="mt-1 w-full rounded-lg border p-3"
+            />
+          </div>
+        </div>
+
+        <ConfirmSubmitButton
+          pendingText="Salvando..."
+          confirmMessage={`Salvar o perfil de ${profile.nome}?\n\nSe o e-mail mudou, ele passa a valer para login e recuperação de senha imediatamente. Nada mais da conta é alterado.`}
+          className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+        >
+          Salvar alterações
+        </ConfirmSubmitButton>
+      </form>
+
+      <div className="mt-4 max-w-xl rounded-2xl bg-white p-6 shadow">
+        <h3 className="font-display font-bold text-navy-dark">Enviar acesso ao aluno</h3>
+        <p className="mt-1 text-sm text-navy-dark/60">
+          Envia para <strong>{profile.email}</strong> — o endereço que está gravado agora, não o que estava na tela
+          quando ela foi aberta.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <form action={reenviarConvite}>
+            <input type="hidden" name="id" value={params.id} />
+            <input type="hidden" name="voltarPara" value={`/admin/usuarios/${params.id}`} />
+            <ConfirmSubmitButton
+              pendingText="Enviando..."
+              confirmMessage={`Enviar o e-mail de acesso para ${profile.email}?`}
+              className="rounded-full border-2 border-navy px-5 py-2.5 text-sm font-display font-bold text-navy hover:bg-navy hover:text-white"
+            >
+              Enviar acesso
+            </ConfirmSubmitButton>
+          </form>
+          <form action={reenviarSenha}>
+            <input type="hidden" name="id" value={params.id} />
+            <input type="hidden" name="voltarPara" value={`/admin/usuarios/${params.id}`} />
+            <ConfirmSubmitButton
+              pendingText="Enviando..."
+              confirmMessage={`Enviar o link de redefinição de senha para ${profile.email}?`}
+              className="rounded-full border-2 border-navy/30 px-5 py-2.5 text-sm font-display font-bold text-navy-dark/70 hover:border-navy hover:text-navy"
+            >
+              Redefinir senha
+            </ConfirmSubmitButton>
+          </form>
         </div>
       </div>
 

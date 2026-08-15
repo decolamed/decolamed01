@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { registrarHistoricoAdmin } from "@/lib/historico/registrar";
+import { z } from "zod";
 import type { AlunoMissaoTipo } from "@/types/database";
 
 // Cronograma individual de um aluno específico (aluno_missoes) — não mexe
@@ -100,4 +102,134 @@ export async function excluirMissaoIndividual(alunoId: string, missaoId: string)
     redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível remover a missão.")}`);
   }
   redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Missão removida.")}`);
+}
+
+// ============================================================================
+// EDITAR PERFIL — incluindo a troca de e-mail da conta
+//
+// O caso de uso: preparar a conta inteira com um e-mail provisório (perfil,
+// briefing, cronograma do Copiloto, data da prova) e, na hora de entregar o
+// acesso, trocar para o e-mail real do aluno.
+//
+// O detalhe que faz isso dar certo ou errado: o e-mail mora em DOIS lugares
+// e não há trigger nenhum ligando um ao outro —
+//
+//   auth.users.email  → é o que serve para login e recuperação de senha;
+//   profiles.email    → é o que a plataforma exibe e usa nas telas.
+//
+// Mexer só em `profiles` (que é o caminho óbvio, e o que uma edição de
+// formulário faria naturalmente) deixaria a conta num estado pior do que o
+// inicial: o painel mostrando o e-mail novo e o aluno só conseguindo entrar
+// pelo antigo. Por isso a autenticação é alterada PRIMEIRO — é ela que tem a
+// unicidade de verdade — e, se a gravação do perfil falhar depois, o e-mail
+// da autenticação é devolvido ao que era.
+//
+// Nada além dos três campos é tocado: mesmo `id`, mesma matrícula, mesmo
+// briefing, mesmo cronograma, mesmo progresso.
+// ============================================================================
+
+const perfilSchema = z.object({
+  nome: z.string().trim().min(3, "Informe o nome completo."),
+  // .toLowerCase() pelo mesmo motivo do cadastro manual: o Supabase Auth
+  // normaliza o e-mail internamente, e sem isso `profiles.email` ficaria
+  // divergindo do e-mail real de login por causa de uma maiúscula.
+  email: z.string().trim().toLowerCase().email("E-mail inválido."),
+  telefone: z.string().trim().optional()
+});
+
+export async function atualizarPerfilDoUsuario(alunoId: string, formData: FormData) {
+  const admin = await requireAdmin();
+  const destino = `/admin/usuarios/${alunoId}`;
+  const falhar: (mensagem: string) => never = (mensagem) =>
+    redirect(`${destino}?erro=${encodeURIComponent(mensagem)}`);
+
+  const parsed = perfilSchema.safeParse({
+    nome: formData.get("nome"),
+    email: formData.get("email"),
+    telefone: formData.get("telefone") ?? ""
+  });
+  if (!parsed.success) falhar(parsed.error.errors[0]?.message ?? "Dados inválidos.");
+
+  const { nome, email, telefone } = parsed.data;
+  const supabase = createAdminClient();
+
+  const { data: atual, error: erroLeitura } = await supabase
+    .from("profiles")
+    .select("id, nome, email, telefone")
+    .eq("id", alunoId)
+    .maybeSingle();
+  if (erroLeitura || !atual) falhar("Usuário não encontrado.");
+
+  const emailAntigo = (atual.email as string) ?? "";
+  const trocouEmail = email !== emailAntigo.trim().toLowerCase();
+
+  if (trocouEmail) {
+    // Checagem amigável antes de tentar: o erro do Supabase para e-mail
+    // duplicado é genérico, e o administrador precisa saber DE QUEM é o
+    // e-mail para resolver.
+    const { data: jaUsado } = await supabase
+      .from("profiles")
+      .select("id, nome")
+      .ilike("email", email)
+      .neq("id", alunoId)
+      .maybeSingle();
+    if (jaUsado) {
+      falhar(
+        `Este e-mail já pertence à conta de ${(jaUsado as { nome: string }).nome}. ` +
+          "Use outro endereço ou ajuste a conta existente."
+      );
+    }
+
+    // A troca de verdade: mesma linha de `auth.users`, mesmo id, só o e-mail
+    // muda. `email_confirm` marca o endereço como confirmado porque quem
+    // está trocando é o administrador — a posse do endereço é comprovada
+    // logo em seguida, quando o aluno abre o link de acesso que só chega
+    // nele. Sem isso a conta ficaria com um e-mail pendente e o aluno não
+    // conseguiria entrar.
+    const { error: erroAuth } = await supabase.auth.admin.updateUserById(alunoId, {
+      email,
+      email_confirm: true
+    });
+    if (erroAuth) {
+      const duplicado = /already|registered|exists|duplicate/i.test(erroAuth.message);
+      falhar(
+        duplicado
+          ? "Este e-mail já está em uso por outra conta na autenticação. Escolha outro endereço."
+          : `Não foi possível alterar o e-mail de acesso: ${erroAuth.message}`
+      );
+    }
+  }
+
+  const { error: erroPerfil } = await supabase
+    .from("profiles")
+    .update({ nome, email, telefone: telefone || null })
+    .eq("id", alunoId);
+
+  if (erroPerfil) {
+    // O perfil não gravou, mas a autenticação já mudou. Sem este desfazer, a
+    // conta ficaria com um e-mail para login e outro na tela — exatamente a
+    // dessincronização que esta função existe para evitar.
+    if (trocouEmail) {
+      await supabase.auth.admin.updateUserById(alunoId, { email: emailAntigo, email_confirm: true });
+    }
+    falhar("Não foi possível salvar o perfil. Nada foi alterado.");
+  }
+
+  await registrarHistoricoAdmin(supabase, {
+    tipo: trocouEmail ? "email_alterado" : "perfil_editado",
+    usuarioAlvoId: alunoId,
+    adminId: admin.id,
+    detalhes: trocouEmail ? { de: emailAntigo, para: email } : { nome, telefone: telefone || null }
+  });
+
+  revalidatePath(destino);
+  revalidatePath("/admin/usuarios");
+  redirect(
+    `${destino}?sucesso=` +
+      encodeURIComponent(
+        trocouEmail
+          ? `E-mail alterado para ${email}, na conta e no acesso. Use "Enviar acesso" para avisar o aluno no endereço novo.`
+          : "Perfil atualizado."
+      )
+  );
 }
