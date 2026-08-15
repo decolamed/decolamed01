@@ -1,21 +1,22 @@
 # Relatório da plataforma Decola Med
 
-Data: 14/08/2026 · Branch `claude/decola-med-report-ei7u3i`
+Data: 15/08/2026 · Branch `claude/decola-med-report-ei7u3i`
 Projeto Supabase: `cdoukrnmdsrlcbxusojm`
 
-Este documento consolida, num só lugar, as seis rodadas de trabalho da
+Este documento consolida, num só lugar, as sete rodadas de trabalho da
 plataforma. Ele substitui `RELATORIO-AUDITORIA-FINAL.md` e
 `RELATORIO-CORRECOES.md`, cujo conteúdo integral permanece no histórico do
 Git.
 
 | Parte | Rodada | Quando |
 |---|---|---|
-| I | Simulados do admin, resumos com endereço e cobertura | 14/08/2026 |
-| II | Reforço que responde ao erro e questões dependentes | 14/08/2026 |
-| III | Rota por capacidade, requisitos fixos e desempenho | 13/08/2026 |
-| IV | Rota do aluno, sessão de questões e autoavaliação | 13/08/2026 |
-| V | As 22 correções do documento `PROMPT DE CORREÇÃO — DECOLA` | 09/08/2026 |
-| VI | Auditoria de segurança, dados, desempenho e produção | 03/08/2026 |
+| I | Camada de questões extras no cronograma | 15/08/2026 |
+| II | Simulados do admin, resumos com endereço e cobertura | 14/08/2026 |
+| III | Reforço que responde ao erro e questões dependentes | 14/08/2026 |
+| IV | Rota por capacidade, requisitos fixos e desempenho | 13/08/2026 |
+| V | Rota do aluno, sessão de questões e autoavaliação | 13/08/2026 |
+| VI | As 22 correções do documento `PROMPT DE CORREÇÃO — DECOLA` | 09/08/2026 |
+| VII | Auditoria de segurança, dados, desempenho e produção | 03/08/2026 |
 
 **Como ler.** Cada item registra *o que estava causando o problema de
 verdade*, não só o que foi trocado. Em vários casos o componente apontado como
@@ -30,7 +31,7 @@ outro lugar — é por isso que algumas correções anteriores não pegavam.
 |---|---|
 | `npx tsc --noEmit` | **limpo**, zero erros |
 | `npx next build` | **limpo**, zero erros e zero avisos — 63 rotas, 54 páginas estáticas |
-| `npm test` | **274 testes, 274 passando, 0 falhando** (17 arquivos) |
+| `npm test` | **296 testes, 296 passando, 0 falhando** (18 arquivos) |
 | Chaves de API reais em arquivo versionado | **nenhuma** (varredura `AIza…`, `eyJhbGciOi…`, `sk-…`, `$aact_…`) |
 | Arquivo `.env` no repositório | **nenhum**; só `.env.example` em branco |
 
@@ -39,7 +40,73 @@ executadas contra o banco na rodada em que nasceram.
 
 ---
 
-# Parte I — Simulados do admin, resumos com endereço e cobertura
+# Parte I — Camada de questões extras no cronograma
+
+Rodada sem migração: a camada se apoia na rota e nas sessões de questões que
+já existem.
+
+## 1. O problema — a plataforma quase não media o aluno
+
+O cronograma já traz itens de questões vindos do template, mas eles
+**disputam a capacidade do dia** com aulas, leituras e redações. Numa janela
+curta a disputa é dura, e sobram **um ou dois dias com questões na rota
+inteira**: o aluno atravessa dez dias e a plataforma quase não mede nada dele
+— o que, por consequência, deixa o Copiloto sem sinal para trabalhar.
+
+## 2. A solução, e as três coisas que ela deliberadamente não faz
+
+A camada de questões extras é aplicada **depois** que a rota está pronta. As
+três diferenças em relação a um item comum do cronograma são o ponto todo:
+
+| | Comportamento |
+|---|---|
+| **Não compete por capacidade** | nenhum item principal sai do lugar para abrir espaço |
+| **Não conta como carga horária** | o dia continua com os mesmos minutos planejados |
+| **Não é obrigatória** | um bloco não feito não deixa o dia incompleto, não vira dívida e não é reagendado |
+
+Ela decide **só** em que dias cabe um bloco e de que matéria ele é. *Quais*
+questões entram continua sendo trabalho de `sessao-questoes.ts`, que já não
+repete questão que o aluno tenha visto.
+
+## 3. Os três limites, e por que cada um existe
+
+* **Teto de 20 blocos por rota.** Sem ele, "5 questões todo dia" viraria **250
+  questões numa rota de 50 dias** — consumo que esvaziaria o banco antes da
+  prova. Com 20 blocos, a rota mais longa gasta 100 questões, e o acervo
+  (≈350 utilizáveis por aluno, já descontado o idioma que ele não faz) segue
+  com folga para as atividades principais, os simulados e o reforço do
+  Copiloto.
+* **No máximo 2 blocos seguidos da mesma matéria.** Regra dura, **acima da
+  pontuação**: mesmo que uma matéria domine a prioridade, cinco dias seguidos
+  dela não é acompanhamento, é monotonia. Só é relaxada quando não existe
+  outra matéria com questões disponíveis.
+* **Fricção por distância** — um **freio, não um bloqueio**. Uma matéria muito
+  mais prioritária que as outras atravessa o freio e volta rápido, que é
+  exatamente a priorização que o aluno pediu para preservar. O efeito prático,
+  com uma matéria bem à frente, é o padrão **A, B, A, C, A**: prioridade
+  mantida, com variedade.
+
+## 4. O impulso de cobertura — priorizar sem excluir, de novo
+
+Mesmo princípio já aplicado na distribuição do cronograma (Parte II, item 4).
+Sem esse empurrão, medido com os pesos reais desta prova e o aluno do relato
+(dificuldade em Exatas), **uma rota de 10 dias entregava blocos de só quatro
+matérias**: Matemática — declarada em **Turbulência** — ficava de fora do
+começo ao fim, e História e Geografia também.
+
+Isso contraria o propósito da camada, que existe para *acompanhar* o aluno nas
+diferentes matérias: ela **não mede o que nunca pergunta**. O empurrão vale
+apenas enquanto a matéria está zerada; a partir do primeiro bloco ela volta a
+disputar pela nota pura, e a matéria prioritária continua sendo a que mais
+aparece.
+
+A decisão inteira é pura e testável sem banco (`questoes-extras.ts`, 22
+testes); a leitura de banco e a costura com a rota ficam separadas em
+`questoes-extras-servidor.ts`.
+
+---
+
+# Parte II — Simulados do admin, resumos com endereço e cobertura
 
 Quatro migrações (`059`–`062`), três módulos novos com testes. O fio comum é
 tirar decisões da mão do acaso — data de criação, ausência de link, algoritmo
@@ -154,7 +221,7 @@ não há como distinguir um título personalizado de uma cópia desatualizada.
 
 ---
 
-# Parte II — Reforço que responde ao erro e questões dependentes
+# Parte III — Reforço que responde ao erro e questões dependentes
 
 Três migrações (`056`–`058`), dois módulos novos com testes e a paleta do app
 do aluno virando token. O tema desta rodada é o Copiloto deixar de dar sempre
@@ -261,9 +328,9 @@ os estados de acerto/erro das telas do aluno usam `app-green` / `app-red`.
 
 ---
 
-# Parte III — Rota por capacidade, requisitos fixos e desempenho
+# Parte IV — Rota por capacidade, requisitos fixos e desempenho
 
-Rodada imediatamente posterior à Parte IV, no mesmo dia. Onde a Parte IV fez a
+Rodada imediatamente posterior à Parte V, no mesmo dia. Onde a Parte V fez a
 rota **existir**, esta faz a rota **caber** — e acrescenta a rede que impede
 uma rota impossível de chegar ao aluno.
 
@@ -388,7 +455,7 @@ Dois padrões escolhidos de propósito:
 
 ---
 
-# Parte IV — Rota do aluno, sessão de questões e autoavaliação
+# Parte V — Rota do aluno, sessão de questões e autoavaliação
 
 Rodada posterior ao commit `DECOLA 2.0 OK`. São 14 migrações (`041`–`054`),
 três módulos novos com testes, e a remoção do canal de relatos.
@@ -591,7 +658,7 @@ vocabulários, sempre dentro da matéria canônica.
   recalibragem do briefing, então uma execução do Copiloto entre duas
   recalibragens podia agendar estudo para depois do vestibular.
 * **`046` — missão de aula exige vínculo com o conteúdo.** O código que criava
-  missão de aula sem `ref_id` já tinha sido corrigido (Parte V, item 7), mas
+  missão de aula sem `ref_id` já tinha sido corrigido (Parte VI, item 7), mas
   as linhas antigas continuaram no banco — dado órfão sobrevivendo à correção
   do código. A migração remove as pendentes (só as do Copiloto e não
   concluídas: histórico do aluno e o que o admin agendou à mão não são
@@ -611,35 +678,36 @@ pior do que não ter o canal.
 
 Conferido antes de remover (migração `043`): nenhuma view, função ou chave
 estrangeira de outra tabela dependia dela, e as 9 linhas existentes eram todas
-de teste. **Isto substitui o item 1 da Parte V.**
+de teste. **Isto substitui o item 1 da Parte VI.**
 
 ## 9. Suíte de testes
 
 O projeto ganhou `npm test` (`scripts/testes.sh`), rodando os arquivos
 `*.test.mjs` com o test runner do próprio Node. Esta rodada criou a suíte com
-99 testes em 6 arquivos; as rodadas seguintes a levaram a **274 em 17
+99 testes em 6 arquivos; as rodadas seguintes a levaram a **296 em 18
 arquivos**, que é o estado atual:
 
 | Arquivo | Testes | Nasceu na |
 |---|---|---|
-| `lib/copiloto/agenda.test.mjs` | 11 | Parte IV |
-| `lib/copiloto/reforco.test.mjs` | 16 | Parte II |
-| `lib/site/assunto.test.mjs` | 15 | Parte IV |
-| `lib/site/continuidade.test.mjs` | 11 | Parte III |
-| `lib/site/desempenho.test.mjs` | 19 | Parte III |
-| `lib/site/materia-canonica.test.mjs` | 11 | Parte IV |
-| `lib/site/questao-dependente.test.mjs` | 10 | Parte II |
-| `lib/site/questao-identidade.test.mjs` | 14 | Parte III |
-| `lib/site/resumos-livros.test.mjs` | 14 | Parte I |
-| `lib/site/sentimentos.test.mjs` | 15 | Parte IV |
-| `lib/trilha/cobertura-materias.test.mjs` | 10 | Parte I |
-| `lib/trilha/requisitos-fixos.test.mjs` | 17 | Parte III |
-| `lib/trilha/resumos-no-cronograma.test.mjs` | 13 | Parte I |
-| `lib/trilha/rota-capacidade.test.mjs` | 26 | Parte III |
-| `lib/trilha/rota.test.mjs` | 37 | Parte IV |
-| `lib/trilha/sessao-questoes.test.mjs` | 13 | Parte IV |
-| `lib/trilha/simulados-da-rota.test.mjs` | 22 | Parte I |
-| **Total** | **274, todos passando** | |
+| `lib/copiloto/agenda.test.mjs` | 11 | Parte V |
+| `lib/copiloto/reforco.test.mjs` | 16 | Parte III |
+| `lib/site/assunto.test.mjs` | 15 | Parte V |
+| `lib/site/continuidade.test.mjs` | 11 | Parte IV |
+| `lib/site/desempenho.test.mjs` | 19 | Parte IV |
+| `lib/site/materia-canonica.test.mjs` | 11 | Parte V |
+| `lib/site/questao-dependente.test.mjs` | 10 | Parte III |
+| `lib/site/questao-identidade.test.mjs` | 14 | Parte IV |
+| `lib/site/resumos-livros.test.mjs` | 14 | Parte II |
+| `lib/site/sentimentos.test.mjs` | 15 | Parte V |
+| `lib/trilha/cobertura-materias.test.mjs` | 10 | Parte II |
+| `lib/trilha/requisitos-fixos.test.mjs` | 17 | Parte IV |
+| `lib/trilha/resumos-no-cronograma.test.mjs` | 13 | Parte II |
+| `lib/trilha/rota-capacidade.test.mjs` | 26 | Parte IV |
+| `lib/trilha/rota.test.mjs` | 37 | Parte V |
+| `lib/trilha/sessao-questoes.test.mjs` | 13 | Parte V |
+| `lib/trilha/simulados-da-rota.test.mjs` | 22 | Parte II |
+| `lib/trilha/questoes-extras.test.mjs` | 22 | Parte I |
+| **Total** | **296, todos passando** | |
 
 A lógica testável foi deliberadamente mantida pura e separada da persistência
 — é o que permite testar rota, sessão, agenda, prioridade e desempenho sem
@@ -647,7 +715,7 @@ banco.
 
 ---
 
-# Parte V — As 22 correções
+# Parte VI — As 22 correções
 
 Referência: documento `PROMPT DE CORREÇÃO — DECOLA`.
 Legenda: ✅ corrigido · ⚠️ parcial · ⏹ substituído por trabalho posterior
@@ -667,9 +735,9 @@ gravado); e removida a mensagem falsa *"enviado ao e-mail configurado pela
 equipe"*, que descrevia um disparo que não existia.
 
 **Hoje isto não se aplica mais:** o canal virou WhatsApp e a fila interna foi
-removida (Parte IV, item 8).
+removida (Parte V, item 8).
 
-### 2. Voo Guiado recebe o cronograma fixo de 40 dias — ✅ (refeito na Parte IV)
+### 2. Voo Guiado recebe o cronograma fixo de 40 dias — ✅ (refeito na Parte V)
 
 Um aluno com 20 dias até a prova recebia os mesmos 40 dias do template, e
 metade do conteúdo caía depois da prova. A correção desta rodada projetava o
@@ -677,7 +745,7 @@ cronograma na janela real do aluno a cada leitura.
 
 **A rodada seguinte substituiu a abordagem:** projetar a cada leitura ainda
 deixava a linha do tempo ancorada na matrícula. Hoje a rota é persistida e
-ancorada no início informado pelo aluno (Parte IV, item 1), e
+ancorada no início informado pelo aluno (Parte V, item 1), e
 `lib/trilha/ajuste-voo-guiado.ts` deu lugar a `lib/trilha/rota.ts`.
 
 ### 3. Revisão do Copiloto carrega questões da matéria errada — ✅
@@ -720,7 +788,7 @@ gravava o vínculo, e o app caía sempre em "Esta aula não está mais
 disponível". A aula existia; o vínculo é que nunca foi criado. Corrigido em
 três frentes: o inventário do Copiloto carrega as aulas com id e título, a
 missão nasce apontando para o conteúdo real, e as 11 missões antigas foram
-vinculadas. (A migração `046`, na Parte IV, fechou a porta no banco.)
+vinculadas. (A migração `046`, na Parte V, fechou a porta no banco.)
 
 ### 8. Flashcards: 300 importados, 60 disponíveis — ✅
 
@@ -797,7 +865,7 @@ era o que vinha depois: a função preservava o briefing e a ação chamava o
 Copiloto na sequência, que **reconstruía missões e recomendações na mesma
 hora**. Corrigido: o briefing vai junto, o Copiloto não roda no reset, e o
 aluno é levado por navegação completa até `/aluno/briefing`. (As migrações
-`042` e `049`, na Parte IV, acrescentaram a rota e as sessões de questões ao
+`042` e `049`, na Parte V, acrescentaram a rota e as sessões de questões ao
 que o reset apaga.)
 
 ### 20. Símbolos corrompidos nas questões — ✅
@@ -847,7 +915,7 @@ Chromium:
 1. **"Literatura" era matéria fantasma nos flashcards** — 13 flashcards numa
    matéria que não existe em `materias_peso`. Nenhum peso casava e a
    autoavaliação do aluno em Linguagens não os alcançava.
-2. **Banco de conteúdo aberto a visitantes anônimos** (ver Parte VI, §1.3).
+2. **Banco de conteúdo aberto a visitantes anônimos** (ver Parte VII, §1.3).
 3. **Missões de aula nasciam sem verificação de conteúdo** — o ciclo do modo
    generoso pedia "aula", mas a função que valida existência nunca devolvia
    esse tipo. Sem aula na matéria, o tipo passou a ser rebaixado para questões
@@ -857,7 +925,7 @@ Chromium:
 
 ---
 
-# Parte VI — Auditoria
+# Parte VII — Auditoria
 
 ## 1. Segurança
 
@@ -1009,31 +1077,34 @@ nenhum `min-w-[...]` capaz de forçar rolagem horizontal no celular.
 **Resolvidas desde os relatórios anteriores:**
 
 * ~~`git push` bloqueado no contêiner (403 no proxy git); os commits estão
-  locais~~ — o código das seis rodadas está no repositório e na `main`.
-* ~~Item 1 da Parte V (fila de relatos)~~ — o canal virou WhatsApp e a fila
+  locais~~ — o código das sete rodadas está no repositório e na `main`.
+* ~~Item 1 da Parte VI (fila de relatos)~~ — o canal virou WhatsApp e a fila
   foi removida (migração `043`).
 * ~~Rota entregando 154 passos num único dia~~ — a rota passou a ser limitada
   pela capacidade declarada do aluno, e o validador recusa rota inválida antes
-  de gravar (Parte III, itens 1 e 2).
+  de gravar (Parte IV, itens 1 e 2).
 * ~~Requisitos fixos do Voo Guiado sumindo em janelas curtas~~ — 2 simulados,
-  4 redações e 4 leituras passaram a sobreviver a qualquer janela (Parte III,
+  4 redações e 4 leituras passaram a sobreviver a qualquer janela (Parte IV,
   item 3).
 * ~~Copiloto entregando sempre "Questões · 40 min", com 160 flashcards e 108
   aulas paradas no acervo~~ — o reforço passou a ser escolhido pelo erro, e um
-  tipo já pendente na matéria vai para o fim da fila (Parte II, item 1).
+  tipo já pendente na matéria vai para o fim da fila (Parte III, item 1).
 * ~~7 questões impossíveis de responder por dependerem do texto de outra~~ —
   o texto-base foi incorporado a partir da questão-fonte já cadastrada
-  (Parte II, item 3).
+  (Parte III, item 3).
 * ~~Os quatro resumos de livro não abriam nada~~ — os endereços passaram a
-  morar em `configuracoes`, editáveis pelo admin (Parte I, item 2).
+  morar em `configuracoes`, editáveis pelo admin (Parte II, item 2).
 * ~~Os dois dias de simulado abrindo o mesmo simulado, escolhido por data de
   criação~~ — quem escolhe passou a ser o admin, e o vínculo do aluno fica
-  gravado (Parte I, item 1).
+  gravado (Parte II, item 1).
 * ~~Questões respondidas em simulado voltando como inéditas~~ —
   `submeterSimulado` passou a gravar `respostas_aluno`, e as tentativas
-  antigas foram preenchidas (Parte I, item 3).
+  antigas foram preenchidas (Parte II, item 3).
 * ~~Cronograma zerando a matéria em que o aluno vai bem~~ — a regra passou a
-  ser priorizar sem excluir (Parte I, item 4).
+  ser priorizar sem excluir (Parte II, item 4).
+* ~~Janelas curtas atravessadas quase sem questões, deixando o Copiloto sem
+  sinal~~ — a camada de questões extras acompanha o aluno sem competir por
+  capacidade nem virar dívida (Parte I).
 
 ---
 
