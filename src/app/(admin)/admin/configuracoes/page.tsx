@@ -533,12 +533,12 @@ export default async function AdminConfiguracoesPage({
         </p>
 
         {searchParams.asaasOk && (
-          <div className="mt-4 rounded-lg bg-green-50 p-4 text-sm font-semibold text-green-700">
+          <div className="mt-4 rounded-lg border border-green/30 bg-green-soft p-4 text-sm font-semibold text-green">
             Conexão com o Asaas funcionando normalmente.
           </div>
         )}
         {searchParams.asaasErro && (
-          <div className="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          <div className="mt-4 rounded-lg border border-red/30 bg-red-soft p-4 text-sm text-red">
             <p className="font-semibold">Falha ao conectar com o Asaas:</p>
             <p className="mt-1 break-words font-mono text-xs">{searchParams.asaasErro}</p>
             <p className="mt-2 text-xs">
@@ -566,7 +566,7 @@ export default async function AdminConfiguracoesPage({
 
         <div
           className={`mt-4 rounded-lg p-3 text-sm font-semibold ${
-            geminiConfigurada ? "bg-green-50 text-green-700" : "bg-navy/5 text-navy-dark/70"
+            geminiConfigurada ? "bg-green-soft text-green" : "bg-navy/5 text-navy-dark/70"
           }`}
         >
           {geminiConfigurada
@@ -577,20 +577,20 @@ export default async function AdminConfiguracoesPage({
         </div>
 
         {searchParams.geminiSucesso && (
-          <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-700">
+          <div className="mt-3 rounded-lg bg-green-soft p-3 text-sm font-semibold text-green">
             {searchParams.geminiSucesso}
           </div>
         )}
         {searchParams.geminiErro && (
-          <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{searchParams.geminiErro}</div>
+          <div className="mt-3 rounded-lg bg-red-soft p-3 text-sm text-red">{searchParams.geminiErro}</div>
         )}
         {searchParams.geminiTesteOk && (
-          <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-700">
+          <div className="mt-3 rounded-lg bg-green-soft p-3 text-sm font-semibold text-green">
             Chave testada com sucesso — o Gemini respondeu normalmente.
           </div>
         )}
         {searchParams.geminiTesteErro && (
-          <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{searchParams.geminiTesteErro}</div>
+          <div className="mt-3 rounded-lg bg-red-soft p-3 text-sm text-red">{searchParams.geminiTesteErro}</div>
         )}
 
         {geminiViaEnv && (
@@ -630,7 +630,7 @@ export default async function AdminConfiguracoesPage({
             <form action={removerGemini}>
               <SubmitButton
                 pendingText="Removendo..."
-                className="rounded-full border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                className="rounded-full border border-red/30 px-5 py-2.5 text-sm font-semibold text-red hover:bg-red-soft"
               >
                 Remover chave
               </SubmitButton>
@@ -663,7 +663,7 @@ export default async function AdminConfiguracoesPage({
 
         <div
           className={`mt-4 rounded-lg p-3 text-sm font-semibold ${
-            youtubeConfigurada ? "bg-green-50 text-green-700" : "bg-navy/5 text-navy-dark/70"
+            youtubeConfigurada ? "bg-green-soft text-green" : "bg-navy/5 text-navy-dark/70"
           }`}
         >
           {youtubeConfigurada
@@ -674,12 +674,12 @@ export default async function AdminConfiguracoesPage({
         </div>
 
         {searchParams.youtubeSucesso && (
-          <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-700">
+          <div className="mt-3 rounded-lg bg-green-soft p-3 text-sm font-semibold text-green">
             {searchParams.youtubeSucesso}
           </div>
         )}
         {searchParams.youtubeErro && (
-          <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{searchParams.youtubeErro}</div>
+          <div className="mt-3 rounded-lg bg-red-soft p-3 text-sm text-red">{searchParams.youtubeErro}</div>
         )}
 
         {youtubeViaEnv && (
@@ -709,7 +709,7 @@ export default async function AdminConfiguracoesPage({
           <form action={removerYoutube} className="mt-3">
             <SubmitButton
               pendingText="Removendo..."
-              className="rounded-full border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+              className="rounded-full border border-red/30 px-5 py-2.5 text-sm font-semibold text-red hover:bg-red-soft"
             >
               Remover chave
             </SubmitButton>
