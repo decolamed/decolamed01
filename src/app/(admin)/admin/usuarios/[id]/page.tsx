@@ -12,7 +12,10 @@ import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { DesempenhoDoAluno } from "@/components/admin/desempenho-aluno";
 import { carregarDesempenho } from "@/lib/site/desempenho-servidor";
 import { hojeISO } from "@/lib/site/data";
-import { adicionarMissaoIndividual, excluirMissaoIndividual, atualizarPerfilDoUsuario } from "./actions";
+import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
+import { getMateriasDoConteudo } from "@/lib/site/materias";
+import { SENTIMENTOS_VALIDOS } from "@/lib/site/sentimentos";
+import { adicionarMissaoIndividual, excluirMissaoIndividual, atualizarPerfilDoUsuario, gerarCronogramaDoAluno } from "./actions";
 import { reenviarConvite, reenviarSenha } from "../actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
 
@@ -104,6 +107,27 @@ export default async function AdminDetalhesUsuarioPage({
   if (!usuario) notFound();
 
   const profile = usuario as Profile & { planos: { nome: string; creditos_redacao: number } | null };
+
+  // Briefing e cronograma do Voo Guiado. O briefing INICIAL passou a ser
+  // preenchido aqui pelo mentor, depois da mentoria — o aluno não preenche
+  // mais (ele mantém só o Recalibrar Voo). `aluno_rota_dias` é a MESMA tabela
+  // que a tela do aluno lê: não existe cronograma "administrativo" separado.
+  const [temCopiloto, materiasDoBriefing] = await Promise.all([
+    alunoTemCopiloto(params.id),
+    getMateriasDoConteudo()
+  ]);
+  const [{ data: briefingDoAluno }, { data: rotaDoAlunoDias }] = await Promise.all([
+    supabase.from("aluno_briefing").select("*").eq("aluno_id", params.id).maybeSingle(),
+    supabase
+      .from("aluno_rota_dias")
+      .select("route_day, scheduled_date, tipo, titulo, itens, minutos")
+      .eq("aluno_id", params.id)
+      .order("route_day")
+  ]);
+  const briefing = briefingDoAluno as Record<string, any> | null;
+  const rotaGerada = (rotaDoAlunoDias as { route_day: number; scheduled_date: string; tipo: string; titulo: string; itens: { titulo: string }[]; minutos: number }[]) ?? [];
+  const sentimentosSalvos = (briefing?.sentimentos ?? {}) as Record<string, string>;
+  const diasSalvos = (briefing?.dias_estuda as string[] | null) ?? [];
 
   const { data: consumidos } = await supabase
     .from("redacoes_creditos_consumidos")
@@ -310,6 +334,209 @@ export default async function AdminDetalhesUsuarioPage({
           ver `atualizarPerfilDoUsuario`; alterar só a exibição deixaria o
           aluno entrando pelo e-mail antigo.
           ---------------------------------------------------------------- */}
+      {/* ----------------------------------------------------------------
+          Briefing inicial do Voo Guiado — preenchido pelo MENTOR
+
+          O aluno não preenche mais o briefing inicial: o mentor faz a
+          mentoria e transcreve aqui. "Gerar e enviar" grava o briefing e
+          chama o MESMO motor de sempre (salvarBriefingDoAluno →
+          reprojetarJornada → regerarRotaDoAluno → gerarRota). Reenviar não
+          duplica: a rota anterior é apagada antes da nova.
+
+          Só aparece para quem tem Copiloto. O Decolando não usa briefing e
+          não vê esta seção.
+          ---------------------------------------------------------------- */}
+      {temCopiloto && (
+        <>
+          <h2 id="briefing" className="mt-10 font-display text-lg font-bold text-navy-dark">
+            Briefing e cronograma do Voo Guiado
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-navy-dark/60">
+            {briefing
+              ? "O cronograma deste aluno já foi gerado. Ajuste os dados e envie de novo para regerá-lo — a rota anterior é substituída, sem duplicar."
+              : "Este aluno ainda está vendo “seu plano de voo está sendo preparado”. Preencha o briefing da mentoria e envie para gerar o cronograma dele."}
+          </p>
+
+          <form
+            action={gerarCronogramaDoAluno.bind(null, params.id)}
+            className="mt-3 max-w-2xl rounded-2xl bg-white p-6 shadow"
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor="data_prova">
+                  Data da prova
+                </label>
+                <input
+                  id="data_prova"
+                  name="data_prova"
+                  type="date"
+                  required
+                  defaultValue={(briefing?.data_prova as string | null) ?? ""}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor="inicio_estudos">
+                  Início dos estudos
+                </label>
+                <input
+                  id="inicio_estudos"
+                  name="inicio_estudos"
+                  type="date"
+                  defaultValue={(briefing?.inicio_estudos as string | null) ?? hojeISO()}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+                <p className="mt-1 text-xs text-navy-dark/50">Vazio = começa hoje.</p>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor="dias_por_semana">
+                  Dias de estudo por semana
+                </label>
+                <input
+                  id="dias_por_semana"
+                  name="dias_por_semana"
+                  type="number"
+                  min={1}
+                  max={7}
+                  required
+                  defaultValue={diasSalvos.length || 5}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-navy-dark" htmlFor="horas_por_dia">
+                  Horas de estudo por dia
+                </label>
+                <input
+                  id="horas_por_dia"
+                  name="horas_por_dia"
+                  type="number"
+                  min={1}
+                  max={12}
+                  required
+                  defaultValue={(briefing?.horas_por_dia_semana as number | null) ?? 3}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+                <p className="mt-1 text-xs text-navy-dark/50">Teto por dia — o algoritmo nunca passa disso.</p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm font-semibold text-navy-dark">Idioma que o aluno fará na prova</p>
+              <div className="mt-2 flex gap-4">
+                {[
+                  { valor: "ingles", rotulo: "Inglês" },
+                  { valor: "espanhol", rotulo: "Espanhol" }
+                ].map((o) => (
+                  <label key={o.valor} className="flex items-center gap-2 text-sm text-navy-dark">
+                    <input
+                      type="radio"
+                      name="idioma_prova"
+                      value={o.valor}
+                      required
+                      defaultChecked={(briefing?.idioma_prova as string | null) === o.valor}
+                    />
+                    {o.rotulo}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Autoavaliação por matéria. Os nomes dos campos são ASCII e
+                indexados de propósito — a matéria viaja como VALOR, nunca
+                como nome de campo (ver lib/site/sentimentos.ts). */}
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-navy-dark">Como o aluno está em cada matéria</p>
+              <p className="mt-1 text-xs text-navy-dark/50">
+                É o que mais pesa na personalização: Turbulência puxa a matéria para cima, Domínio reduz a
+                frequência — sem nunca zerar a matéria.
+              </p>
+              <div className="mt-3 space-y-2">
+                {materiasDoBriefing.map((materia, i) => (
+                  <div key={materia} className="flex flex-wrap items-center gap-3 rounded-xl bg-navy-dark/5 p-3">
+                    <input type="hidden" name={`sentimento_materia_${i}`} value={materia} />
+                    <span className="min-w-[120px] text-sm font-semibold text-navy-dark">{materia}</span>
+                    <div className="flex flex-wrap gap-3">
+                      {[...SENTIMENTOS_VALIDOS].map((valor) => (
+                        <label key={valor} className="flex items-center gap-1.5 text-xs text-navy-dark/80">
+                          <input
+                            type="radio"
+                            name={`sentimento_valor_${i}`}
+                            value={valor}
+                            defaultChecked={(sentimentosSalvos[materia] ?? "Atenção") === valor}
+                          />
+                          {valor}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="text-sm font-semibold text-navy-dark" htmlFor="observacoes">
+                Observações da mentoria
+              </label>
+              <textarea
+                id="observacoes"
+                name="observacoes"
+                rows={3}
+                defaultValue={(briefing?.observacoes as string | null) ?? ""}
+                className="mt-1 w-full rounded-lg border p-3"
+                placeholder="Rotina, dificuldades, objetivos — o que ajudar a entender o aluno depois."
+              />
+            </div>
+
+            <ConfirmSubmitButton
+              pendingText="Gerando cronograma..."
+              confirmMessage={
+                briefing
+                  ? `Regerar o cronograma de ${profile.nome}?\n\nA rota atual é substituída pela nova. O progresso e o histórico do aluno são preservados.`
+                  : `Gerar e enviar o cronograma de ${profile.nome}?\n\nEle passa a ver o cronograma imediatamente.`
+              }
+              className="mt-5 rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+            >
+              {briefing ? "Regerar e enviar cronograma" : "Gerar e enviar cronograma"}
+            </ConfirmSubmitButton>
+          </form>
+
+          {/* O cronograma gerado, lido de `aluno_rota_dias` — a MESMA tabela
+              que a tela do aluno usa. É a conferência que o mentor precisa. */}
+          <div className="mt-4 max-w-2xl rounded-2xl bg-white p-6 shadow">
+            <h3 className="font-display font-bold text-navy-dark">Cronograma gerado</h3>
+            {rotaGerada.length === 0 ? (
+              <p className="mt-2 text-sm text-navy-dark/60">
+                Nenhuma rota gerada ainda. Ela aparece aqui assim que você enviar o briefing.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-navy-dark/60">
+                  {rotaGerada.length} dias — é exatamente o que o aluno está vendo. Para ajustar o conteúdo dos dias,
+                  use{" "}
+                  <Link href="/admin/trilha" className="font-semibold text-navy hover:underline">
+                    Conteúdo → Cronograma
+                  </Link>{" "}
+                  ou acrescente missões individuais na seção abaixo.
+                </p>
+                <ul className="mt-3 max-h-80 divide-y divide-navy-dark/10 overflow-y-auto text-sm">
+                  {rotaGerada.map((d) => (
+                    <li key={d.route_day} className="flex flex-wrap items-baseline gap-2 py-2">
+                      <span className="min-w-[64px] text-xs font-extrabold text-navy-dark/50">Dia {d.route_day}</span>
+                      <span className="text-xs text-navy-dark/50">{formatarData(d.scheduled_date)}</span>
+                      <span className="font-semibold text-navy-dark">{d.titulo}</span>
+                      <span className="ml-auto text-xs text-navy-dark/50">
+                        {(d.itens ?? []).length} itens · {d.minutos} min
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
       <h2 id="editar-perfil" className="mt-10 font-display text-lg font-bold text-navy-dark">
         Editar perfil
       </h2>
