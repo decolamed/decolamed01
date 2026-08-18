@@ -1,0 +1,106 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt-BR">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
+  <title>Redefinir sua senha — Decola Med</title>
+</head>
+<!--
+  MODELO: "Reset Password" (Supabase > Authentication > Emails)
+  Disparado por resetPasswordForEmail() — tela /recuperar-senha e o botão
+  "Redefinir senha" na página do aluno no admin.
+
+  Estrutura em <table> e estilos inline de propósito: Gmail remove <style>
+  do <head> e o Outlook não entende flexbox.
+-->
+<body style="margin:0; padding:0; width:100%; background-color:#F2F7FB;">
+
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#F2F7FB; opacity:0;">
+    Recebemos um pedido para redefinir a sua senha de acesso.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F2F7FB;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px; border-collapse:collapse;">
+
+          <!-- ================= CABEÇALHO ================= -->
+          <tr>
+            <td align="center" style="background-color:#07223a; border-radius:16px 16px 0 0; padding:32px 24px 28px 24px;">
+              <div style="font-family:'Trebuchet MS', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:26px; line-height:32px; font-weight:bold; color:#ffffff; letter-spacing:0.5px;">
+                DECOLA<span style="color:#F36C21;">MED</span> <span style="color:#F36C21; font-size:22px;">&#9992;</span>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ================= CORPO ================= -->
+          <tr>
+            <td style="background-color:#ffffff; padding:40px 32px 32px 32px;">
+
+              <h1 style="margin:0 0 20px 0; font-family:'Trebuchet MS', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:24px; line-height:31px; font-weight:bold; color:#01395E;">
+                Vamos criar uma nova senha
+              </h1>
+
+              <p style="margin:0 0 16px 0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:16px; line-height:26px; color:#3d4a57;">
+                Recebemos um pedido para redefinir a senha da conta <strong style="color:#01395E;">{{ .Email }}</strong>.
+              </p>
+
+              <p style="margin:0 0 28px 0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:16px; line-height:26px; color:#3d4a57;">
+                Clique no botão abaixo para escolher uma nova senha. Seu cronograma, seu progresso e todo o seu histórico continuam exatamente como estão.
+              </p>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 28px auto;">
+                <tr>
+                  <td align="center" bgcolor="#F36C21" style="border-radius:10px;">
+                    <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block; padding:16px 34px; font-family:'Trebuchet MS', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:17px; line-height:22px; font-weight:bold; color:#ffffff; text-decoration:none; border-radius:10px;">
+                      Criar nova senha
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px 0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; line-height:20px; color:#7a8794;">
+                Se o botão não funcionar, copie e cole este endereço no navegador:
+              </p>
+              <p style="margin:0 0 28px 0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; line-height:20px; word-break:break-all;">
+                <a href="{{ .ConfirmationURL }}" target="_blank" style="color:#01395E; text-decoration:underline;">{{ .ConfirmationURL }}</a>
+              </p>
+
+              <!-- Aviso de segurança: destacado em laranja porque é a
+                   informação que importa para quem NÃO pediu a redefinição. -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fdf1e9; border-radius:10px;">
+                <tr>
+                  <td style="padding:16px 20px; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:22px; color:#3d4a57;">
+                    <strong style="color:#01395E;">Não foi você quem pediu?</strong><br />
+                    Pode ignorar este e-mail com tranquilidade. Sua senha atual continua valendo e nada muda na sua conta enquanto o link não for aberto.
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- ================= RODAPÉ ================= -->
+          <tr>
+            <td style="background-color:#ffffff; border-radius:0 0 16px 16px; border-top:1px solid #e4ecf4; padding:24px 32px 32px 32px;">
+              <p style="margin:0 0 10px 0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; line-height:20px; color:#7a8794;">
+                Por segurança, este link tem validade limitada e só pode ser usado uma vez. Se ele expirar, é só pedir a redefinição de novo na tela de login.
+              </p>
+              <p style="margin:0; font-family:'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; line-height:20px; color:#a3adb8;">
+                Decola Med &middot; sua rota até a aprovação
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
