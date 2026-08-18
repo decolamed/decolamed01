@@ -86,7 +86,14 @@ export function acervoPesquisavel(a: AcervoDoAluno): ItemCatalogo[] {
   // ---- Banco de questões, por matéria --------------------------------------
   itens.push(...porMateria(a.questoes, "questoes", "questão", "questões"));
 
-  // ---- Flashcards, por matéria ---------------------------------------------
+  // ---- Flashcards, por ASSUNTO e por matéria -------------------------------
+  //
+  // Os dois entram. Quem procura "Citologia" quer o baralho de Citologia, não
+  // "Biologia" — mas se não existir um baralho específico, a matéria continua
+  // sendo uma resposta útil. Como a ordenação da busca dá mais peso a quem
+  // casa no TÍTULO do que a quem casa só pela matéria, o assunto aparece na
+  // frente sozinho, sem precisar de regra de desempate.
+  itens.push(...porAssunto(a.flashcards));
   itens.push(...porMateria(a.flashcards, "flashcards", "flashcard", "flashcards"));
 
   // ---- Simulados ------------------------------------------------------------
@@ -118,6 +125,55 @@ export function acervoPesquisavel(a: AcervoDoAluno): ItemCatalogo[] {
   });
 
   return itens;
+}
+
+/**
+ * Uma linha por ASSUNTO de flashcard.
+ *
+ * Sem isto, procurar "Citologia" só achava "Biologia": o assunto existia no
+ * banco, mas viajava dentro de `detalhe` da linha da matéria e nunca virava
+ * um resultado próprio. O aluno pedia o específico e recebia o geral.
+ *
+ * A chave carrega matéria E assunto (`flashcards:Biologia:Citologia`) porque
+ * é por ela que a tela sabe filtrar o baralho na hora de abrir — ver
+ * `assuntoDaChave`.
+ */
+function porAssunto(registros: { materia: string; assunto?: string | null }[]): ItemCatalogo[] {
+  const contagem = new Map<string, { materia: string; assunto: string; total: number }>();
+  registros.forEach((r) => {
+    const assunto = (r.assunto ?? "").trim();
+    if (!assunto) return;
+    const materia = materiaCanonica(r.materia);
+    if (!materia) return;
+    const chave = `${materia}||${assunto}`;
+    const atual = contagem.get(chave);
+    if (atual) atual.total += 1;
+    else contagem.set(chave, { materia, assunto, total: 1 });
+  });
+
+  return [...contagem.values()]
+    .sort((a, b) => a.assunto.localeCompare(b.assunto, "pt-BR"))
+    .map(({ materia, assunto, total }) => ({
+      chave: `flashcards:${materia}:${assunto}`,
+      tipo: "flashcards" as ItemCatalogo["tipo"],
+      // O TÍTULO é o assunto: é o que faz "Citologia" casar no campo de maior
+      // peso da ordenação e passar à frente da linha da matéria.
+      titulo: assunto,
+      materia,
+      detalhe: null,
+      ref_id: null,
+      url: null,
+      nota: `${total} ${total === 1 ? "flashcard" : "flashcards"}`
+    }));
+}
+
+/**
+ * O assunto embutido na chave de um resultado de flashcards, ou null quando
+ * a linha é da matéria inteira.
+ */
+export function assuntoDaChave(chave: string): string | null {
+  const m = /^flashcards:[^:]+:(.+)$/.exec(chave ?? "");
+  return m ? m[1] : null;
 }
 
 /** Uma linha por matéria, com os assuntos dela como palavras-chave. */

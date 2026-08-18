@@ -163,6 +163,12 @@ export default async function AlunoCronogramaPage() {
     return chave ? concluidas.has(chave) : false;
   };
 
+  // Voo Guiado esperando o mentor montar o cronograma inicial. O briefing
+  // inicial passou a ser preenchido no painel administrativo, depois da
+  // mentoria — o aluno não preenche mais. O Decolando não entra aqui:
+  // `temCopiloto` é falso para ele e ele segue no template de sempre.
+  const aguardandoMentor = temCopiloto && !briefing;
+
   // ---- Dia de hoje no cronograma ----
   //
   // Esta tela e o painel (aluno/page.tsx) PRECISAM chegar ao mesmo dia. Antes
@@ -195,7 +201,7 @@ export default async function AlunoCronogramaPage() {
     cronogramaCompactado = rota.dias.length < resolvidos.length;
     diaAtual = diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null;
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
-  } else if (matricula?.acesso_liberado_em) {
+  } else if (matricula?.acesso_liberado_em && !aguardandoMentor) {
     // Plano Decolando: 40 dias fixos a partir da matrícula, sem briefing.
     todosOsDias = resolvidos;
     diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
@@ -235,7 +241,20 @@ export default async function AlunoCronogramaPage() {
         </Link>
       </div>
 
-      {temCopiloto && (
+      {aguardandoMentor && (
+        <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow">
+          <p className="font-display text-lg font-bold text-navy-dark">✈️ Seu plano de voo está sendo preparado</p>
+          <p className="mx-auto mt-3 max-w-md text-sm text-navy-dark/70">
+            Seu mentor está analisando seu perfil para montar um cronograma feito para você. Assim que a mentoria for
+            concluída, ele aparece aqui automaticamente.
+          </p>
+          <p className="mx-auto mt-4 max-w-md border-t border-navy-dark/10 pt-4 text-xs text-navy-dark/50">
+            Enquanto isso, você já pode usar o Banco de Questões, os flashcards e os simulados.
+          </p>
+        </div>
+      )}
+
+      {!aguardandoMentor && temCopiloto && (
         <div className="mt-4 rounded-2xl p-4 text-sm text-white" style={{ background: "linear-gradient(160deg,#0d4a79,#01395E)" }}>
           <p className="font-display font-bold">✈️ Sua rota até a prova</p>
           <p className="mt-1 text-white/70">

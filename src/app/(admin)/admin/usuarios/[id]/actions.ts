@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { registrarHistoricoAdmin } from "@/lib/historico/registrar";
 import { z } from "zod";
+import { salvarBriefingDoAluno } from "@/lib/briefing/salvar-briefing";
 import type { AlunoMissaoTipo } from "@/types/database";
 
 // Cronograma individual de um aluno específico (aluno_missoes) — não mexe
@@ -231,5 +232,46 @@ export async function atualizarPerfilDoUsuario(alunoId: string, formData: FormDa
           ? `E-mail alterado para ${email}, na conta e no acesso. Use "Enviar acesso" para avisar o aluno no endereço novo.`
           : "Perfil atualizado."
       )
+  );
+}
+
+// ============================================================================
+// BRIEFING INICIAL DO VOO GUIADO — preenchido pelo mentor
+//
+// O briefing inicial deixou de ser do aluno. O mentor faz a mentoria, entende
+// o perfil, e só então preenche aqui. Ao enviar, o cronograma é gerado na
+// hora — sem etapa de aprovação no meio.
+//
+// O motor é o MESMO de sempre: `salvarBriefingDoAluno` grava em
+// `aluno_briefing` e chama `reprojetarJornada`, que usa `regerarRotaDoAluno`
+// (que por sua vez chama `gerarRota`) e roda o Copiloto. Não existe segundo
+// motor, segundo formato de briefing nem tabela nova.
+//
+// Reenviar não duplica: `regerarRotaDoAluno` APAGA a rota anterior antes de
+// gravar a nova (`limparRotaDoAluno`), e o briefing é upsert por `aluno_id`.
+// Clicar duas vezes deixa o aluno com uma rota, não com duas.
+//
+// O RECALIBRAR VOO continua sendo do aluno e não foi tocado: ele chama o
+// mesmo núcleo pelo caminho dele, com a permissão dele.
+// ============================================================================
+export async function gerarCronogramaDoAluno(alunoId: string, formData: FormData) {
+  await requireAdmin();
+  const destino = `/admin/usuarios/${alunoId}`;
+
+  const resultado = await salvarBriefingDoAluno(alunoId, formData);
+  if (!resultado.ok) {
+    redirect(`${destino}?erro=${encodeURIComponent(resultado.erro)}`);
+  }
+
+  // As telas do aluno leem a rota no servidor; sem revalidar, ele continuaria
+  // vendo "seu plano está sendo preparado" até o cache expirar.
+  revalidatePath(destino);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  revalidatePath("/admin/usuarios");
+
+  redirect(
+    `${destino}?sucesso=` +
+      encodeURIComponent("Briefing salvo e cronograma gerado — já está disponível para o aluno.")
   );
 }

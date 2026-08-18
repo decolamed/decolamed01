@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
+import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { createClient } from "@/lib/supabase/server";
 import { getNomeVestibular } from "@/lib/site/marca";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
@@ -21,11 +23,24 @@ export default async function AlunoBriefingPage({
 }) {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
-  const [{ data: briefing }, nomeVestibular, materias] = await Promise.all([
+  const [{ data: briefing }, nomeVestibular, materias, temCopiloto] = await Promise.all([
     supabase.from("aluno_briefing").select("*").eq("aluno_id", profile.id).maybeSingle(),
     getNomeVestibular(),
-    getMateriasDoConteudo()
+    getMateriasDoConteudo(),
+    alunoTemCopiloto(profile.id)
   ]);
+
+  // O briefing INICIAL do Voo Guiado é do mentor, não do aluno: ele é
+  // preenchido no painel administrativo depois da mentoria. Sem esta guarda,
+  // bastava digitar /aluno/briefing para contornar o fluxo novo e criar um
+  // cronograma por conta própria — que é justamente o que a mudança tirou.
+  //
+  // Depois que o mentor envia, esta mesma tela volta a ser o RECALIBRAR VOO,
+  // que continua sendo do aluno. E o Decolando nunca cai aqui: ele não tem
+  // Copiloto e o fluxo dele segue igual.
+  if (temCopiloto && !briefing) {
+    redirect("/aluno/cronograma");
+  }
 
   return (
     <BriefingWizard

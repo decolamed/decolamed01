@@ -222,7 +222,17 @@ export default async function AlunoHomePage({
   });
 
   const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
-  const diasAjustados = rota ? cronogramaDeTela(rota) : diasResolvidos;
+
+  // Voo Guiado ainda sem briefing = o mentor não montou o cronograma dele.
+  // O briefing inicial passou a ser preenchido pelo mentor no painel, depois
+  // da mentoria; até lá este aluno NÃO recebe o template linear de 40 dias.
+  // Sem isto ele veria o cronograma genérico do Decolando como se fosse o
+  // plano personalizado dele — pior do que ver a tela de espera.
+  //
+  // O Decolando não entra nesta condição: `temCopiloto` é falso para ele, e
+  // ele segue no template de sempre, ancorado na matrícula.
+  const aguardandoMentor = temCopiloto && !briefingData;
+  const diasAjustados = aguardandoMentor ? [] : rota ? cronogramaDeTela(rota) : diasResolvidos;
   // Datas reais de cada dia. Com rota, vêm decididas na geração; sem rota, a
   // tela segue extrapolando a partir do dia de hoje (Plano Decolando).
   const datasDoCronograma = rota ? datasDaRota(rota) : null;
@@ -302,6 +312,8 @@ export default async function AlunoHomePage({
       abrirAulaId={searchParams?.aula ?? null}
       dados={{
         temCopiloto,
+        // Voo Guiado esperando o mentor montar o cronograma inicial.
+        aguardandoMentor,
         // Filtrados pelo idioma escolhido no briefing: quem faz Inglês não
         // recebe questão nem flashcard de Espanhol em lugar nenhum do app.
         // Quem ainda não respondeu continua vendo os dois — ver

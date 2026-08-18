@@ -8,7 +8,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acervoPesquisavel, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "./busca-estudos.ts";
+import { acervoPesquisavel, assuntoDaChave, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "./busca-estudos.ts";
 
 const ACERVO = {
   conteudos: [
@@ -29,6 +29,7 @@ const ACERVO = {
   ],
   flashcards: [
     { materia: "Biologia", assunto: "Citologia" },
+    { materia: "Biologia", assunto: "Genética" },
     { materia: "Química", assunto: "Ácidos" }
   ],
   simulados: [{ id: "s1", titulo: "Simulado FACAPE 01", descricao: "prova completa" }],
@@ -71,9 +72,9 @@ test("o singular é respeitado quando há uma só", () => {
 });
 
 test("flashcards também entram por matéria", () => {
-  const quimica = (buscar("quimica") ?? []).filter((i) => i.tipo === "flashcards");
-  assert.equal(quimica.length, 1);
-  assert.equal(quimica[0].nota, "1 flashcard");
+  const daMateria = (buscar("quimica") ?? []).find((i) => i.tipo === "flashcards" && i.titulo === "Química");
+  assert.ok(daMateria, "a linha da matéria precisa continuar existindo");
+  assert.equal(daMateria.nota, "1 flashcard");
 });
 
 test("simulados e materiais avulsos do admin são encontráveis", () => {
@@ -142,4 +143,58 @@ test("acervo vazio não explode", () => {
 test("cada resultado tem chave única — a lista é renderizada por chave", () => {
   const chaves = acervo.map((i) => i.chave);
   assert.equal(new Set(chaves).size, chaves.length);
+});
+
+// ═══════════════════════════ FLASHCARDS POR ASSUNTO ═════════════════════════
+// Procurar "Citologia" trazia só "Biologia": o assunto existia no banco, mas
+// viajava dentro de `detalhe` da linha da matéria e nunca virava resultado
+// próprio. O aluno pedia o específico e recebia o geral.
+
+test("assunto específico aparece na FRENTE da matéria", () => {
+  const r = buscar("citologia") ?? [];
+  const flash = r.filter((i) => i.tipo === "flashcards");
+  assert.ok(flash.length >= 2, "esperava o baralho do assunto E o da matéria");
+  assert.equal(flash[0].titulo, "Citologia", `veio ${flash[0].titulo} primeiro`);
+  assert.equal(flash[1].titulo, "Biologia", "a matéria continua disponível como alternativa");
+});
+
+test("o baralho do assunto conta só os cards dele", () => {
+  const citologia = (buscar("citologia") ?? []).find((i) => i.tipo === "flashcards" && i.titulo === "Citologia");
+  assert.equal(citologia.nota, "1 flashcard");
+  const biologia = (buscar("biologia") ?? []).find((i) => i.tipo === "flashcards" && i.titulo === "Biologia");
+  assert.equal(biologia.nota, "2 flashcards", "a matéria soma os dois assuntos");
+});
+
+test("sem assunto específico, a matéria continua sendo a resposta", () => {
+  // "Ácidos" só existe em Química, e é o único assunto dela.
+  const r = buscar("acidos") ?? [];
+  assert.ok(r.some((i) => i.tipo === "flashcards" && i.titulo === "Ácidos"));
+  // E procurar a matéria segue achando a matéria.
+  assert.ok((buscar("quimica") ?? []).some((i) => i.tipo === "flashcards" && i.titulo === "Química"));
+});
+
+test("a chave carrega matéria e assunto, para a tela filtrar o baralho", () => {
+  const citologia = (buscar("citologia") ?? []).find((i) => i.tipo === "flashcards" && i.titulo === "Citologia");
+  assert.equal(citologia.chave, "flashcards:Biologia:Citologia");
+  assert.equal(assuntoDaChave(citologia.chave), "Citologia");
+  // A linha da matéria não tem assunto — ela abre o baralho inteiro.
+  assert.equal(assuntoDaChave("flashcards:Biologia"), null);
+});
+
+test("flashcard sem assunto não vira linha fantasma", () => {
+  const acervo = acervoPesquisavel({
+    conteudos: [], conteudosTrilha: [], questoes: [],
+    flashcards: [{ materia: "Biologia", assunto: null }, { materia: "Biologia", assunto: "   " }],
+    simulados: [], botoes: []
+  });
+  const flash = acervo.filter((i) => i.tipo === "flashcards");
+  assert.equal(flash.length, 1, "só a linha da matéria");
+  assert.equal(flash[0].titulo, "Biologia");
+});
+
+test("a busca de questões não mudou — continua só por matéria", () => {
+  // O pedido foi específico sobre flashcards; questões seguem agrupadas.
+  const porAssunto = (buscar("citologia") ?? []).filter((i) => i.tipo === "questoes");
+  assert.equal(porAssunto.length, 1);
+  assert.equal(porAssunto[0].titulo, "Biologia", "questões continuam achadas pela matéria, via detalhe");
 });

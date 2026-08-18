@@ -4,7 +4,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { formatarNota } from "@/lib/site/nota";
-import { acervoPesquisavel, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "@/lib/site/busca-estudos";
+import { acervoPesquisavel, assuntoDaChave, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "@/lib/site/busca-estudos";
 import { ICONE_TIPO, ROTULO_TIPO } from "@/lib/trilha/catalogo";
 import { numeroDoLivro, urlDoResumo, type LinksDosResumos } from "@/lib/site/resumos-livros";
 import { registrarResposta } from "./questoes/actions";
@@ -93,6 +93,11 @@ interface DecolaAppDados {
   recomendacoes: CopilotoRecomendacao[];
   notificacoes: Notificacao[];
   briefing: AlunoBriefing | null;
+  // Voo Guiado que ainda não teve o briefing preenchido pelo mentor. O
+  // briefing inicial passou a ser feito no painel administrativo, depois da
+  // mentoria — o aluno não preenche mais. Falso no Decolando, que não tem
+  // briefing e segue no fluxo de sempre.
+  aguardandoMentor?: boolean;
   creditosRedacaoDisponiveis: number;
   creditosRedacaoTotais: number;
   creditosRedacaoConsumidos: number;
@@ -187,7 +192,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // depois pro Mapa. Quem já tem briefing salvo entra direto no Mapa.
     screen: (function (self: any) {
       if (self.props.demoMode) return "mapa";
-      return self.props.dados.briefing ? "mapa" : "briefing";
+      if (self.props.dados.briefing) return "mapa";
+      // Voo Guiado sem briefing: quem preenche é o mentor, no painel. O aluno
+      // entra normalmente e usa o resto da plataforma; só a área de
+      // cronograma mostra que o plano está sendo preparado (ver scrPlano).
+      //
+      // O Decolando continua caindo no briefing, exatamente como antes: ele
+      // não tem Copiloto e este ramo não o alcança.
+      if (self.props.dados.aguardandoMentor) return "mapa";
+      return "briefing";
     })(this),
     simView: null,
     simIdx: 0,
@@ -2491,7 +2504,28 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     let visiveis: { rotulo: string; itens: any[] }[];
     if (t === "diarias") visiveis = grupos.filter((g) => g.data === hojeStr);
     else if (t === "semanais") visiveis = grupos.slice(0, 8);
-    else visiveis = grupos.map((g) => ({ rotulo: g.rotulo, itens: g.itens.filter((x: any) => x.ia) }));
+    else
+      // Aba do Copiloto: só a data no cabeçalho.
+      //
+      // O rótulo dos outros grupos é o TÍTULO DO DIA do cronograma, que lista
+      // as matérias daquele dia ("Biologia, Matemática · Dia 3"). Reaproveitá-lo
+      // aqui confundia: a missão que o Copiloto acrescentou costuma ser de
+      // OUTRA matéria, e a tela parecia dizer que uma missão de Física era de
+      // "Biologia, Matemática". As matérias do dia não dizem nada sobre a
+      // missão extra — a missão já mostra a própria matéria e a duração.
+      //
+      // Só esta aba muda; o cronograma principal continua com o título do dia.
+      visiveis = grupos.map((g) => ({
+        // "Hoje" continua sendo "Hoje": é mais útil que a data por extenso, e
+        // é o único grupo cujo rótulo já não vinha do título do dia.
+        rotulo:
+          g.data === hojeStr
+            ? "Hoje"
+            : g.data
+            ? `${nomeDoDiaDaSemana(g.data)} · ${dataBR(g.data)}`
+            : g.rotulo,
+        itens: g.itens.filter((x: any) => x.ia)
+      }));
 
     const comItens = visiveis.filter((g) => g.itens.length > 0);
 
@@ -2731,8 +2765,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     }
     if (item.tipo === "flashcards") {
-      const pool = this.props.dados.flashcards.filter((c) => mesmaMateria(c.materia, item.materia));
-      if (pool.length === 0) return this.avisar(`Ainda não há flashcards de ${item.materia}.`);
+      // Resultado de ASSUNTO abre só o baralho daquele assunto; resultado de
+      // matéria continua abrindo a matéria inteira. É a diferença entre
+      // pedir "Citologia" e receber Citologia, ou receber Biologia toda.
+      const assunto = assuntoDaChave(item.chave);
+      const daMateria = this.props.dados.flashcards.filter((c) => mesmaMateria(c.materia, item.materia));
+      const pool = assunto
+        ? daMateria.filter((c) => (c.assunto ?? "").trim() === assunto)
+        : daMateria;
+      if (pool.length === 0) return this.avisar(`Ainda não há flashcards de ${assunto ?? item.materia}.`);
       return this.iniciarFlashcards(this.embaralhar(pool), false);
     }
     if (item.tipo === "simulado") {
@@ -2805,6 +2846,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 } },
                   // Rótulo do tipo primeiro: é o que diz ao aluno se aquilo é
                   // uma aula, um baralho ou o banco de questões da matéria.
+                  // No baralho de assunto o título já é o assunto, então a
+                  // matéria vem junto para situar ("Flashcards · Biologia").
                   [ROTULO_TIPO[item.tipo as keyof typeof ROTULO_TIPO], item.nota, item.materia, item.detalhe]
                     .filter(Boolean)
                     .join(" · ")
@@ -4085,7 +4128,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ([
             ["user", "Editar perfil", () => this.nav("perfil")],
             ["lock", "Alterar senha", () => this.nav("senha")],
-            ["calendar", "Recalibrar plano de voo", () => this.nav("briefing")],
+            // Recalibrar continua sendo do aluno — mas só faz sentido depois
+            // de existir um plano. Antes do envio do mentor não há o que
+            // recalibrar, e abrir o formulário aqui seria justamente o
+            // briefing inicial que saiu das mãos do aluno.
+            ...(this.props.dados.aguardandoMentor
+              ? []
+              : [["calendar", "Recalibrar plano de voo", () => this.nav("briefing")] as [string, string, () => void]]),
             ...(this.props.dados.termosUsoUrl
               ? [["file", "Termos de Uso", () => this.openBrowser("Termos de Uso", this.props.dados.termosUsoUrl as string, "config")] as [string, string, () => void]]
               : [])
@@ -4608,6 +4657,29 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       )
     ];
   }
+  /** Voo Guiado antes de o mentor enviar o cronograma inicial. */
+  scrPlanoEmPreparo() {
+    const { C, h, card, iconBox } = this.ui();
+    return this.screenWrap([
+      this.head("Plano de voo", { back: "mapa" }),
+      h(
+        "div",
+        { key: "preparo", style: { margin: "18px 18px 0" } },
+        card({ padding: 26, textAlign: "center" }, [
+          h("div", { key: "ic", style: { display: "flex", justifyContent: "center", marginBottom: 14 } },
+            iconBox("plane", C.orangeSoft, C.orange, 56, 26)),
+          h("div", { key: "t", style: { fontSize: 17, fontWeight: 800, marginBottom: 8 } },
+            "Seu plano de voo está sendo preparado"),
+          h("div", { key: "d", style: { fontSize: 13, color: C.sub, fontWeight: 600, lineHeight: 1.6 } },
+            "Seu mentor está analisando seu perfil para montar um cronograma feito para você. " +
+            "Assim que a mentoria for concluída, ele aparece aqui automaticamente."),
+          h("div", { key: "e", style: { marginTop: 18, paddingTop: 16, borderTop: "1px solid " + C.line, fontSize: 12, color: C.faint, fontWeight: 600, lineHeight: 1.6 } },
+            "Enquanto isso, você já pode usar o Banco de Questões, os flashcards e os simulados na aba Estudos.")
+        ])
+      )
+    ]);
+  }
+
   scrPlano() {
     const { C, h, I, card, btn, iconBox } = this.ui();
     // O cronograma (trilha_dias) é a BASE de estudo de todo mundo — inclusive
@@ -4620,6 +4692,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     // missão cadastrada" mesmo com os 40 dias preenchidos pelo admin. Por
     // isso a condição agora é sobre os DADOS que existem, não sobre o plano.
     const temCopiloto = this.props.dados.temCopiloto;
+
+    // Voo Guiado esperando o mentor: o cronograma dele nasce da mentoria, não
+    // de um formulário que o aluno preenche sozinho. Enquanto o mentor não
+    // envia, esta tela explica o que está acontecendo em vez de mostrar um
+    // cronograma vazio (ou, pior, o cronograma genérico de outro plano).
+    if (this.props.dados.aguardandoMentor) return this.scrPlanoEmPreparo();
+
     const diaTrilha = this.props.dados.trilhaHoje;
     const B = this.state.brief || {};
     const pr = this.priorities();

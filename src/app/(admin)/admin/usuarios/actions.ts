@@ -80,17 +80,58 @@ export async function criarAlunoManual(formData: FormData) {
   //    automático (webhook do Asaas): o aluno define a própria senha pelo
   //    link recebido por e-mail, nunca enviamos senha pronta. Isso já
   //    "libera o acesso" ao aluno.
+  //
+  //    O CONVITE ENVIA UM E-MAIL, e envio de e-mail tem cota. O serviço de
+  //    e-mail embutido do Supabase limita poucos envios por hora; estourada
+  //    a cota, `/invite` responde 429 "email rate limit exceeded" e NENHUMA
+  //    conta é criada. Foi exatamente o que aconteceu aqui: cinco 429
+  //    seguidos nos logs de autenticação, nenhum usuário novo no banco, e o
+  //    administrador vendo só "Não foi possível criar o usuário" — porque o
+  //    código descartava a mensagem real do erro.
+  //
+  //    O cadastro não pode depender de uma cota de envio. Quando o limite
+  //    estoura, a conta é criada assim mesmo (sem e-mail) e o administrador
+  //    manda o acesso depois pelo botão "Enviar acesso", que já existe na
+  //    página do aluno.
   const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/redefinir-senha`,
     data: { nome }
   });
 
-  if (inviteError || !invited?.user) {
-    const jaExiste = inviteError?.message?.toLowerCase().includes("already");
-    erro(jaExiste ? "Já existe um usuário cadastrado com esse e-mail." : "Não foi possível criar o usuário.");
-  }
+  let alunoId: string;
+  let acessoEnviado = true;
 
-  const alunoId = invited.user.id;
+  if (invited?.user) {
+    alunoId = invited.user.id;
+  } else {
+    const mensagem = inviteError?.message ?? "";
+    if (/already|registered|exists/i.test(mensagem)) {
+      erro("Já existe um usuário cadastrado com esse e-mail.");
+    }
+
+    const limiteDeEmail = inviteError?.status === 429 || /rate limit/i.test(mensagem);
+    if (!limiteDeEmail) {
+      // Qualquer outra falha continua sendo bloqueante — mas agora o
+      // administrador vê a causa em vez de uma frase genérica.
+      erro(`Não foi possível criar o usuário: ${mensagem || "erro desconhecido na autenticação."}`);
+    }
+
+    const { data: criado, error: erroCriacao } = await supabase.auth.admin.createUser({
+      email,
+      email_confirm: false,
+      user_metadata: { nome }
+    });
+    if (erroCriacao || !criado?.user) {
+      const jaExiste = /already|registered|exists/i.test(erroCriacao?.message ?? "");
+      erro(
+        jaExiste
+          ? "Já existe um usuário cadastrado com esse e-mail."
+          : `Não foi possível criar o usuário: ${erroCriacao?.message ?? "erro desconhecido."}`
+      );
+    }
+    alunoId = criado.user.id;
+    acessoEnviado = false;
+  }
 
   // 2. Profile
   const { error: profileError } = await supabase.from("profiles").insert({
@@ -170,7 +211,13 @@ export async function criarAlunoManual(formData: FormData) {
   });
 
   revalidatePath(PATH);
-  sucesso(`Aluno ${nome} cadastrado com sucesso. Um e-mail de acesso foi enviado.`);
+  sucesso(
+    acessoEnviado
+      ? `Aluno ${nome} cadastrado com sucesso. Um e-mail de acesso foi enviado.`
+      : `Aluno ${nome} cadastrado com sucesso — mas o e-mail de acesso NÃO saiu: o limite de envios por hora do ` +
+        `serviço de e-mail foi atingido. A conta já existe e está na lista. Abra o aluno e use "Enviar acesso" ` +
+        `quando o limite liberar (ou configure um SMTP próprio no Supabase para não ter mais essa cota).`
+  );
 }
 
 // ----------------------------------------------------------------------------
