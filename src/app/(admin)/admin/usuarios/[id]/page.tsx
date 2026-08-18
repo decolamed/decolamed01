@@ -88,6 +88,33 @@ async function registrarConsumoRedacao(alunoId: string, formData: FormData) {
   redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Correção de redação registrada.")}`);
 }
 
+// Mesma lógica do Painel do Professor (`adicionarCredito` em
+// app/professor/actions.ts): um ajuste manual de +1 em
+// `redacoes_creditos_ajustes`. O admin já sabia DIMINUIR crédito
+// ("Registrar correção realizada", que grava em
+// `redacoes_creditos_consumidos`), mas não tinha como devolver um — se
+// registrasse uma correção por engano, não havia volta pelo painel.
+//
+// O total do aluno é sempre `plano + ajustes − consumidos`, então somar aqui
+// é exatamente o que o professor já faz, pela mesma tabela.
+async function adicionarCreditoRedacao(alunoId: string) {
+  "use server";
+  const admin = await requireAdmin();
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("redacoes_creditos_ajustes").insert({
+    aluno_id: alunoId,
+    quantidade: 1,
+    motivo: "Crédito adicionado manualmente pelo administrador",
+    criado_por: admin.id
+  });
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  if (error) {
+    console.error("Falha ao adicionar crédito de redação:", error);
+    redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível adicionar o crédito.")}`);
+  }
+  redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Crédito de redação adicionado.")}`);
+}
+
 export default async function AdminDetalhesUsuarioPage({
   params,
   searchParams
@@ -308,8 +335,16 @@ export default async function AdminDetalhesUsuarioPage({
             {creditosDisponiveis} <span className="text-sm font-normal text-navy-dark/50">de {creditosTotais}</span>
           </p>
           <p className="text-sm text-navy-dark/70">{totalConsumidos} já corrigida{totalConsumidos !== 1 ? "s" : ""}</p>
+          <form action={adicionarCreditoRedacao.bind(null, params.id)} className="mt-3">
+            <SubmitButton
+              pendingText="Adicionando..."
+              className="w-full rounded-lg border-2 border-navy px-3 py-2 text-sm font-semibold text-navy hover:bg-navy hover:text-white"
+            >
+              ➕ Adicionar crédito de redação
+            </SubmitButton>
+          </form>
           {creditosDisponiveis > 0 && (
-            <form action={registrarComId} className="mt-3 space-y-2">
+            <form action={registrarComId} className="mt-2 space-y-2">
               <input
                 name="observacao"
                 placeholder="Observação (opcional)"

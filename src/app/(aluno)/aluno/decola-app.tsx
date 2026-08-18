@@ -4,7 +4,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { redefinirPerfilAluno } from "./redefinir-perfil-actions";
 import { formatarNota } from "@/lib/site/nota";
-import { acervoPesquisavel, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "@/lib/site/busca-estudos";
+import { acervoPesquisavel, assuntoDaChave, buscarNosEstudos, MINIMO_PARA_BUSCAR } from "@/lib/site/busca-estudos";
 import { ICONE_TIPO, ROTULO_TIPO } from "@/lib/trilha/catalogo";
 import { numeroDoLivro, urlDoResumo, type LinksDosResumos } from "@/lib/site/resumos-livros";
 import { registrarResposta } from "./questoes/actions";
@@ -2504,7 +2504,21 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
     let visiveis: { rotulo: string; itens: any[] }[];
     if (t === "diarias") visiveis = grupos.filter((g) => g.data === hojeStr);
     else if (t === "semanais") visiveis = grupos.slice(0, 8);
-    else visiveis = grupos.map((g) => ({ rotulo: g.rotulo, itens: g.itens.filter((x: any) => x.ia) }));
+    else
+      // Aba do Copiloto: só a data no cabeçalho.
+      //
+      // O rótulo dos outros grupos é o TÍTULO DO DIA do cronograma, que lista
+      // as matérias daquele dia ("Biologia, Matemática · Dia 3"). Reaproveitá-lo
+      // aqui confundia: a missão que o Copiloto acrescentou costuma ser de
+      // OUTRA matéria, e a tela parecia dizer que uma missão de Física era de
+      // "Biologia, Matemática". As matérias do dia não dizem nada sobre a
+      // missão extra — a missão já mostra a própria matéria e a duração.
+      //
+      // Só esta aba muda; o cronograma principal continua com o título do dia.
+      visiveis = grupos.map((g) => ({
+        rotulo: g.data ? `${nomeDoDiaDaSemana(g.data)} · ${dataBR(g.data)}` : g.rotulo,
+        itens: g.itens.filter((x: any) => x.ia)
+      }));
 
     const comItens = visiveis.filter((g) => g.itens.length > 0);
 
@@ -2744,8 +2758,15 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       return this.nav("questoes", { practice: true, qIdx: 0, qPicked: null, qDone: false, qMateria: item.materia });
     }
     if (item.tipo === "flashcards") {
-      const pool = this.props.dados.flashcards.filter((c) => mesmaMateria(c.materia, item.materia));
-      if (pool.length === 0) return this.avisar(`Ainda não há flashcards de ${item.materia}.`);
+      // Resultado de ASSUNTO abre só o baralho daquele assunto; resultado de
+      // matéria continua abrindo a matéria inteira. É a diferença entre
+      // pedir "Citologia" e receber Citologia, ou receber Biologia toda.
+      const assunto = assuntoDaChave(item.chave);
+      const daMateria = this.props.dados.flashcards.filter((c) => mesmaMateria(c.materia, item.materia));
+      const pool = assunto
+        ? daMateria.filter((c) => (c.assunto ?? "").trim() === assunto)
+        : daMateria;
+      if (pool.length === 0) return this.avisar(`Ainda não há flashcards de ${assunto ?? item.materia}.`);
       return this.iniciarFlashcards(this.embaralhar(pool), false);
     }
     if (item.tipo === "simulado") {
@@ -2818,6 +2839,8 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
                   { key: "b", style: { fontSize: 10.5, color: C.sub, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 } },
                   // Rótulo do tipo primeiro: é o que diz ao aluno se aquilo é
                   // uma aula, um baralho ou o banco de questões da matéria.
+                  // No baralho de assunto o título já é o assunto, então a
+                  // matéria vem junto para situar ("Flashcards · Biologia").
                   [ROTULO_TIPO[item.tipo as keyof typeof ROTULO_TIPO], item.nota, item.materia, item.detalhe]
                     .filter(Boolean)
                     .join(" · ")
