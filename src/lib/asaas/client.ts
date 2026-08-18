@@ -58,6 +58,50 @@ function validarConfiguracao(): string {
   return ASAAS_API_KEY;
 }
 
+/**
+ * Erro de VALIDAÇÃO devolvido pelo Asaas (HTTP 400).
+ *
+ * A distinção importa: o Asaas responde 400 com uma explicação em português
+ * sobre os dados enviados ("O valor mínimo para uma cobrança é R$ X", "CPF
+ * inválido", "CEP não encontrado"). Essa mensagem é sobre o que a pessoa
+ * digitou e pode — deve — chegar até ela. Já um 401/403/500 é problema de
+ * configuração ou do servidor: aí vale a mensagem genérica, porque o texto
+ * técnico não ajuda quem está comprando e pode revelar detalhes internos.
+ *
+ * Sem essa separação, o checkout dizia sempre "Não foi possível gerar a
+ * cobrança no momento. Tente novamente em instantes." — uma frase que, para
+ * um valor abaixo do mínimo do Asaas, é falsa nos dois sentidos: não é
+ * momentâneo, e tentar de novo não resolve.
+ */
+export class AsaasValidacaoError extends Error {
+  readonly codigos: string[];
+
+  constructor(mensagem: string, codigos: string[]) {
+    super(mensagem);
+    this.name = "AsaasValidacaoError";
+    this.codigos = codigos;
+  }
+}
+
+/**
+ * As descrições de erro do corpo da resposta do Asaas.
+ *
+ * Formato documentado: `{ "errors": [{ "code": "...", "description": "..." }] }`.
+ * Deliberadamente tolerante — se o corpo não for o JSON esperado, devolve
+ * lista vazia e quem chamou trata como erro técnico, em vez de estourar aqui
+ * e esconder o status HTTP original.
+ */
+function errosDoCorpo(corpo: string): { codigo: string; descricao: string }[] {
+  try {
+    const json = JSON.parse(corpo) as { errors?: { code?: string; description?: string }[] };
+    return (json.errors ?? [])
+      .map((e) => ({ codigo: e.code ?? "", descricao: (e.description ?? "").trim() }))
+      .filter((e) => e.descricao.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // Falha cedo com uma mensagem clara em vez de deixar o fetch tentar
   // mandar um header inválido (access_token: undefined) ou uma URL
@@ -77,6 +121,15 @@ async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text();
+    const erros = errosDoCorpo(body);
+    // 400 = o Asaas recusou os DADOS, e explicou o porquê. Preservamos essa
+    // explicação em vez de dissolvê-la numa string de log.
+    if (res.status === 400 && erros.length > 0) {
+      throw new AsaasValidacaoError(
+        erros.map((e) => e.descricao).join(" "),
+        erros.map((e) => e.codigo).filter(Boolean)
+      );
+    }
     throw new Error(`Asaas API error (${res.status}) em ${path}: ${body}`);
   }
 
