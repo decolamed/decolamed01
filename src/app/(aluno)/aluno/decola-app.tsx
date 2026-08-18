@@ -2516,7 +2516,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       //
       // Só esta aba muda; o cronograma principal continua com o título do dia.
       visiveis = grupos.map((g) => ({
-        rotulo: g.data ? `${nomeDoDiaDaSemana(g.data)} · ${dataBR(g.data)}` : g.rotulo,
+        // "Hoje" continua sendo "Hoje": é mais útil que a data por extenso, e
+        // é o único grupo cujo rótulo já não vinha do título do dia.
+        rotulo:
+          g.data === hojeStr
+            ? "Hoje"
+            : g.data
+            ? `${nomeDoDiaDaSemana(g.data)} · ${dataBR(g.data)}`
+            : g.rotulo,
         itens: g.itens.filter((x: any) => x.ia)
       }));
 
