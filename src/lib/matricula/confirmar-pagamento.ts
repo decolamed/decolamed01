@@ -172,7 +172,13 @@ async function criarContaDoAluno(
     // ou uma confirmação anterior que criou o usuário e falhou depois. Nos
     // dois casos, seguir com o usuário existente é o certo — criar outro não
     // é possível, e abortar deixaria a compra sem matrícula.
-    if (/already|registered|exists/i.test(mensagem)) {
+    // "duplicate key ... users_email_partial_key" entra aqui porque foi o que
+    // o Supabase devolveu de verdade quando duas confirmações da MESMA compra
+    // correram juntas (o webhook e a consulta da tela, em 19/08). A frase não
+    // contém "already", "registered" nem "exists" — então a rede de segurança
+    // acima não pegava, e a compra parava sem matrícula. Reconhecer o texto do
+    // Postgres é reconhecer o mesmo fato: a conta já existe.
+    if (/already|registered|exists|duplicate key|23505/i.test(mensagem)) {
       const existente = await usuarioPorEmail(supabase, preCadastro.email);
       if (existente) return finalizarConta(supabase, preCadastro, existente);
     }
