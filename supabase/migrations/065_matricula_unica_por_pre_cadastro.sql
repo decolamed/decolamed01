@@ -1,7 +1,12 @@
 -- ============================================================================
 -- 065 — Uma matrícula por pré-cadastro (a chave que o código já supunha)
 --
--- NÃO APLICADA AINDA. Ver o diagnóstico abaixo antes de rodar.
+-- Aplicada no projeto remoto em 19/08/2026 (matricula_unica_por_pre_cadastro).
+--
+-- Verificada depois de aplicar: a mesma instrução que falhava sete vezes foi
+-- executada DUAS vezes seguidas contra o registro que ficou preso, e o
+-- resultado foi uma única matrícula — a segunda passagem atualizou a linha em
+-- vez de criar outra, que é a idempotência que o código sempre supôs.
 --
 -- O DEFEITO, medido em produção em 19/08/2026
 -- -------------------------------------------
