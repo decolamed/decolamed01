@@ -96,8 +96,8 @@ export default async function AdminPesosPage({
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
       {erroLeitura && (
-        <Card className="mb-4 border-l-4 border-red-500">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-red-700">Não foi possível ler os pesos</p>
+        <Card className="mb-4 border-l-4 border-red">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red">Não foi possível ler os pesos</p>
           <p className="mt-1 text-sm text-navy-dark/70">
             A lista abaixo pode estar incompleta. Isto é uma falha de leitura, não de salvamento — o que você
             salvou continua no banco.
@@ -106,8 +106,8 @@ export default async function AdminPesosPage({
       )}
 
       {(pesosSemConteudo.length > 0 || conteudoSemPeso.length > 0) && (
-        <Card className="mb-4 border-l-4 border-red-500">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-red-700">Nomes que não se encontram</p>
+        <Card className="mb-4 border-l-4 border-red">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red">Nomes que não se encontram</p>
           <p className="mt-1 text-sm text-navy-dark/70">
             O peso só vale quando o nome da matéria aqui é <strong>idêntico</strong> ao usado nas questões e
             flashcards. Onde os nomes divergem, o peso é ignorado e a matéria conta como peso 1 — sem nenhum

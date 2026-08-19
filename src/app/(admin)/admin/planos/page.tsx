@@ -8,6 +8,7 @@ import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
+import { ehSlugDuplicado, mensagemDeSlugDuplicado } from "@/lib/site/erro-de-plano";
 import type { Plano } from "@/types/database";
 
 async function criarPlano(formData: FormData) {
@@ -46,9 +47,15 @@ async function criarPlano(formData: FormData) {
   revalidatePath("/planos");
 
   if (error) {
-    const mensagem = error.message.includes("duplicate")
-      ? "Já existe um plano com esse slug. Escolha outro."
-      : "Não foi possível criar o plano.";
+    // O motivo real vai para o log: sem ele, um erro fora do caso conhecido
+    // vira "Não foi possível criar o plano." e não sobra pista nenhuma.
+    console.error("Falha ao criar plano:", error.code, error.message);
+
+    let mensagem = "Não foi possível criar o plano.";
+    if (ehSlugDuplicado(error)) {
+      const { data: dono } = await supabase.from("planos").select("nome").eq("slug", slug).maybeSingle();
+      mensagem = mensagemDeSlugDuplicado(slug, dono?.nome);
+    }
     redirect(`/admin/planos?erro=${encodeURIComponent(mensagem)}`);
   }
   redirect("/admin/planos?sucesso=Plano criado com sucesso.");
@@ -129,7 +136,7 @@ export default async function AdminPlanosPage({
               </form>
               <form action={excluirPlano}>
                 <input type="hidden" name="id" value={plano.id} />
-                <button className="text-red-600 hover:underline">Excluir</button>
+                <button className="text-red hover:underline">Excluir</button>
               </form>
             </>
           )}

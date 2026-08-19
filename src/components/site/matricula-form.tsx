@@ -182,9 +182,9 @@ function FormularioInscricao({
             {validandoCupom ? "Validando..." : "Aplicar"}
           </button>
         </div>
-        {cupomErro && <p className="mt-1 text-xs text-red-600">{cupomErro}</p>}
+        {cupomErro && <p className="mt-1 text-xs text-red">{cupomErro}</p>}
         {cupomAplicado && (
-          <p className="mt-1 text-xs text-green-700">
+          <p className="mt-1 text-xs text-green">
             Cupom {cupomAplicado.codigo} aplicado: -{formatarReais(cupomAplicado.descontoCentavos)}
           </p>
         )}
@@ -219,7 +219,7 @@ function FormularioInscricao({
         </p>
       </div>
 
-      {erro && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{erro}</p>}
+      {erro && <p className="rounded-lg bg-red-soft p-3 text-sm text-red">{erro}</p>}
 
       <Button type="submit" disabled={loading} className="w-full">
         {loading ? "Processando..." : "Confirmar matrícula"}

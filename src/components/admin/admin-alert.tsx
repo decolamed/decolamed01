@@ -8,7 +8,7 @@ export function AdminAlert({ erro, sucesso }: { erro?: string; sucesso?: string 
   return (
     <div
       className={`mt-4 rounded-lg p-3 text-sm ${
-        erro ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"
+        erro ? "bg-red-soft text-red" : "bg-green-soft text-green"
       }`}
     >
       {erro ?? sucesso}

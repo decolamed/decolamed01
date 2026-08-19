@@ -21,7 +21,7 @@ export function WhatsappButton({ telefone, nome }: { telefone: string | null; no
   const link = montarLinkWhatsapp(telefone);
 
   return (
-    <a href={link} target="_blank" rel="noopener noreferrer" className="text-green-700 hover:underline">
+    <a href={link} target="_blank" rel="noopener noreferrer" className="text-green hover:underline">
       WhatsApp
     </a>
   );

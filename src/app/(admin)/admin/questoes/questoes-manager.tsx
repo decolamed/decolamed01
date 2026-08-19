@@ -316,7 +316,7 @@ export function QuestoesManager({
                         {p.alternativas.map((a) => `${a.letra.toUpperCase()}) ${a.texto}`).join(" · ")}
                       </p>
                     )}
-                    <p className={`mt-1 font-bold ${p.erro ? "text-red" : "text-green-700"}`}>
+                    <p className={`mt-1 font-bold ${p.erro ? "text-red" : "text-green"}`}>
                       {p.erro ?? `OK · Gabarito ${p.gabarito?.toUpperCase()}`}
                     </p>
                   </div>
