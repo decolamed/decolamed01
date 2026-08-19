@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 process.env.ASAAS_API_KEY = "$aact_hmlg_chave_de_teste";
 process.env.ASAAS_API_URL = "https://sandbox.asaas.com/api/v3";
 
-const { createCharge, AsaasValidacaoError } = await import("./client.ts");
+const { createCharge, AsaasValidacaoError, estaPago } = await import("./client.ts");
 
 /** Faz o próximo fetch responder o que o teste mandar. */
 function responderCom(status, corpo) {
@@ -105,4 +105,35 @@ test("resposta boa continua passando", async () => {
   responderCom(200, { id: "pay_1", status: "PENDING", invoiceUrl: "https://x.test/i", billingType: "BOLETO" });
   const c = await createCharge(cobranca);
   assert.equal(c.id, "pay_1");
+});
+
+// ═══════════════════════════ O QUE CONTA COMO PAGO ══════════════════════════
+// A tela do checkout troca para "pagamento confirmado" com base nisto. Um
+// status a mais aqui libera acesso sem dinheiro; um a menos deixa um aluno
+// que pagou olhando para o QR Code.
+
+test("RECEIVED e CONFIRMED liberam o acesso", () => {
+  // RECEIVED = compensado. CONFIRMED = confirmado pela operadora (cartão), o
+  // repasse ainda vai cair — mas a compra está feita.
+  assert.ok(estaPago("RECEIVED"));
+  assert.ok(estaPago("CONFIRMED"));
+});
+
+test("cobrança ainda não paga não libera nada", () => {
+  for (const status of ["PENDING", "AWAITING_RISK_ANALYSIS", "OVERDUE", "REFUNDED", "CHARGEBACK_REQUESTED"]) {
+    assert.equal(estaPago(status), false, `${status} não pode liberar acesso`);
+  }
+});
+
+test("RECEIVED_IN_CASH fica de fora de propósito", () => {
+  // É baixa manual registrada no painel do Asaas, não pagamento pelo
+  // checkout. Se um dia isso precisar liberar acesso, é decisão de negócio —
+  // não pode entrar por acidente.
+  assert.equal(estaPago("RECEIVED_IN_CASH"), false);
+});
+
+test("status ausente ou estranho não libera acesso", () => {
+  for (const status of [null, undefined, "", "received", "qualquer coisa"]) {
+    assert.equal(estaPago(status), false, `${status} não pode liberar acesso`);
+  }
 });
