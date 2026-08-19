@@ -25,6 +25,14 @@ export interface Plano {
   tem_copiloto: boolean;
   created_at: string;
   updated_at: string;
+  // Parcelamento no cartão, por plano. Pix e boleto não têm parcela e não são
+  // afetados. Todo plano nasce com parcelamento desligado — ligar é decisão
+  // do administrador, plano a plano.
+  parcelamento_ativo: boolean;
+  parcelas_maximas: number;
+  juros_ativo: boolean;
+  /** Juros ao mês em porcentagem: 2.5 = 2,5% a.m. Só vale com juros_ativo. */
+  juros_percentual: number;
 }
 
 export type CupomTipo = "percentual" | "fixo";

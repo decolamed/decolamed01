@@ -9,6 +9,7 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
 import { ehSlugDuplicado, mensagemDeSlugDuplicado } from "@/lib/site/erro-de-plano";
+import { lerCamposDoFormulario, erroDeParcelamento } from "@/lib/planos/parcelamento";
 import type { Plano } from "@/types/database";
 
 async function criarPlano(formData: FormData) {
@@ -30,6 +31,12 @@ async function criarPlano(formData: FormData) {
     redirect(`/admin/planos?erro=${encodeURIComponent("Informe um slug válido (ex.: plano-intensivo).")}`);
   }
 
+  // A configuração de parcelamento é validada ANTES de tocar no banco: as
+  // CHECKs de `planos` recusariam o mesmo, mas como exceção de constraint —
+  // e o admin leria "não foi possível criar o plano" sem saber o que corrigir.
+  const erroParcelas = erroDeParcelamento(formData);
+  if (erroParcelas) redirect(`/admin/planos?erro=${encodeURIComponent(erroParcelas)}`);
+
   const { error } = await supabase.from("planos").insert({
     nome: String(formData.get("nome")),
     slug,
@@ -40,7 +47,8 @@ async function criarPlano(formData: FormData) {
     tem_copiloto: formData.get("tem_copiloto") === "on",
     beneficios,
     ativo: true,
-    ordem: Number(formData.get("ordem") ?? 0)
+    ordem: Number(formData.get("ordem") ?? 0),
+    ...lerCamposDoFormulario(formData)
   });
 
   revalidatePath("/admin/planos");
@@ -171,6 +179,49 @@ export default async function AdminPlanosPage({
               adapta ao desempenho do aluno.
             </span>
           </label>
+
+          {/* ---- Parcelamento no cartão ---- */}
+          {/* Só o cartão parcela. Pix e boleto não têm parcela, e o valor
+              deles continua sendo o preço do plano — nada aqui os afeta. */}
+          <fieldset className="rounded-xl border border-navy/10 bg-navy/5 p-4">
+            <legend className="px-2 text-sm font-bold text-navy-dark">Parcelamento no cartão</legend>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="parcelamento_ativo" defaultChecked={false} />
+              <span>
+                <strong>Permitir pagamento parcelado no cartão</strong> — desligado, o cartão só aceita à vista.
+              </span>
+            </label>
+
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Número máximo de parcelas"
+                name="parcelas_maximas"
+                type="number"
+                defaultValue={"1"}
+              />
+              <Field
+                label="Percentual de juros ao mês (%)"
+                name="juros_percentual"
+                type="number"
+                step="0.01"
+                defaultValue={"0"}
+              />
+            </div>
+
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" name="juros_ativo" defaultChecked={false} />
+              <span>
+                <strong>Cobrar juros no parcelamento</strong> — desligado, o campo de percentual acima é
+                ignorado e o cliente paga o preço do plano dividido.
+              </span>
+            </label>
+
+            <p className="mt-3 text-xs text-navy-dark/60">
+              O checkout mostra de 1x até o limite configurado, com o valor de cada parcela e o total. Máximo
+              de 24 parcelas — é o teto do próprio Asaas.
+            </p>
+          </fieldset>
           <div>
             <label className="text-sm font-semibold">Descrição</label>
             <textarea name="descricao" rows={2} className="mt-1 w-full rounded-lg border p-3" />
