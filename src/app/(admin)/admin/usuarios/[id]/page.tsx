@@ -586,11 +586,23 @@ export default async function AdminDetalhesUsuarioPage({
               <>
                 <p className="mt-1 text-sm text-navy-dark/60">
                   {rotaGerada.length} dias, {totalDeItens} itens, {Math.round(totalDeMinutos / 60)}h no total — é
-                  exatamente o que o aluno está vendo. Para ajustar o conteúdo dos dias, use{" "}
+                  exatamente o que <strong>{profile.nome}</strong> está vendo.{" "}
+                  <strong className="text-navy-dark">Clique em qualquer dia para abrir e editar.</strong>
+                </p>
+                {/* Esta frase substituiu um link para /admin/trilha que dizia
+                    "para ajustar o conteúdo dos dias, use Conteúdo →
+                    Cronograma". Era o convite errado: /admin/trilha é o
+                    TEMPLATE de 40 dias, compartilhado por todos os alunos —
+                    quem fosse até lá para acertar o cronograma de um aluno
+                    mudaria o de todo mundo, sem nada na tela avisando. Agora a
+                    edição acontece aqui, e o aviso é sobre a diferença. */}
+                <p className="mt-2 rounded-lg bg-sky p-3 text-xs text-navy-dark/70">
+                  O que você editar aqui vale <strong>só para este aluno</strong>. O cronograma de 40 dias em{" "}
                   <Link href="/admin/trilha" className="font-semibold text-navy hover:underline">
                     Conteúdo → Cronograma
                   </Link>{" "}
-                  ou acrescente missões individuais na seção abaixo.
+                  é o modelo compartilhado por <strong>todos</strong> — alterá-lo muda o cronograma de todo mundo, não o
+                  deste aluno.
                 </p>
                 {/* Visão COMPLETA: cada dia com os itens que o aluno vai abrir.
                     Antes esta lista era um resumo — uma linha por dia, com
@@ -636,6 +648,9 @@ export default async function AdminDetalhesUsuarioPage({
                             )}
                             <span className="ml-auto text-xs text-navy-dark/50">
                               {itens.length === 0 ? "vazio" : `${itens.length} itens · ${d.minutos} min`}
+                            </span>
+                            <span className="text-xs font-semibold text-navy">
+                              {editavel ? "editar" : "ver"}
                             </span>
                           </summary>
 
