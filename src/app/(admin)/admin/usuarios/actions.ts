@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { registrarHistoricoAdmin } from "@/lib/historico/registrar";
 import { destinoDoAdmin } from "@/lib/auth/destino-do-admin";
+import { instanteNoFuso, MEIO_DIA, FIM_DO_DIA } from "@/lib/site/data";
 
 const PATH = "/admin/usuarios";
 
@@ -153,8 +154,18 @@ export async function criarAlunoManual(formData: FormData) {
   }
 
   // 3. Matrícula
-  const acessoLiberadoEm = statusMatricula === "ativa" ? new Date(dataInicio).toISOString() : null;
-  const acessoExpiraEm = dataVencimento ? new Date(dataVencimento).toISOString() : null;
+  //
+  // As datas vêm de <input type="date">, ou seja, dias de calendário sem
+  // hora. `new Date("2026-08-18")` os fixava à meia-noite UTC — que em
+  // Brasília ainda é dia 17, às 21h. A venda registrada como "18/08"
+  // aparecia no dia 17 no filtro de período de /admin/vendas. Ao meio-dia
+  // do fuso da plataforma o dia é o mesmo em qualquer leitura, com 12h de
+  // folga para os dois lados (mesmo motivo de `somarDias` em site/data.ts).
+  const acessoLiberadoEm = statusMatricula === "ativa" ? instanteNoFuso(dataInicio, MEIO_DIA).toISOString() : null;
+  // O vencimento é o último dia COM acesso, então vale até o fim dele. Com a
+  // meia-noite UTC de antes, "acesso até 30/09" cortava o aluno às 21h do
+  // dia 29 — um dia inteiro a menos do que foi vendido.
+  const acessoExpiraEm = dataVencimento ? instanteNoFuso(dataVencimento, FIM_DO_DIA).toISOString() : null;
 
   const { data: matricula, error: matriculaError } = await supabase
     .from("matriculas")

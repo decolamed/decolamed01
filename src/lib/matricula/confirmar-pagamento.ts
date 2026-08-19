@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapBillingTypeToFormaPagamento, type AsaasBillingType } from "@/lib/asaas/client";
+import { dataDePagamento } from "@/lib/vendas/periodo";
 
 // ============================================================================
 // PAGAMENTO CONFIRMADO → CONTA LIBERADA
@@ -117,7 +118,7 @@ export async function confirmarPagamento(
       valor_centavos: Math.round(dados.valor * 100),
       forma_pagamento: mapBillingTypeToFormaPagamento(dados.billingType),
       status: dados.recebido ? "recebido" : "confirmado",
-      data_pagamento: dados.dataPagamento ?? new Date().toISOString(),
+      data_pagamento: dataDePagamento(dados.dataPagamento),
       payload: dados.payload,
       origem_pagamento: "asaas",
       cupom_codigo: preCadastro.cupom_codigo,

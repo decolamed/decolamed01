@@ -185,6 +185,17 @@ export interface AsaasChargeInput {
   billingType: AsaasBillingType;
   value: number; // em reais, ex: 397.00
   dueDate: string; // YYYY-MM-DD
+  /**
+   * Parcelamento no cartão. Só enviado quando há mais de uma parcela.
+   *
+   * O Asaas aceita `installmentCount` + `installmentValue` (o valor de CADA
+   * parcela) e cobra exatamente esse valor N vezes. Mandamos o valor da
+   * parcela, não o total dividido por lá: assim o que a plataforma calculou e
+   * mostrou ao cliente é literalmente o que o gateway cobra — sem uma segunda
+   * divisão, com outro arredondamento, do outro lado.
+   */
+  installmentCount?: number;
+  installmentValue?: number;
   description?: string;
   externalReference?: string; // id do pre_cadastro no Supabase
   // Dados de cartão só são exigidos quando billingType === "CREDIT_CARD".
@@ -249,6 +260,12 @@ export interface AsaasPagamento {
   externalReference: string | null;
   paymentDate?: string | null;
   confirmedDate?: string | null;
+  // Campos usados quando devolvemos ao cliente uma cobrança que já existia,
+  // em vez de emitir outra igual (ver lib/matricula/cobranca-reaproveitavel).
+  dueDate?: string | null;
+  invoiceUrl?: string | null;
+  bankSlipUrl?: string | null;
+  installmentCount?: number | null;
 }
 
 /**

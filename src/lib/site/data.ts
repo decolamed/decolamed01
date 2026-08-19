@@ -31,6 +31,50 @@ const FORMATADOR = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit"
 });
 
+const RELOGIO_COMPLETO = new Intl.DateTimeFormat("en-CA", {
+  timeZone: FUSO_PLATAFORMA,
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit"
+});
+
+/** O relógio de parede do fuso da plataforma, reinterpretado como se fosse UTC. */
+function relogioComoUTC(instante: Date): number {
+  const p: Record<string, string> = {};
+  for (const parte of RELOGIO_COMPLETO.formatToParts(instante)) p[parte.type] = parte.value;
+  // Meia-noite sai como "24" em alguns motores com hour12: false.
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+}
+
+/** Meio-dia: a hora segura para representar um dia de calendário sem hora. */
+export const MEIO_DIA = "12:00:00.000";
+
+/** O último instante de um dia — para prazos que valem até o fim do dia. */
+export const FIM_DO_DIA = "23:59:59.999";
+
+/**
+ * O instante UTC de uma hora de parede no fuso da plataforma.
+ *
+ * `new Date("2026-08-18")` devolve meia-noite UTC — que em Brasília ainda é
+ * dia 17, às 21h. Quem grava um dia escolhido num <input type="date"> precisa
+ * disto, senão o dia gravado não é o dia que a pessoa escolheu. E quem monta
+ * os limites de um filtro por período também: `.setHours()` mexe no fuso da
+ * MÁQUINA, que na Vercel é UTC.
+ */
+export function instanteNoFuso(dataIso: string, hora: string): Date {
+  const chute = new Date(`${dataIso}T${hora}Z`);
+  // O deslocamento sai de um instante sem milissegundos: o Intl não os
+  // devolve, então medi-lo com o .999 do fim do dia embutia esses 999 ms no
+  // próprio deslocamento e empurrava o limite para 03:00:00.998.
+  const cheio = new Date(Math.floor(chute.getTime() / 1000) * 1000);
+  const deslocamento = cheio.getTime() - relogioComoUTC(cheio);
+  return new Date(chute.getTime() + deslocamento);
+}
+
 // Data (YYYY-MM-DD) de um instante, no fuso da plataforma.
 export function dataISO(quando: Date = new Date()): string {
   return FORMATADOR.format(quando);

@@ -7,6 +7,8 @@ import { salvarConfirmacaoMatricula } from "@/lib/matricula/confirmacao-storage"
 import type { Plano } from "@/types/database";
 import type { MatriculaChargeResult } from "@/types/matricula";
 
+import { lerConfiguracao, opcoesDeParcelamento, descreverOpcao } from "@/lib/planos/parcelamento";
+
 type BillingType = "PIX" | "BOLETO" | "CREDIT_CARD";
 
 function formatarReais(centavos: number) {
@@ -49,6 +51,7 @@ function FormularioInscricao({
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [billingType, setBillingType] = useState<BillingType>("PIX");
+  const [parcelas, setParcelas] = useState(1);
 
   const [cupomInput, setCupomInput] = useState("");
   const [cupomAplicado, setCupomAplicado] = useState<{ codigo: string; descontoCentavos: number } | null>(null);
@@ -57,6 +60,16 @@ function FormularioInscricao({
 
   const plano = planos.find((p) => p.id === planoId) ?? planoAtual;
   const valorFinalCentavos = cupomAplicado ? plano.preco_centavos - cupomAplicado.descontoCentavos : plano.preco_centavos;
+
+  // As opções de parcelamento saem da MESMA função que o servidor usa para
+  // recalcular o valor em /api/matricula. É o que garante que o total exibido
+  // aqui é o total cobrado — nenhuma conta de valor mora nesta tela.
+  //
+  // Os juros incidem sobre o valor JÁ com desconto do cupom: parcelar não
+  // pode desfazer um desconto que o cliente conquistou.
+  const configParcelamento = lerConfiguracao(plano as unknown as Record<string, unknown>);
+  const opcoes = opcoesDeParcelamento(valorFinalCentavos, configParcelamento);
+  const opcaoAtual = opcoes.find((o) => o.parcelas === parcelas) ?? opcoes[0];
 
   async function aplicarCupom() {
     if (!cupomInput.trim()) return;
@@ -97,6 +110,9 @@ function FormularioInscricao({
       cep: form.get("cep"),
       numeroEndereco: form.get("numeroEndereco"),
       billingType,
+      // Só o cartão parcela. Mandar parcelas em Pix ou boleto seria pedir ao
+      // servidor algo que ele recusaria — e que não faz sentido nesses meios.
+      parcelas: billingType === "CREDIT_CARD" ? parcelas : 1,
       ...(cupomAplicado ? { cupomCodigo: cupomAplicado.codigo } : {})
     };
 
@@ -218,6 +234,49 @@ function FormularioInscricao({
           Pagamento com cartão de crédito depende da forma como sua conta Asaas está habilitada.
         </p>
       </div>
+
+      {/* Parcelamento: só aparece no cartão, e só quando o PLANO permite. Um
+          plano sem parcelamento tem uma única opção (à vista), e aí o seletor
+          não teria o que oferecer — mostrá-lo seria uma escolha falsa. */}
+      {billingType === "CREDIT_CARD" && opcoes.length > 1 && (
+        <div>
+          <label className="text-sm font-semibold" htmlFor="parcelas">
+            Parcelamento
+          </label>
+          <select
+            id="parcelas"
+            name="parcelas"
+            value={parcelas}
+            onChange={(e) => setParcelas(Number(e.target.value))}
+            className="mt-2 w-full rounded-lg border p-3"
+          >
+            {opcoes.map((opcao) => (
+              <option key={opcao.parcelas} value={opcao.parcelas}>
+                {descreverOpcao(opcao)}
+              </option>
+            ))}
+          </select>
+
+          {/* O cliente precisa ver o TOTAL, não só a parcela: é a diferença
+              entre escolher informado e descobrir na fatura. */}
+          {opcaoAtual && opcaoAtual.parcelas > 1 && (
+            <div className="mt-2 rounded-lg bg-sky p-3 text-xs text-navy-dark/80">
+              <p>
+                {opcaoAtual.parcelas}× de <strong>{formatarReais(opcaoAtual.valorDaParcelaCentavos)}</strong> —
+                total de <strong>{formatarReais(opcaoAtual.totalCentavos)}</strong>
+              </p>
+              {opcaoAtual.temJuros ? (
+                <p className="mt-1 text-orange-dark">
+                  Este parcelamento tem juros de {configParcelamento.jurosPercentual}% ao mês —{" "}
+                  {formatarReais(opcaoAtual.jurosCentavos)} a mais que o valor à vista.
+                </p>
+              ) : (
+                <p className="mt-1 text-navy-dark/60">Sem juros — o mesmo valor da compra à vista, dividido.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {erro && <p className="rounded-lg bg-red-soft p-3 text-sm text-red">{erro}</p>}
 
