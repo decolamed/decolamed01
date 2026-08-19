@@ -8,6 +8,7 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
+import { EditorDoDia } from "@/components/admin/editor-do-dia";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { DesempenhoDoAluno } from "@/components/admin/desempenho-aluno";
 import { carregarDesempenho } from "@/lib/site/desempenho-servidor";
@@ -20,7 +21,7 @@ import {
   excluirMissaoIndividual,
   atualizarPerfilDoUsuario,
   gerarCronogramaDoAluno,
-  esvaziarDiaDaRota,
+  salvarDiaDaRota,
   restaurarDiaDaRota
 } from "./actions";
 import { reenviarConvite, reenviarSenha } from "../actions";
@@ -150,19 +151,19 @@ export default async function AdminDetalhesUsuarioPage({
     alunoTemCopiloto(params.id),
     getMateriasDoConteudo()
   ]);
-  const [{ data: briefingDoAluno }, { data: rotaDoAlunoDias }, { data: diasLimposData }] = await Promise.all([
+  const [{ data: briefingDoAluno }, { data: rotaDoAlunoDias }, { data: diasEditadosData }] = await Promise.all([
     supabase.from("aluno_briefing").select("*").eq("aluno_id", params.id).maybeSingle(),
     supabase
       .from("aluno_rota_dias")
       .select("route_day, scheduled_date, tipo, titulo, itens, minutos")
       .eq("aluno_id", params.id)
       .order("route_day"),
-    // Quais dias o mentor esvaziou. A rota persistida já reflete isso (ela é
-    // regerada a cada leitura da tela do aluno), mas a marca é o que permite
-    // oferecer "Restaurar" no dia certo.
-    supabase.from("aluno_rota_dias_limpos").select("route_day").eq("aluno_id", params.id)
+    // Quais dias o mentor já editou. A rota persistida já reflete a edição
+    // (ela é regerada a cada leitura da tela do aluno); esta marca é o que
+    // permite oferecer "Voltar ao automático" só nos dias certos.
+    supabase.from("aluno_rota_dias_ajustes").select("route_day").eq("aluno_id", params.id)
   ]);
-  const diasLimpos = new Set(((diasLimposData as { route_day: number }[]) ?? []).map((d) => d.route_day));
+  const diasEditados = new Set(((diasEditadosData as { route_day: number }[]) ?? []).map((d) => d.route_day));
   const briefing = briefingDoAluno as Record<string, any> | null;
   const rotaGerada =
     (rotaDoAlunoDias as {
@@ -170,9 +171,16 @@ export default async function AdminDetalhesUsuarioPage({
       scheduled_date: string;
       tipo: string;
       titulo: string;
-      // `itens` sempre trouxe o item inteiro; a tela é que só usava o
-      // comprimento da lista. A visão completa mostra o que há dentro.
-      itens: { titulo: string; tipo?: string | null; materia?: string | null }[];
+      // `itens` sempre trouxe o item inteiro do banco; era o tipo declarado
+      // aqui que descrevia menos, porque a tela só usava o comprimento da
+      // lista. O editor precisa de todos os campos.
+      itens: {
+        titulo: string;
+        tipo?: string | null;
+        materia?: string | null;
+        url?: string | null;
+        ref_id?: string | null;
+      }[];
       minutos: number;
     }[]) ?? [];
 
@@ -595,94 +603,119 @@ export default async function AdminDetalhesUsuarioPage({
                     página, não rolar uma caixinha de 384px dentro dela. */}
                 <ul className="mt-3 divide-y divide-navy-dark/10 text-sm">
                   {rotaGerada.map((d) => {
-                    const vazio = diasLimpos.has(d.route_day);
-                    // Missões que o mentor já colocou NA DATA deste dia. É o
-                    // que mostra que um dia esvaziado voltou a ter conteúdo.
+                    const editado = diasEditados.has(d.route_day);
+                    const itens = d.itens ?? [];
+                    // Missões que o mentor colocou NA DATA deste dia. Elas
+                    // vivem em `aluno_missoes` e são um acréscimo ao dia —
+                    // não fazem parte da lista que ele edita aqui.
                     const manuais = missoes.filter((m) => m.data === d.scheduled_date);
+                    // Simulado e dia da prova são a espinha da rota: o resto
+                    // se organiza em volta deles, e trocar o conteúdo de um
+                    // dia desses desalinharia o cronograma inteiro.
+                    const editavel = d.tipo !== "simulado" && d.tipo !== "prova";
                     return (
-                      <li key={d.route_day} className="flex flex-wrap items-baseline gap-2 py-2">
-                        <span className="min-w-[64px] text-xs font-extrabold text-navy-dark/50">Dia {d.route_day}</span>
-                        <span className="text-xs text-navy-dark/50">{formatarData(d.scheduled_date)}</span>
-                        <span className={`font-semibold ${vazio ? "text-navy-dark/40" : "text-navy-dark"}`}>
-                          {vazio ? "Dia livre — a definir" : d.titulo}
-                        </span>
-                        {manuais.length > 0 && (
-                          <span className="rounded bg-blue-soft px-2 py-0.5 text-xs font-semibold text-navy">
-                            +{manuais.length} {manuais.length === 1 ? "missão do mentor" : "missões do mentor"}
-                          </span>
-                        )}
-                        <span className="ml-auto text-xs text-navy-dark/50">
-                          {vazio ? "vazio" : `${(d.itens ?? []).length} itens · ${d.minutos} min`}
-                        </span>
-                        {d.tipo === "simulado" || d.tipo === "prova" ? (
-                          // Simulado e dia da prova são a espinha da rota — o
-                          // resto se organiza em volta deles.
-                          <span className="text-xs text-navy-dark/35">fixo</span>
-                        ) : vazio ? (
-                          <form action={restaurarDiaDaRota.bind(null, params.id, d.route_day)}>
-                            <SubmitButton pendingText="..." className="text-xs font-semibold text-navy hover:underline">
-                              Restaurar
-                            </SubmitButton>
-                          </form>
-                        ) : (
-                          <ConfirmSubmitButton
-                            formAction={esvaziarDiaDaRota.bind(null, params.id, d.route_day)}
-                            confirmMessage={`Esvaziar o Dia ${d.route_day} de ${profile.nome}?\n\nO dia continua no cronograma, com a mesma data — só fica sem conteúdo. O total de dias não muda.`}
-                            className="text-xs font-semibold text-orange-dark hover:underline"
-                          >
-                            Esvaziar
-                          </ConfirmSubmitButton>
-                        )}
+                      <li key={d.route_day} className="py-2">
+                        <details>
+                          <summary className="flex cursor-pointer flex-wrap items-baseline gap-2 marker:text-navy-dark/30">
+                            <span className="min-w-[64px] text-xs font-extrabold text-navy-dark/50">
+                              Dia {d.route_day}
+                            </span>
+                            <span className="text-xs text-navy-dark/50">{formatarData(d.scheduled_date)}</span>
+                            <span className={`font-semibold ${itens.length === 0 ? "text-navy-dark/40" : "text-navy-dark"}`}>
+                              {d.titulo}
+                            </span>
+                            {editado && (
+                              <span className="rounded bg-blue-soft px-2 py-0.5 text-[11px] font-semibold text-navy">
+                                editado por você
+                              </span>
+                            )}
+                            {manuais.length > 0 && (
+                              <span className="rounded bg-blue-soft px-2 py-0.5 text-[11px] font-semibold text-navy">
+                                +{manuais.length} {manuais.length === 1 ? "missão" : "missões"}
+                              </span>
+                            )}
+                            <span className="ml-auto text-xs text-navy-dark/50">
+                              {itens.length === 0 ? "vazio" : `${itens.length} itens · ${d.minutos} min`}
+                            </span>
+                          </summary>
 
-                        {/* Os itens do dia. É o que faltava para isto ser o
-                            cronograma e não o índice dele. */}
-                        {!vazio && (d.itens ?? []).length > 0 && (
-                          <ul className="mt-1 w-full space-y-1 pl-[72px]">
-                            {(d.itens ?? []).map((item, indice) => (
-                              <li
-                                key={`${d.route_day}-${indice}`}
-                                className="flex flex-wrap items-baseline gap-2 text-xs text-navy-dark/70"
-                              >
-                                <span className="text-navy-dark/35">•</span>
-                                <span>{item.titulo}</span>
-                                {item.materia && (
-                                  <span className="rounded bg-sky px-1.5 py-0.5 text-[11px] text-navy-dark/60">
-                                    {item.materia}
-                                  </span>
-                                )}
-                                {item.tipo && <span className="text-[11px] text-navy-dark/40">{item.tipo}</span>}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                          <div className="mt-2 pl-2 sm:pl-[72px]">
+                            {editavel ? (
+                              <form action={salvarDiaDaRota.bind(null, params.id, d.route_day)}>
+                                <input
+                                  name="titulo"
+                                  defaultValue={editado ? d.titulo : ""}
+                                  placeholder="Título do dia (vazio = automático)"
+                                  aria-label={`Título do dia ${d.route_day}`}
+                                  className="w-full rounded-lg border border-navy/15 p-2 text-sm font-semibold"
+                                />
+                                <EditorDoDia
+                                  itensIniciais={itens.map((i) => ({
+                                    tipo: i.tipo ?? "aula",
+                                    titulo: i.titulo,
+                                    materia: i.materia ?? null,
+                                    url: i.url ?? null,
+                                    ref_id: i.ref_id ?? null
+                                  }))}
+                                />
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <SubmitButton
+                                    pendingText="Salvando..."
+                                    className="rounded-full bg-orange px-5 py-2 text-sm font-bold text-white hover:bg-orange-dark"
+                                  >
+                                    Salvar o Dia {d.route_day}
+                                  </SubmitButton>
+                                  {editado && (
+                                    <ConfirmSubmitButton
+                                      formAction={restaurarDiaDaRota.bind(null, params.id, d.route_day)}
+                                      confirmMessage={`Descartar a sua edição do Dia ${d.route_day}?\n\nEle volta a ser montado pelo cronograma automático, a partir do briefing e do desempenho do aluno.`}
+                                      className="text-xs font-semibold text-navy hover:underline"
+                                    >
+                                      Voltar ao automático
+                                    </ConfirmSubmitButton>
+                                  )}
+                                </div>
+                              </form>
+                            ) : (
+                              <div className="rounded-lg bg-sky p-3 text-xs text-navy-dark/60">
+                                {itens.map((i, k) => (
+                                  <p key={k}>• {i.titulo}</p>
+                                ))}
+                                <p className="mt-2">
+                                  {d.tipo === "prova" ? "O dia da prova" : "O dia de simulado"} não é editável: ele é a
+                                  referência que posiciona todo o resto da rota.
+                                </p>
+                              </div>
+                            )}
 
-                        {/* As missões que o mentor acrescentou nesta data
-                            aparecem junto do dia a que pertencem — inclusive
-                            quando o dia foi esvaziado, que é o caso em que
-                            elas são a única coisa ali. */}
-                        {manuais.length > 0 && (
-                          <ul className="mt-1 w-full space-y-1 pl-[72px]">
-                            {manuais.map((m) => (
-                              <li key={m.id} className="flex flex-wrap items-baseline gap-2 text-xs text-navy">
-                                <span className="text-navy/40">+</span>
-                                <span className="font-semibold">{m.titulo}</span>
-                                {m.materia && (
-                                  <span className="rounded bg-blue-soft px-1.5 py-0.5 text-[11px]">{m.materia}</span>
-                                )}
-                                <span className="text-[11px] text-navy/50">do mentor</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                            {manuais.length > 0 && (
+                              <div className="mt-3 rounded-lg bg-blue-soft p-3">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-navy/60">
+                                  Missões avulsas nesta data
+                                </p>
+                                {manuais.map((m) => (
+                                  <p key={m.id} className="mt-1 text-xs text-navy">
+                                    + {m.titulo}
+                                    {m.materia ? ` · ${m.materia}` : ""}
+                                  </p>
+                                ))}
+                                <p className="mt-2 text-[11px] text-navy/60">
+                                  Estas vêm de “Cronograma individual”, mais abaixo, e são um acréscimo ao dia.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </details>
                       </li>
                     );
                   })}
                 </ul>
-                {diasLimpos.size > 0 && (
+                {diasEditados.size > 0 && (
                   <p className="mt-3 rounded-lg bg-blue-soft p-3 text-xs text-navy-dark/70">
-                    {diasLimpos.size === 1 ? "1 dia está" : `${diasLimpos.size} dias estão`} vazio(s) por decisão sua.
-                    Para preencher, use <strong>Adicionar missão</strong> abaixo com a data do dia. O cronograma
-                    continua com {rotaGerada.length} dias — esvaziar não encurta a rota.
+                    {diasEditados.size === 1 ? "1 dia foi editado" : `${diasEditados.size} dias foram editados`} por
+                    você. Esses dias deixam de ser recalculados pelo cronograma automático e passam a valer como você
+                    os deixou — só para este aluno. Use <strong>Voltar ao automático</strong> dentro do dia para
+                    devolvê-lo ao algoritmo.
                   </p>
                 )}
               </>

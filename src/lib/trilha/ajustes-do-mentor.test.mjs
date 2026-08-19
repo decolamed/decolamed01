@@ -35,14 +35,14 @@ const dia = (r, n) => r.dias.find((d) => d.routeDay === n);
 // ═══════════════════════════════ DIA ESVAZIADO ══════════════════════════════
 test("o dia esvaziado continua na rota, com a mesma data", () => {
   const cheia = rota();
-  const comVazio = rota({ diasLimpos: [8] });
+  const comVazio = rota({ ajustesDoMentor: { 8: { itens: [] } } });
 
   assert.equal(comVazio.dias.length, cheia.dias.length, "esvaziar não pode encurtar a rota");
   assert.equal(dia(comVazio, 8).scheduledDate, dia(cheia, 8).scheduledDate, "a data do dia 8 não muda");
 });
 
 test("o dia esvaziado fica sem conteúdo e sem minutos", () => {
-  const r = rota({ diasLimpos: [8] });
+  const r = rota({ ajustesDoMentor: { 8: { itens: [] } } });
   assert.deepEqual(dia(r, 8).itens, []);
   assert.equal(dia(r, 8).minutos, 0);
   assert.equal(dia(r, 8).titulo, TITULO_DIA_LIVRE);
@@ -51,7 +51,7 @@ test("o dia esvaziado fica sem conteúdo e sem minutos", () => {
 test("continua sendo dia de estudo — não vira descanso", () => {
   // A diferença importa: descanso é folga planejada; este é um espaço que o
   // mentor abriu para colocar outra coisa.
-  assert.equal(dia(rota({ diasLimpos: [8] }), 8).tipo, "estudo");
+  assert.equal(dia(rota({ ajustesDoMentor: { 8: { itens: [] } } }), 8).tipo, "estudo");
 });
 
 test("os outros dias não são reorganizados para tapar o buraco", () => {
@@ -59,7 +59,7 @@ test("os outros dias não são reorganizados para tapar o buraco", () => {
   // dia 8 encheria de novo justamente o dia que ele quis deixar livre — e
   // mudaria dias que ele não pediu para mudar.
   const cheia = rota();
-  const comVazio = rota({ diasLimpos: [8] });
+  const comVazio = rota({ ajustesDoMentor: { 8: { itens: [] } } });
   for (const n of [1, 2, 3, 4, 5, 6, 7]) {
     assert.deepEqual(
       dia(comVazio, n).itens.map((i) => i.titulo),
@@ -70,22 +70,22 @@ test("os outros dias não são reorganizados para tapar o buraco", () => {
 });
 
 test("vários dias esvaziados de uma vez", () => {
-  const r = rota({ diasLimpos: [5, 8, 11] });
+  const r = rota({ ajustesDoMentor: { 5: { itens: [] }, 8: { itens: [] }, 11: { itens: [] } } });
   for (const n of [5, 8, 11]) assert.deepEqual(dia(r, n).itens, [], `dia ${n} deveria estar vazio`);
   assert.equal(r.dias.length, rota().dias.length);
 });
 
 test("lista vazia ou dia inexistente não altera nada", () => {
   const cheia = JSON.stringify(rota().dias);
-  assert.equal(JSON.stringify(rota({ diasLimpos: [] }).dias), cheia);
-  assert.equal(JSON.stringify(rota({ diasLimpos: [999] }).dias), cheia);
-  assert.equal(JSON.stringify(rota({ diasLimpos: [0, -3] }).dias), cheia);
+  assert.equal(JSON.stringify(rota({ ajustesDoMentor: {} }).dias), cheia);
+  assert.equal(JSON.stringify(rota({ ajustesDoMentor: { 999: { itens: [] } } }).dias), cheia);
+  assert.equal(JSON.stringify(rota({ ajustesDoMentor: { 0: { itens: [] }, "-3": { itens: [] } } }).dias), cheia);
 });
 
 test("é determinístico: esvaziar duas vezes dá a mesma rota", () => {
   assert.equal(
-    JSON.stringify(rota({ diasLimpos: [8] }).dias),
-    JSON.stringify(rota({ diasLimpos: [8] }).dias)
+    JSON.stringify(rota({ ajustesDoMentor: { 8: { itens: [] } } }).dias),
+    JSON.stringify(rota({ ajustesDoMentor: { 8: { itens: [] } } }).dias)
   );
 });
 
@@ -137,7 +137,7 @@ test("posição sem simulado cadastrado também usa o padrão", () => {
 test("esvaziar um dia não desloca os simulados", () => {
   const simulados = [{ id: "s1", titulo: "S1", duracaoMinutos: 240 }, { id: "s2", titulo: "S2", duracaoMinutos: 240 }];
   const antes = diasDeSimulado(rota({ simulados })).map((d) => d.routeDay);
-  const depois = diasDeSimulado(rota({ simulados, diasLimpos: [8] })).map((d) => d.routeDay);
+  const depois = diasDeSimulado(rota({ simulados, ajustesDoMentor: { 8: { itens: [] } } })).map((d) => d.routeDay);
   assert.deepEqual(depois, antes);
 });
 
@@ -146,7 +146,7 @@ test("esvaziar o dia de um simulado não tira o simulado", () => {
   // mas o motor não pode depender disso para se manter íntegro.
   const simulados = [{ id: "s1", titulo: "S1", duracaoMinutos: 240 }, { id: "s2", titulo: "S2", duracaoMinutos: 240 }];
   const diaDoSimulado = diasDeSimulado(rota({ simulados }))[0].routeDay;
-  const r = rota({ simulados, diasLimpos: [diaDoSimulado] });
+  const r = rota({ simulados, ajustesDoMentor: { [diaDoSimulado]: { itens: [] } } });
   assert.equal(dia(r, diaDoSimulado).tipo, "simulado");
   assert.equal(dia(r, diaDoSimulado).itens.length, 1);
 });

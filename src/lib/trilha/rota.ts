@@ -277,6 +277,14 @@ export const TITULO_VESPERA = "VÉSPERA DA PROVA — DESCANSO";
 /** Como aparece um dia que o mentor esvaziou e ainda não repreencheu. */
 export const TITULO_DIA_LIVRE = "Dia livre — a definir";
 
+/** O conteúdo que o mentor definiu para um dia da rota de um aluno. */
+export interface AjusteDoDia {
+  /** Vazio/ausente = mantém o título que o gerador daria para esses itens. */
+  titulo?: string | null;
+  /** A lista COMPLETA do dia. Vazia = dia sem conteúdo. */
+  itens: TrilhaItem[];
+}
+
 /** Minutos de todo o conteúdo do template — base do cálculo da véspera. */
 function minutosDoTemplate(template: TrilhaDia[]): number {
   return template.reduce((soma, d) => soma + (d.itens ?? []).reduce((s, it) => s + minutosDoItem(it), 0), 0);
@@ -320,18 +328,22 @@ export function gerarRota(
      */
     simulados?: (SimuladoDisponivel | null)[];
     /**
-     * Dias que o mentor esvaziou no painel (numeração 1..N da rota).
+     * O que o MENTOR definiu para cada dia, por número da rota (1..N).
      *
-     * O dia CONTINUA existindo e continua ocupando a sua data — só não recebe
-     * conteúdo. Sem isso não haveria como abrir um espaço no cronograma: a
-     * rota é regerada a cada leitura, então apagar o conteúdo direto no banco
-     * seria desfeito no carregamento seguinte.
+     * Quando um dia tem ajuste, a lista dele substitui a que o gerador
+     * montaria — inclusive quando a lista é vazia, que é como se esvazia um
+     * dia. O dia continua existindo, com a mesma data e o mesmo número.
      *
-     * O dia esvaziado também não devolve a sua capacidade para os outros: o
-     * mentor abriu aquele espaço de propósito, e reaproveitá-lo encheria de
-     * novo justamente o dia que ele quis deixar livre.
+     * Sem isso não haveria como editar a rota de um aluno: ela é regerada a
+     * cada leitura da tela, então uma edição gravada em `aluno_rota_dias`
+     * seria desfeita no carregamento seguinte. Aqui a edição é ENTRADA da
+     * geração, não resultado dela.
+     *
+     * Um dia ajustado também não devolve a capacidade dele para os outros: o
+     * mentor decidiu o conteúdo daquele dia, e redistribuir encheria de novo
+     * justamente o dia que ele acabou de definir.
      */
-    diasLimpos?: number[];
+    ajustesDoMentor?: Record<number, AjusteDoDia>;
     nomeVestibular?: string | null;
     /** Pesos, briefing, desempenho e progresso — o que decide a seleção. */
     contexto?: ContextoDoAluno;
@@ -339,9 +351,13 @@ export function gerarRota(
 ): Rota {
   const simulados = opcoes.simulados ?? [];
   const contexto = opcoes.contexto ?? contextoVazio();
-  // Guardado por ÍNDICE (0-based) porque é assim que o resto da função
-  // trabalha; o mentor informa o número do dia, que é 1-based.
-  const limpos = new Set((opcoes.diasLimpos ?? []).map((d) => d - 1).filter((i) => i >= 0));
+  // Reindexado por ÍNDICE (0-based) porque é assim que o resto da função
+  // trabalha; o mentor enxerga o NÚMERO do dia, que é 1-based.
+  const ajustes = new Map<number, AjusteDoDia>();
+  Object.entries(opcoes.ajustesDoMentor ?? {}).forEach(([dia, ajuste]) => {
+    const indice = Number(dia) - 1;
+    if (Number.isInteger(indice) && indice >= 0 && ajuste) ajustes.set(indice, ajuste);
+  });
   const datas = datasDisponiveis(p);
   const assinatura = assinaturaDosParametros(p);
 
@@ -392,7 +408,7 @@ export function gerarRota(
     // O corte é esse: a véspera vira descanso quando perdê-la custa menos de
     // um décimo da capacidade total — ou quando todo o conteúdo cabe mesmo
     // sem ela, caso em que não há nada a perder.
-    const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i) && !limpos.has(i));
+    const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i) && !ajustes.has(i));
     const capacidadeSemVespera = diasDeConteudo.reduce((s, d) => s + capacidadeDaData(d, p), 0);
     const capacidadeDaVespera = capacidadeDaData(datas[ultimo], p);
     const total = capacidadeSemVespera + capacidadeDaVespera;
@@ -404,7 +420,7 @@ export function gerarRota(
   }
 
   // Dias que recebem conteúdo do template, na ordem do calendário.
-  const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i) && !limpos.has(i));
+  const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i) && !ajustes.has(i));
 
   // ---- Capacidade real ---------------------------------------------------
   // A capacidade do dia é o que o aluno declarou que consegue estudar. Daqui
@@ -581,18 +597,20 @@ export function gerarRota(
     const routeDay = i + 1;
     const reservado = reservados.get(i);
 
-    // Dia esvaziado pelo mentor: existe, tem data, tem número — e está
-    // vazio. Continua sendo dia de estudo (não vira descanso) porque é um
-    // espaço reservado para o que o mentor for colocar ali, não uma folga.
-    if (limpos.has(i) && !reservado) {
+    // Dia definido pelo mentor: o conteúdo dele é o que está aqui, ponto.
+    // Continua sendo dia de estudo (não vira descanso) mesmo quando vazio —
+    // é um espaço reservado para o que o mentor for colocar, não uma folga.
+    const ajuste = !reservado ? ajustes.get(i) : undefined;
+    if (ajuste) {
+      const itens = ajuste.itens ?? [];
       return {
         routeDay,
         scheduledDate: data,
         templateDays: [],
         tipo: "estudo",
-        titulo: TITULO_DIA_LIVRE,
-        itens: [],
-        minutos: 0
+        titulo: (ajuste.titulo ?? "").trim() || (itens.length > 0 ? tituloDoDia(itens) : TITULO_DIA_LIVRE),
+        itens,
+        minutos: itens.reduce((s, it) => s + minutosDoItem(it), 0)
       };
     }
 
