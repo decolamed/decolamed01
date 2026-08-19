@@ -1,10 +1,11 @@
-import type { TrilhaDia } from "@/types/database";
+import type { TrilhaDia, TrilhaItem } from "@/types/database";
 import { textoConfig } from "@/lib/site/configuracoes";
 import { disponivelParaAluno } from "@/lib/site/avaliacoes";
 import {
   assinaturaDosParametros,
   gerarRota,
   parametrosDoBriefing,
+  type AjusteDoDia,
   type Rota,
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
@@ -78,6 +79,7 @@ export async function rotaDoAluno(
   const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
+    ajustesDoMentor: await ajustesDoMentor(supabase, alunoId),
     contexto
   });
   if (rota.dias.length === 0) return null;
@@ -88,6 +90,44 @@ export async function rotaDoAluno(
 
   await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
+}
+
+/**
+ * O que o mentor definiu para os dias deste aluno, no painel.
+ *
+ * Entra na geração como ENTRADA, não como edição do resultado: a rota é
+ * regerada a cada leitura da tela, então escrever direto em `aluno_rota_dias`
+ * seria desfeito no carregamento seguinte. Guardar a intenção é o que faz a
+ * edição do mentor sobreviver.
+ *
+ * Falha de leitura devolve vazio — a rota volta a ser a gerada, que não é o
+ * que o mentor pediu, mas é uma rota completa e correta. Melhor do que uma
+ * tela em branco.
+ */
+async function ajustesDoMentor(
+  supabase: ClienteSupabase,
+  alunoId: string
+): Promise<Record<number, AjusteDoDia>> {
+  const { data, error } = await supabase
+    .from("aluno_rota_dias_ajustes")
+    .select("route_day, titulo, itens")
+    .eq("aluno_id", alunoId);
+
+  if (error) {
+    console.error("Rota: falha ao ler os ajustes do mentor:", error.message);
+    return {};
+  }
+
+  const ajustes: Record<number, AjusteDoDia> = {};
+  ((data as { route_day: number; titulo: string | null; itens: unknown }[]) ?? []).forEach((a) => {
+    ajustes[a.route_day] = {
+      titulo: a.titulo,
+      // A coluna tem CHECK de array, mas um jsonb corrompido não pode
+      // derrubar o cronograma inteiro de um aluno.
+      itens: Array.isArray(a.itens) ? (a.itens as TrilhaItem[]) : []
+    };
+  });
+  return ajustes;
 }
 
 /**
@@ -167,7 +207,7 @@ async function contextoDaRota(
 ): Promise<{ simulados: (SimuladoDisponivel | null)[]; nomeVestibular: string | null }> {
   const [{ data: simulados, error }, { data: vinculos }, { data: marca }, { data: configs }, { data: fixadosData }, { data: tentativas }] =
     await Promise.all([
-      supabase.from("simulados").select("id, titulo, ativo, redacao"),
+      supabase.from("simulados").select("id, titulo, ativo, redacao, tempo_minutos"),
       supabase.from("simulado_questoes").select("simulado_id"),
       supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle(),
       supabase.from("configuracoes").select("chave, valor").in("chave", CHAVES_DOS_SIMULADOS),
@@ -184,10 +224,13 @@ async function contextoDaRota(
   // questões justamente no dia marcado para fazer a prova.
   const comQuestoes = new Set(((vinculos as { simulado_id: string }[]) ?? []).map((v) => v.simulado_id));
   const catalogo = new Map<string, SimuladoDoCatalogo>();
-  (((simulados as { id: string; titulo: string; ativo: boolean; redacao?: unknown }[]) ?? [])).forEach((s) => {
+  (((simulados as { id: string; titulo: string; ativo: boolean; redacao?: unknown; tempo_minutos?: number | null }[]) ?? [])).forEach((s) => {
     catalogo.set(s.id, {
       id: s.id,
       titulo: s.titulo,
+      // A duração de verdade da prova. Sem ela o dia de simulado ficava
+      // sempre em 90 minutos, fixos no código.
+      duracaoMinutos: s.tempo_minutos ?? null,
       utilizavel: disponivelParaAluno({
         ativo: Boolean(s.ativo),
         totalQuestoes: comQuestoes.has(s.id) ? 1 : 0,
@@ -342,6 +385,7 @@ export async function regerarRotaDoAluno(
   const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
+    ajustesDoMentor: await ajustesDoMentor(supabase, alunoId),
     contexto
   });
   if (rota.dias.length === 0) {

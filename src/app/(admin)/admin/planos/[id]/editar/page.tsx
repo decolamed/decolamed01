@@ -7,6 +7,7 @@ import { Field } from "@/app/(admin)/admin/planos/page";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
+import { ehSlugDuplicado, mensagemDeSlugDuplicado } from "@/lib/site/erro-de-plano";
 import type { Plano } from "@/types/database";
 
 async function salvarPlano(id: string, formData: FormData) {
@@ -45,9 +46,20 @@ async function salvarPlano(id: string, formData: FormData) {
   revalidatePath("/planos");
 
   if (error) {
-    const mensagem = error.message.includes("duplicate")
-      ? "Já existe um plano com esse slug. Escolha outro."
-      : "Não foi possível salvar as alterações.";
+    console.error("Falha ao salvar plano:", id, error.code, error.message);
+
+    let mensagem = "Não foi possível salvar as alterações.";
+    if (ehSlugDuplicado(error)) {
+      // `neq("id", id)` porque o próprio plano nunca conflita consigo mesmo:
+      // sem isso a mensagem apontaria para o plano que está sendo editado.
+      const { data: dono } = await supabase
+        .from("planos")
+        .select("nome")
+        .eq("slug", slug)
+        .neq("id", id)
+        .maybeSingle();
+      mensagem = mensagemDeSlugDuplicado(slug, dono?.nome);
+    }
     redirect(`/admin/planos/${id}/editar?erro=${encodeURIComponent(mensagem)}`);
   }
 

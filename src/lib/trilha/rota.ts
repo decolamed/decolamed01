@@ -188,12 +188,38 @@ export function posicionarSimulados(datas: string[], dataProva: string): { indic
   return { indiceSim1, indiceSim2 };
 }
 
+/** Duração de um dia de simulado quando o simulado ainda não tem uma. */
+export const MINUTOS_PADRAO_DO_SIMULADO = 90;
+
 /** Simulado real da plataforma, para o dia de simulado abrir de fato. */
 export interface SimuladoDisponivel {
   id: string;
   titulo: string;
+  /**
+   * `simulados.tempo_minutos` — a duração de verdade da prova.
+   *
+   * Antes o dia de simulado era sempre 90 minutos, fixo no código. Um
+   * simulado de 4 horas aparecia no cronograma como 1h30: o aluno se
+   * organizava para uma tarde e a prova tomava o dia.
+   */
+  duracaoMinutos?: number | null;
 }
 
+/**
+ * O dia de simulado NÃO respeita o limite diário de estudo.
+ *
+ * O limite que o aluno declarou no briefing vale para o estudo do dia a dia,
+ * que o algoritmo distribui e pode espalhar por mais dias. Simulado não se
+ * distribui: é uma prova, tem duração própria e se faz de uma sentada. Um
+ * aluno com 2h por dia e um simulado de 4h precisa fazer as 4h — cortar pela
+ * metade não daria meio simulado, daria um simulado interrompido.
+ *
+ * Na prática isso já vale por construção: os dias de simulado são reservados
+ * ANTES do cálculo de capacidade e ficam fora de `indicesDeEstudo`, então
+ * nenhum teto é aplicado a eles. Esta função existe para que a duração
+ * mostrada seja a real, e para o motivo ficar escrito onde alguém possa lê-lo
+ * antes de "consertar" o dia que passa do limite.
+ */
 function itemSimulado(ordem: number, simulado: SimuladoDisponivel | null): TrilhaItem {
   return {
     tipo: "simulado",
@@ -204,8 +230,26 @@ function itemSimulado(ordem: number, simulado: SimuladoDisponivel | null): Trilh
     ref_id: simulado ? simulado.id : null,
     url: null,
     materia: null,
-    duracao_minutos: 90
+    duracao_minutos:
+      simulado && Number.isFinite(simulado.duracaoMinutos) && (simulado.duracaoMinutos as number) > 0
+        ? (simulado.duracaoMinutos as number)
+        : MINUTOS_PADRAO_DO_SIMULADO
   } as unknown as TrilhaItem;
+}
+
+/**
+ * Minutos de um dia de simulado.
+ *
+ * `minutosDoItem` responde por TIPO (um mapa fixo: simulado = 90) e ignora o
+ * `duracao_minutos` do item. Trocar aquele mapa mudaria o cálculo de todos os
+ * itens de todos os cronogramas, e o pedido aqui é só sobre o simulado — por
+ * isso a leitura da duração real fica contida neste ponto.
+ */
+function minutosDoSimulado(item: TrilhaItem): number {
+  const declarado = (item as unknown as { duracao_minutos?: number }).duracao_minutos;
+  return Number.isFinite(declarado) && (declarado as number) > 0
+    ? (declarado as number)
+    : MINUTOS_PADRAO_DO_SIMULADO;
 }
 
 function itemRevisao(): TrilhaItem {
@@ -229,6 +273,17 @@ export function tituloDaProva(nomeVestibular?: string | null): string {
 }
 
 export const TITULO_VESPERA = "VÉSPERA DA PROVA — DESCANSO";
+
+/** Como aparece um dia que o mentor esvaziou e ainda não repreencheu. */
+export const TITULO_DIA_LIVRE = "Dia livre — a definir";
+
+/** O conteúdo que o mentor definiu para um dia da rota de um aluno. */
+export interface AjusteDoDia {
+  /** Vazio/ausente = mantém o título que o gerador daria para esses itens. */
+  titulo?: string | null;
+  /** A lista COMPLETA do dia. Vazia = dia sem conteúdo. */
+  itens: TrilhaItem[];
+}
 
 /** Minutos de todo o conteúdo do template — base do cálculo da véspera. */
 function minutosDoTemplate(template: TrilhaDia[]): number {
@@ -272,6 +327,23 @@ export function gerarRota(
      * sem `ref_id`, levando o aluno à lista. Ver simulados-da-rota.ts.
      */
     simulados?: (SimuladoDisponivel | null)[];
+    /**
+     * O que o MENTOR definiu para cada dia, por número da rota (1..N).
+     *
+     * Quando um dia tem ajuste, a lista dele substitui a que o gerador
+     * montaria — inclusive quando a lista é vazia, que é como se esvazia um
+     * dia. O dia continua existindo, com a mesma data e o mesmo número.
+     *
+     * Sem isso não haveria como editar a rota de um aluno: ela é regerada a
+     * cada leitura da tela, então uma edição gravada em `aluno_rota_dias`
+     * seria desfeita no carregamento seguinte. Aqui a edição é ENTRADA da
+     * geração, não resultado dela.
+     *
+     * Um dia ajustado também não devolve a capacidade dele para os outros: o
+     * mentor decidiu o conteúdo daquele dia, e redistribuir encheria de novo
+     * justamente o dia que ele acabou de definir.
+     */
+    ajustesDoMentor?: Record<number, AjusteDoDia>;
     nomeVestibular?: string | null;
     /** Pesos, briefing, desempenho e progresso — o que decide a seleção. */
     contexto?: ContextoDoAluno;
@@ -279,6 +351,13 @@ export function gerarRota(
 ): Rota {
   const simulados = opcoes.simulados ?? [];
   const contexto = opcoes.contexto ?? contextoVazio();
+  // Reindexado por ÍNDICE (0-based) porque é assim que o resto da função
+  // trabalha; o mentor enxerga o NÚMERO do dia, que é 1-based.
+  const ajustes = new Map<number, AjusteDoDia>();
+  Object.entries(opcoes.ajustesDoMentor ?? {}).forEach(([dia, ajuste]) => {
+    const indice = Number(dia) - 1;
+    if (Number.isInteger(indice) && indice >= 0 && ajuste) ajustes.set(indice, ajuste);
+  });
   const datas = datasDisponiveis(p);
   const assinatura = assinaturaDosParametros(p);
 
@@ -329,7 +408,7 @@ export function gerarRota(
     // O corte é esse: a véspera vira descanso quando perdê-la custa menos de
     // um décimo da capacidade total — ou quando todo o conteúdo cabe mesmo
     // sem ela, caso em que não há nada a perder.
-    const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i));
+    const diasDeConteudo = datas.filter((_, i) => i !== ultimo && !reservados.has(i) && !ajustes.has(i));
     const capacidadeSemVespera = diasDeConteudo.reduce((s, d) => s + capacidadeDaData(d, p), 0);
     const capacidadeDaVespera = capacidadeDaData(datas[ultimo], p);
     const total = capacidadeSemVespera + capacidadeDaVespera;
@@ -341,7 +420,7 @@ export function gerarRota(
   }
 
   // Dias que recebem conteúdo do template, na ordem do calendário.
-  const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i));
+  const indicesDeEstudo = datas.map((_, i) => i).filter((i) => !reservados.has(i) && !ajustes.has(i));
 
   // ---- Capacidade real ---------------------------------------------------
   // A capacidade do dia é o que o aluno declarou que consegue estudar. Daqui
@@ -518,6 +597,23 @@ export function gerarRota(
     const routeDay = i + 1;
     const reservado = reservados.get(i);
 
+    // Dia definido pelo mentor: o conteúdo dele é o que está aqui, ponto.
+    // Continua sendo dia de estudo (não vira descanso) mesmo quando vazio —
+    // é um espaço reservado para o que o mentor for colocar, não uma folga.
+    const ajuste = !reservado ? ajustes.get(i) : undefined;
+    if (ajuste) {
+      const itens = ajuste.itens ?? [];
+      return {
+        routeDay,
+        scheduledDate: data,
+        templateDays: [],
+        tipo: "estudo",
+        titulo: (ajuste.titulo ?? "").trim() || (itens.length > 0 ? tituloDoDia(itens) : TITULO_DIA_LIVRE),
+        itens,
+        minutos: itens.reduce((s, it) => s + minutosDoItem(it), 0)
+      };
+    }
+
     if (reservado === "simulado") {
       const ordem = indiceSim1 >= 0 && i === indiceSim1 ? 1 : 2;
       // Qual simulado vai em cada posição já vem decidido de fora (ver
@@ -536,7 +632,9 @@ export function gerarRota(
         tipo: "simulado",
         titulo: `Simulado ${ordem}`,
         itens: [item],
-        minutos: minutosDoItem(item)
+        // A duração real da prova, mesmo que passe do limite diário — ver
+        // itemSimulado() para o porquê.
+        minutos: minutosDoSimulado(item)
       };
     }
 

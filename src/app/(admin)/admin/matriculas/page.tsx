@@ -89,8 +89,8 @@ export default async function AdminMatriculasPage({
           acoes={(m) => (
             <form action={alterarStatus} className="flex flex-wrap gap-3">
               <input type="hidden" name="id" value={m.id} />
-              <SubmitButton name="status" value="ativa" pendingText="..." className="text-green-700 hover:underline">Liberar</SubmitButton>
-              <SubmitButton name="status" value="bloqueada" pendingText="..." className="text-red-600 hover:underline">Bloquear</SubmitButton>
+              <SubmitButton name="status" value="ativa" pendingText="..." className="text-green hover:underline">Liberar</SubmitButton>
+              <SubmitButton name="status" value="bloqueada" pendingText="..." className="text-red hover:underline">Bloquear</SubmitButton>
               <SubmitButton name="status" value="cancelada" pendingText="..." className="text-navy-dark/60 hover:underline">Cancelar</SubmitButton>
             </form>
           )}

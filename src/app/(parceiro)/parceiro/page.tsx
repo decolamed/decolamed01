@@ -119,7 +119,7 @@ export default async function ParceiroDashboardPage() {
                   {formatarData(v.data_pagamento)}
                 </td>
                 <td className="p-3">{formatarCentavos(v.valor_centavos)}</td>
-                <td className="p-3 font-semibold text-green-700">{formatarCentavos(v.comissao_centavos)}</td>
+                <td className="p-3 font-semibold text-green">{formatarCentavos(v.comissao_centavos)}</td>
                 <td className="p-3">{STATUS_LABEL[v.status] ?? v.status}</td>
               </tr>
             ))}

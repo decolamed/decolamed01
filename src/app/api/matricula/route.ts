@@ -2,7 +2,7 @@ import { hojeISO, somarDias } from "@/lib/site/data";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/server";
-import { findOrCreateCustomer, createCharge, getPixQrCode } from "@/lib/asaas/client";
+import { findOrCreateCustomer, createCharge, getPixQrCode, AsaasValidacaoError } from "@/lib/asaas/client";
 import { validarCupom } from "@/lib/cupons/validar";
 
 const bodySchema = z.object({
@@ -125,7 +125,21 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response, { status: 201 });
   } catch (err) {
-    console.error("Erro ao integrar com o Asaas:", err);
+    // O id do pré-cadastro amarra o log à linha da tabela: a retenção de log
+    // da Vercel é curta, e sem essa âncora um erro de ontem vira um registro
+    // órfão em `pre_cadastros` sem nenhuma pista do motivo.
+    console.error(`Erro ao integrar com o Asaas (pre_cadastro ${preCadastro.id}):`, err);
+
+    // O Asaas recusou os DADOS e disse o porquê ("valor mínimo", "CPF
+    // inválido", "CEP não encontrado"). Devolver a explicação dele é o certo:
+    // são erros que a pessoa consegue corrigir, e o 400 avisa o formulário de
+    // que não adianta repetir a mesma requisição.
+    if (err instanceof AsaasValidacaoError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    // Qualquer outra falha (chave errada, Asaas fora do ar, rede) é problema
+    // nosso, não de quem está comprando — mensagem genérica, detalhe no log.
     return NextResponse.json(
       { error: "Não foi possível gerar a cobrança no momento. Tente novamente em instantes." },
       { status: 502 }

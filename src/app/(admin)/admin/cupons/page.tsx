@@ -192,7 +192,7 @@ export default async function AdminCuponsPage({
               </form>
               <form action={excluirCupom}>
                 <input type="hidden" name="id" value={cupom.id} />
-                <button className="text-red-600 hover:underline">Excluir</button>
+                <button className="text-red hover:underline">Excluir</button>
               </form>
             </>
           )}

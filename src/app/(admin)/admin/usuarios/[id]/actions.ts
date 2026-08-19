@@ -8,6 +8,7 @@ import { registrarHistoricoAdmin } from "@/lib/historico/registrar";
 import { z } from "zod";
 import { salvarBriefingDoAluno } from "@/lib/briefing/salvar-briefing";
 import type { AlunoMissaoTipo } from "@/types/database";
+import { lerItensDoFormulario } from "@/lib/trilha/itens-do-mentor";
 
 // Cronograma individual de um aluno específico (aluno_missoes) — não mexe
 // em trilha_dias (o cronograma geral, compartilhado por todo mundo sem
@@ -103,6 +104,96 @@ export async function excluirMissaoIndividual(alunoId: string, missaoId: string)
     redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível remover a missão.")}`);
   }
   redirect(`/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent("Missão removida.")}`);
+}
+
+// ============================================================================
+// O MENTOR EDITA UM DIA DA ROTA DESTE ALUNO
+//
+// Renomear aula, trocar link, acrescentar material, excluir item, esvaziar o
+// dia — tudo é a mesma operação: o mentor define A LISTA do dia, e ela
+// substitui a que o gerador montaria. Esvaziar é o caso de lista vazia.
+//
+// Por que não gravar direto em `aluno_rota_dias`: a rota é REGERADA a cada
+// leitura da tela do aluno (rotaDoAluno → gerarRota → sincronizarRota). Uma
+// escrita ali voltaria atrás sozinha no carregamento seguinte.
+// `aluno_rota_dias` é RESULTADO; `aluno_rota_dias_ajustes` é INTENÇÃO, e é a
+// intenção que sobrevive à regeração — mesmo padrão de `aluno_simulados_rota`.
+//
+// É sempre por aluno: o cronograma compartilhado (`trilha_dias`, em
+// Conteúdo → Cronograma) não é tocado por nada aqui.
+// ============================================================================
+
+export async function salvarDiaDaRota(alunoId: string, routeDay: number, formData: FormData) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const erro = (msg: string) => redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent(msg)}`);
+  if (!Number.isInteger(routeDay) || routeDay < 1) erro("Dia inválido.");
+
+  const bruto = String(formData.get("itens") ?? "[]");
+  const itens = lerItensDoFormulario(bruto);
+  const titulo = String(formData.get("titulo") ?? "").trim() || null;
+
+  // Só um caso merece recusa: o mentor mandou conteúdo e NADA sobreviveu à
+  // validação. Salvar em silêncio deixaria o dia vazio sem ele saber por quê.
+  // Lista vazia de propósito continua valendo — é como se esvazia um dia.
+  if (itens.length === 0 && bruto.trim() !== "[]") {
+    erro("Nenhum item válido: todo item precisa de um título, e o link precisa começar com http:// ou https://.");
+  }
+
+  const { error } = await supabase.from("aluno_rota_dias_ajustes").upsert(
+    { aluno_id: alunoId, route_day: routeDay, titulo, itens, atualizado_em: new Date().toISOString() },
+    { onConflict: "aluno_id,route_day" }
+  );
+
+  if (error) {
+    console.error("Falha ao salvar o dia da rota:", alunoId, routeDay, error.code, error.message);
+    erro("Não foi possível salvar o dia.");
+  }
+
+  // A rota persistida é reescrita na próxima leitura da tela do aluno, a
+  // partir deste ajuste. Aqui só limpamos o cache das telas.
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  redirect(
+    `/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent(
+      itens.length === 0
+        ? `Dia ${routeDay} esvaziado. Ele continua no cronograma, com a mesma data.`
+        : `Dia ${routeDay} salvo com ${itens.length} ${itens.length === 1 ? "item" : "itens"}.`
+    )}`
+  );
+}
+
+/**
+ * Devolve um dia ao que o gerador decide.
+ *
+ * Não é "desfazer a última edição": é remover o ajuste inteiro, e o dia volta
+ * a ser calculado pelo algoritmo a partir do briefing e do desempenho.
+ */
+export async function restaurarDiaDaRota(alunoId: string, routeDay: number) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { error } = await supabase
+    .from("aluno_rota_dias_ajustes")
+    .delete()
+    .eq("aluno_id", alunoId)
+    .eq("route_day", routeDay);
+
+  if (error) {
+    console.error("Falha ao restaurar dia da rota:", alunoId, routeDay, error.message);
+    redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível restaurar o dia.")}`);
+  }
+
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  redirect(
+    `/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent(
+      `Dia ${routeDay} voltou a ser montado pelo cronograma automático.`
+    )}`
+  );
 }
 
 // ============================================================================

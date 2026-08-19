@@ -58,6 +58,8 @@ export interface SimuladoDoCatalogo {
   titulo: string;
   /** Ativo E com questões (ou redação) — a mesma régua da aba Atividades. */
   utilizavel: boolean;
+  /** `simulados.tempo_minutos`: a duração real da prova, para o dia da rota. */
+  duracaoMinutos?: number | null;
 }
 
 export interface EntradaDaDecisao {
@@ -94,7 +96,7 @@ export interface DecisaoDosSimulados {
 }
 
 function comoDisponivel(s: SimuladoDoCatalogo): SimuladoDisponivel {
-  return { id: s.id, titulo: s.titulo };
+  return { id: s.id, titulo: s.titulo, duracaoMinutos: s.duracaoMinutos ?? null };
 }
 
 /**

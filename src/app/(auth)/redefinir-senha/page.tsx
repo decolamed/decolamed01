@@ -96,7 +96,7 @@ export default function RedefinirSenhaPage() {
           <input id="confirmar" name="confirmar" type="password" required minLength={8} className="mt-1 w-full rounded-lg border p-3" />
         </div>
 
-        {erro && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{erro}</p>}
+        {erro && <p className="rounded-lg bg-red-soft p-3 text-sm text-red">{erro}</p>}
 
         <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Salvando..." : "Salvar e entrar"}

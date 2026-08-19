@@ -55,7 +55,7 @@ export function RecuperarSenhaForm() {
             <label className="text-sm font-semibold" htmlFor="email">E-mail cadastrado</label>
             <input id="email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
           </div>
-          {erro && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{erro}</p>}
+          {erro && <p className="rounded-lg bg-red-soft p-3 text-sm text-red">{erro}</p>}
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Enviando..." : "Enviar link de recuperação"}
           </Button>
