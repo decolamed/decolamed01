@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { mensagemAoSalvarSenha } from "@/lib/auth/erro-de-senha";
 
 // O Supabase já autentica o usuário automaticamente ao clicar no link do
 // e-mail (convite ou recuperação) antes de chegar nesta página — a troca do
@@ -46,8 +47,10 @@ export default function RedefinirSenhaPage() {
     setLoading(false);
 
     if (error) {
+      // O detalhe técnico continua no console; a tela passa a dizer o motivo
+      // em português. Ver lib/auth/erro-de-senha.ts para por que isso importa.
       console.error("Falha ao salvar nova senha:", error);
-      setErro("Não foi possível salvar a nova senha. Tente novamente ou peça um novo link de redefinição.");
+      setErro(mensagemAoSalvarSenha(error));
       return;
     }
 

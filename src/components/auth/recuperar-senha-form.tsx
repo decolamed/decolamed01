@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { mensagemAoPedirLink } from "@/lib/auth/erro-de-senha";
 
 export function RecuperarSenhaForm() {
   const searchParams = useSearchParams();
@@ -31,7 +32,7 @@ export function RecuperarSenhaForm() {
       // limit exceeded") ajuda a diagnosticar problema de configuração,
       // mas é informação interna — vai só pro console, nunca pra tela.
       console.error("Falha ao enviar e-mail de recuperação:", error);
-      setErro("Não foi possível enviar o e-mail de recuperação. Tente novamente em instantes.");
+      setErro(mensagemAoPedirLink(error));
       return;
     }
     setEnviado(true);

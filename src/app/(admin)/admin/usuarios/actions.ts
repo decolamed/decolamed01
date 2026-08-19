@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { registrarHistoricoAdmin } from "@/lib/historico/registrar";
+import { destinoDoAdmin } from "@/lib/auth/destino-do-admin";
 
 const PATH = "/admin/usuarios";
 
@@ -21,12 +22,12 @@ function erro(mensagem: string): never {
  * isso tirava o administrador da tela no meio do processo. O formulário diz
  * para onde voltar; sem dizer nada, continua indo para a lista.
  *
- * O valor é restrito a caminhos internos de /admin/usuarios: um destino vindo
- * do formulário não pode virar redirecionamento para fora da plataforma.
+ * A restrição a caminhos internos vive em `lib/auth/destino-do-admin.ts`, que
+ * é onde ela pode ser testada. Aqui fica só a leitura do campo, que é o que
+ * esta action conhece.
  */
 function destinoDeRetorno(formData: FormData): string {
-  const pedido = String(formData.get("voltarPara") ?? "");
-  return /^\/admin\/usuarios(\/[0-9a-f-]{36})?$/i.test(pedido) ? pedido : PATH;
+  return destinoDoAdmin(formData.get("voltarPara") as string | null);
 }
 
 function sucesso(mensagem: string): never {
