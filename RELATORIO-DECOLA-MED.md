@@ -35,7 +35,7 @@ outro lugar — é por isso que algumas correções anteriores não pegavam.
 |---|---|
 | `npx tsc --noEmit` | **limpo**, zero erros |
 | `npx next build` | **limpo**, zero erros e zero avisos — 63 rotas, 55 páginas estáticas |
-| `npm test` | **397 testes, 397 passando, 0 falhando** (28 arquivos) |
+| `npm test` | **408 testes, 408 passando, 0 falhando** (29 arquivos) |
 | Chaves de API reais em arquivo versionado | **nenhuma** (varredura `AIza…`, `eyJhbGciOi…`, `sk-…`, `$aact_…`) |
 | Arquivo `.env` no repositório | **nenhum**; só `.env.example` em branco |
 
@@ -968,7 +968,7 @@ de teste. **Isto substitui o item 1 da Parte X.**
 
 O projeto ganhou `npm test` (`scripts/testes.sh`), rodando os arquivos
 `*.test.mjs` com o test runner do próprio Node. Esta rodada criou a suíte com
-99 testes em 6 arquivos; as rodadas seguintes a levaram a **397 em 28
+99 testes em 6 arquivos; as rodadas seguintes a levaram a **408 em 29
 arquivos**, que é o estado atual:
 
 | Arquivo | Testes | Nasceu na |
@@ -1000,7 +1000,7 @@ arquivos**, que é o estado atual:
 | `lib/site/busca-estudos.test.mjs` | 22 | Parte IV |
 | `lib/site/destino-admin.test.mjs` | 5 | Parte IV |
 | `lib/trilha/questoes-extras.test.mjs` | 22 | Parte V |
-| **Total** | **397, todos passando** | |
+| **Total** | **408, todos passando** | |
 
 A lógica testável foi deliberadamente mantida pura e separada da persistência
 — é o que permite testar rota, sessão, agenda, prioridade e desempenho sem
@@ -1366,10 +1366,6 @@ nenhum `min-w-[...]` capaz de forçar rolagem horizontal no celular.
 | 7 | Os pesos internos de remarcação (`PESO_TIPO`, `IMPORTANCIA_MINIMA`, `MAX_POR_RODADA` em `copiloto/pendencias.ts`) e `MIN_FLASHCARDS_ACEITAVEL` continuam fixos no código. São heurísticas internas de ordenação, não configurações que o admin pediu para controlar; expor as 13 na tela poluiria o painel. Ficam registradas caso se queira torná-las configuráveis. | Baixa |
 | 8 | Seis tabelas de backup das importações (`questoes_2026_08_02`, `flashcards_2026_08_02`, `trilha_dias_antes`, `trilha_dias_antes_titulos`, `materias_antes`, `conteudos_antes`), mais `questoes_antes_conversao_latex`, continuam no banco. Estão com RLS e invisíveis para anônimo e para aluno. Foram mantidas de propósito — são o backup do conteúdo original — e só devem ser removidas por decisão explícita. | Informativa |
 | 9 | `TableCard` (em `components/admin/card.tsx`, com `min-w-[720px]`) ficou sem uso após a migração para `TabelaResponsiva`. Não quebra nada; é candidato a remoção numa limpeza futura. | Informativa |
-| 10 | `destino-admin.test.mjs` mantém uma **cópia** da regra `destinoDeRetorno` em vez de importá-la, porque ela vive dentro de uma server action. É o mesmo padrão que a Parte VIII, item 6 trata como divergência esperando para acontecer: se a regra na action mudar, o teste continua passando sozinho e a proteção contra redirecionamento aberto deixa de ser verificada. Extrair para um módulo próprio resolveria. | Baixa |
-| 11 | **E-mails de autenticação ainda no visual padrão do Supabase.** Os templates da Decola MED estão prontos em `supabase/templates/` (recuperação de senha e convite do aluno), mas **precisam ser colados no painel** — não há API para aplicá-los. Antes de colar, a Site URL precisa apontar para produção, senão a logo não carrega e os links de ação apontam para o lugar errado. | Média |
-| 12 | **Estado do SMTP não confirmado.** Se o projeto ainda usa o serviço embutido do Supabase, ele *recusa entregar para endereços que não sejam da equipe do projeto* — ou seja, aluno que pagou pode não receber o convite, que é disparado pelo webhook do Asaas. Medido nos logs de 15/08: três `/recover` com 200 e dois com **429 `over_email_send_rate_limit`**. Sair do SMTP embutido exige domínio próprio: a produção roda em `decolamed01.vercel.app`, e não há como publicar SPF/DKIM num domínio da Vercel. | **Alta** |
-| 13 | **A tela de redefinição não distingue os erros do Supabase.** Medido nos logs: duas tentativas seguidas com `422 same_password` — o aluno repetiu a mesma senha porque a mensagem genérica não diz qual foi o problema, e ainda sugere pedir outro link. O mesmo vale para `429 over_email_send_rate_limit`, que faz o aluno clicar de novo em vez de esperar. Duas mensagens específicas em `redefinir-senha/page.tsx` resolvem, sem tocar no fluxo. **Conferido na Parte II: continua aberta** — a correção daquela rodada foi no que vem *antes* (o link ser aceito), não na mensagem depois que a senha é recusada. | Média |
 
 **Resolvidas desde os relatórios anteriores:**
 
@@ -1402,6 +1398,21 @@ nenhum `min-w-[...]` capaz de forçar rolagem horizontal no celular.
 * ~~Janelas curtas atravessadas quase sem questões, deixando o Copiloto sem
   sinal~~ — a camada de questões extras acompanha o aluno sem competir por
   capacidade nem virar dívida (Parte V).
+* ~~SMTP não confirmado (pendência 12)~~ — **confirmado: é o Resend**, provado
+  pelos próprios logs de autenticação, que trazem a resposta do transporte
+  (`gomail: ... 550 "The decolamed.online domain is not verified"`) — mensagem
+  que só existe com SMTP personalizado. O domínio é `decolamed.online`.
+  Registro operacional: **5 envios falharam** com esse 550 até 01:26 de
+  19/08, antes de o domínio ficar verificado. Quem pediu recuperação nessa
+  janela não recebeu nada — e nada reenvia sozinho.
+* ~~E-mails no visual padrão do Supabase (pendência 11)~~ — os templates da
+  Decola MED estão aplicados e chegando aos alunos.
+* ~~A tela de redefinição não distinguia os erros (pendência 13)~~ —
+  `lib/auth/erro-de-senha.ts` traduz `same_password`, o limite de envio (com
+  os segundos, quando o Supabase os informa), senha fraca e sessão perdida.
+* ~~O teste de `destinoDeRetorno` guardava uma cópia da regra (pendência
+  10)~~ — a regra virou `lib/auth/destino-do-admin.ts` e o teste passou a
+  importá-la.
 * ~~Pix pago e matrícula pendente para sempre~~ — a confirmação deixou de
   depender só do webhook; a tela do checkout consulta o status real no
   Asaas (Parte I, item 1).
