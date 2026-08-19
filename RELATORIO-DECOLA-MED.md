@@ -100,6 +100,14 @@ conceito só, em vez de dois.
 cronograma compartilhado continua sendo `trilha_dias`, intocado.
 (`itens-do-mentor.ts` e `ajustes-do-mentor`, 29 testes somados.)
 
+**A tela precisou dizer isso em voz alta.** O painel do aluno convidava a
+"ajustar o conteúdo dos dias" em *Conteúdo → Cronograma* — que é o **template
+de 40 dias, compartilhado por todos**. Quem seguisse o convite para acertar o
+cronograma de um aluno mudaria o de todo mundo, e nada na tela avisava. O
+texto passou a apontar a edição no próprio lugar e a explicar a diferença
+entre as duas coisas; cada dia da lista mostra "editar" ou "ver", para o
+clique não ser adivinhação.
+
 ## 3. Erros de gravação que a tela engolia
 
 `planos` tem `UNIQUE(slug)` porque o slug é o endereço público do plano
