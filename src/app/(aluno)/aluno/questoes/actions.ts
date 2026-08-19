@@ -21,12 +21,26 @@ export async function registrarResposta(questaoId: string, alternativaEscolhida:
 
   const correta = questao.resposta_correta === alternativaEscolhida;
 
-  await supabase.from("respostas_aluno").insert({
+  // O erro deste insert era descartado. Quando ele falha, o aluno vê
+  // "acertou/errou" e a explicação normalmente, mas a resposta não existe no
+  // banco: XP, precisão, Raio X, ranking e o histórico do Copiloto passam a
+  // contar uma questão a menos, sem nenhum sinal na tela nem no log. É a
+  // falha silenciosa mais cara da plataforma, porque corrompe justamente os
+  // números em que aluno e mentor confiam para decidir o que estudar.
+  const { error: erroDoRegistro } = await supabase.from("respostas_aluno").insert({
     aluno_id: profile.id,
     questao_id: questaoId,
     alternativa_escolhida: alternativaEscolhida,
     correta
   });
+
+  if (erroDoRegistro) {
+    console.error(
+      `Resposta não registrada (aluno ${profile.id}, questão ${questaoId}):`,
+      erroDoRegistro.code,
+      erroDoRegistro.message
+    );
+  }
 
   // Passa os dados da questão para o Copiloto — o Gatilho 0 usa isso para
   // criar imediatamente uma recomendação de revisão quando há erro, sem
@@ -44,6 +58,10 @@ export async function registrarResposta(questaoId: string, alternativaEscolhida:
 
   return {
     ok: true as const,
+    // A correção da questão vale mesmo se a gravação falhou — o aluno
+    // respondeu e merece ver o resultado. Mas quem chama passa a SABER se a
+    // resposta entrou na contagem, em vez de supor que sim.
+    registrada: !erroDoRegistro,
     correta,
     respostaCorreta: questao.resposta_correta as string,
     explicacao: questao.explicacao as string | null,

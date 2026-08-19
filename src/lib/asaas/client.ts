@@ -260,6 +260,12 @@ export interface AsaasPagamento {
   externalReference: string | null;
   paymentDate?: string | null;
   confirmedDate?: string | null;
+  // Campos usados quando devolvemos ao cliente uma cobrança que já existia,
+  // em vez de emitir outra igual (ver lib/matricula/cobranca-reaproveitavel).
+  dueDate?: string | null;
+  invoiceUrl?: string | null;
+  bankSlipUrl?: string | null;
+  installmentCount?: number | null;
 }
 
 /**
