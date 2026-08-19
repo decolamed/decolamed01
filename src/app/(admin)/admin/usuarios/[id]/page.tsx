@@ -15,7 +15,14 @@ import { hojeISO } from "@/lib/site/data";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { getMateriasDoConteudo } from "@/lib/site/materias";
 import { SENTIMENTOS_VALIDOS } from "@/lib/site/sentimentos";
-import { adicionarMissaoIndividual, excluirMissaoIndividual, atualizarPerfilDoUsuario, gerarCronogramaDoAluno } from "./actions";
+import {
+  adicionarMissaoIndividual,
+  excluirMissaoIndividual,
+  atualizarPerfilDoUsuario,
+  gerarCronogramaDoAluno,
+  esvaziarDiaDaRota,
+  restaurarDiaDaRota
+} from "./actions";
 import { reenviarConvite, reenviarSenha } from "../actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
 
@@ -143,14 +150,19 @@ export default async function AdminDetalhesUsuarioPage({
     alunoTemCopiloto(params.id),
     getMateriasDoConteudo()
   ]);
-  const [{ data: briefingDoAluno }, { data: rotaDoAlunoDias }] = await Promise.all([
+  const [{ data: briefingDoAluno }, { data: rotaDoAlunoDias }, { data: diasLimposData }] = await Promise.all([
     supabase.from("aluno_briefing").select("*").eq("aluno_id", params.id).maybeSingle(),
     supabase
       .from("aluno_rota_dias")
       .select("route_day, scheduled_date, tipo, titulo, itens, minutos")
       .eq("aluno_id", params.id)
-      .order("route_day")
+      .order("route_day"),
+    // Quais dias o mentor esvaziou. A rota persistida já reflete isso (ela é
+    // regerada a cada leitura da tela do aluno), mas a marca é o que permite
+    // oferecer "Restaurar" no dia certo.
+    supabase.from("aluno_rota_dias_limpos").select("route_day").eq("aluno_id", params.id)
   ]);
+  const diasLimpos = new Set(((diasLimposData as { route_day: number }[]) ?? []).map((d) => d.route_day));
   const briefing = briefingDoAluno as Record<string, any> | null;
   const rotaGerada = (rotaDoAlunoDias as { route_day: number; scheduled_date: string; tipo: string; titulo: string; itens: { titulo: string }[]; minutos: number }[]) ?? [];
   const sentimentosSalvos = (briefing?.sentimentos ?? {}) as Record<string, string>;
@@ -554,18 +566,57 @@ export default async function AdminDetalhesUsuarioPage({
                   </Link>{" "}
                   ou acrescente missões individuais na seção abaixo.
                 </p>
-                <ul className="mt-3 max-h-80 divide-y divide-navy-dark/10 overflow-y-auto text-sm">
-                  {rotaGerada.map((d) => (
-                    <li key={d.route_day} className="flex flex-wrap items-baseline gap-2 py-2">
-                      <span className="min-w-[64px] text-xs font-extrabold text-navy-dark/50">Dia {d.route_day}</span>
-                      <span className="text-xs text-navy-dark/50">{formatarData(d.scheduled_date)}</span>
-                      <span className="font-semibold text-navy-dark">{d.titulo}</span>
-                      <span className="ml-auto text-xs text-navy-dark/50">
-                        {(d.itens ?? []).length} itens · {d.minutos} min
-                      </span>
-                    </li>
-                  ))}
+                <ul className="mt-3 max-h-96 divide-y divide-navy-dark/10 overflow-y-auto text-sm">
+                  {rotaGerada.map((d) => {
+                    const vazio = diasLimpos.has(d.route_day);
+                    // Missões que o mentor já colocou NA DATA deste dia. É o
+                    // que mostra que um dia esvaziado voltou a ter conteúdo.
+                    const manuais = missoes.filter((m) => m.data === d.scheduled_date);
+                    return (
+                      <li key={d.route_day} className="flex flex-wrap items-baseline gap-2 py-2">
+                        <span className="min-w-[64px] text-xs font-extrabold text-navy-dark/50">Dia {d.route_day}</span>
+                        <span className="text-xs text-navy-dark/50">{formatarData(d.scheduled_date)}</span>
+                        <span className={`font-semibold ${vazio ? "text-navy-dark/40" : "text-navy-dark"}`}>
+                          {vazio ? "Dia livre — a definir" : d.titulo}
+                        </span>
+                        {manuais.length > 0 && (
+                          <span className="rounded bg-blue-soft px-2 py-0.5 text-xs font-semibold text-navy">
+                            +{manuais.length} {manuais.length === 1 ? "missão do mentor" : "missões do mentor"}
+                          </span>
+                        )}
+                        <span className="ml-auto text-xs text-navy-dark/50">
+                          {vazio ? "vazio" : `${(d.itens ?? []).length} itens · ${d.minutos} min`}
+                        </span>
+                        {d.tipo === "simulado" || d.tipo === "prova" ? (
+                          // Simulado e dia da prova são a espinha da rota — o
+                          // resto se organiza em volta deles.
+                          <span className="text-xs text-navy-dark/35">fixo</span>
+                        ) : vazio ? (
+                          <form action={restaurarDiaDaRota.bind(null, params.id, d.route_day)}>
+                            <SubmitButton pendingText="..." className="text-xs font-semibold text-navy hover:underline">
+                              Restaurar
+                            </SubmitButton>
+                          </form>
+                        ) : (
+                          <ConfirmSubmitButton
+                            formAction={esvaziarDiaDaRota.bind(null, params.id, d.route_day)}
+                            confirmMessage={`Esvaziar o Dia ${d.route_day} de ${profile.nome}?\n\nO dia continua no cronograma, com a mesma data — só fica sem conteúdo. O total de dias não muda.`}
+                            className="text-xs font-semibold text-orange-dark hover:underline"
+                          >
+                            Esvaziar
+                          </ConfirmSubmitButton>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
+                {diasLimpos.size > 0 && (
+                  <p className="mt-3 rounded-lg bg-blue-soft p-3 text-xs text-navy-dark/70">
+                    {diasLimpos.size === 1 ? "1 dia está" : `${diasLimpos.size} dias estão`} vazio(s) por decisão sua.
+                    Para preencher, use <strong>Adicionar missão</strong> abaixo com a data do dia. O cronograma
+                    continua com {rotaGerada.length} dias — esvaziar não encurta a rota.
+                  </p>
+                )}
               </>
             )}
           </div>

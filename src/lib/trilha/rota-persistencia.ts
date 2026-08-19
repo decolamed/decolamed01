@@ -78,6 +78,7 @@ export async function rotaDoAluno(
   const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
+    diasLimpos: await diasEsvaziados(supabase, alunoId),
     contexto
   });
   if (rota.dias.length === 0) return null;
@@ -88,6 +89,29 @@ export async function rotaDoAluno(
 
   await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
+}
+
+/**
+ * Os dias que o mentor esvaziou no painel.
+ *
+ * Entram na geração como uma restrição, não como uma edição: a rota é
+ * regerada a cada leitura da tela, então apagar o conteúdo direto em
+ * `aluno_rota_dias` seria desfeito no carregamento seguinte. Guardar a
+ * INTENÇÃO é o que faz o dia continuar vazio.
+ *
+ * Falha de leitura devolve lista vazia — a rota volta a ser a cheia, que é
+ * pior do que o mentor pediu, mas é uma rota completa e correta.
+ */
+async function diasEsvaziados(supabase: ClienteSupabase, alunoId: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("aluno_rota_dias_limpos")
+    .select("route_day")
+    .eq("aluno_id", alunoId);
+  if (error) {
+    console.error("Rota: falha ao ler os dias esvaziados:", error.message);
+    return [];
+  }
+  return ((data as { route_day: number }[]) ?? []).map((d) => d.route_day);
 }
 
 /**
@@ -167,7 +191,7 @@ async function contextoDaRota(
 ): Promise<{ simulados: (SimuladoDisponivel | null)[]; nomeVestibular: string | null }> {
   const [{ data: simulados, error }, { data: vinculos }, { data: marca }, { data: configs }, { data: fixadosData }, { data: tentativas }] =
     await Promise.all([
-      supabase.from("simulados").select("id, titulo, ativo, redacao"),
+      supabase.from("simulados").select("id, titulo, ativo, redacao, tempo_minutos"),
       supabase.from("simulado_questoes").select("simulado_id"),
       supabase.from("configuracoes").select("valor").eq("chave", "site.marca.vestibular").maybeSingle(),
       supabase.from("configuracoes").select("chave, valor").in("chave", CHAVES_DOS_SIMULADOS),
@@ -184,10 +208,13 @@ async function contextoDaRota(
   // questões justamente no dia marcado para fazer a prova.
   const comQuestoes = new Set(((vinculos as { simulado_id: string }[]) ?? []).map((v) => v.simulado_id));
   const catalogo = new Map<string, SimuladoDoCatalogo>();
-  (((simulados as { id: string; titulo: string; ativo: boolean; redacao?: unknown }[]) ?? [])).forEach((s) => {
+  (((simulados as { id: string; titulo: string; ativo: boolean; redacao?: unknown; tempo_minutos?: number | null }[]) ?? [])).forEach((s) => {
     catalogo.set(s.id, {
       id: s.id,
       titulo: s.titulo,
+      // A duração de verdade da prova. Sem ela o dia de simulado ficava
+      // sempre em 90 minutos, fixos no código.
+      duracaoMinutos: s.tempo_minutos ?? null,
       utilizavel: disponivelParaAluno({
         ativo: Boolean(s.ativo),
         totalQuestoes: comQuestoes.has(s.id) ? 1 : 0,
@@ -342,6 +369,7 @@ export async function regerarRotaDoAluno(
   const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
   const rota = gerarRota(opcoes.template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
+    diasLimpos: await diasEsvaziados(supabase, alunoId),
     contexto
   });
   if (rota.dias.length === 0) {

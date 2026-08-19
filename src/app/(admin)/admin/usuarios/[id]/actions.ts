@@ -106,6 +106,74 @@ export async function excluirMissaoIndividual(alunoId: string, missaoId: string)
 }
 
 // ============================================================================
+// ESVAZIAR / RESTAURAR UM DIA DA ROTA
+//
+// O mentor pode abrir um espaço no cronograma sem encurtá-lo: o dia continua
+// existindo, com a mesma data e o mesmo número, só sem conteúdo. Depois ele
+// preenche com "Adicionar missão manualmente" na data daquele dia.
+//
+// Por que não apagar direto em `aluno_rota_dias`: a rota é REGERADA a cada
+// leitura da tela do aluno (rotaDoAluno → gerarRota → sincronizarRota). Uma
+// exclusão ali voltaria sozinha no carregamento seguinte. O que fica gravado
+// é a INTENÇÃO, em `aluno_rota_dias_limpos`, e é ela que entra como restrição
+// da geração — mesmo padrão de `aluno_simulados_rota`.
+// ============================================================================
+
+export async function esvaziarDiaDaRota(alunoId: string, routeDay: number) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const erro = (msg: string) => redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent(msg)}`);
+  if (!Number.isInteger(routeDay) || routeDay < 1) erro("Dia inválido.");
+
+  const { error } = await supabase
+    .from("aluno_rota_dias_limpos")
+    // Esvaziar duas vezes o mesmo dia não é erro — é o mesmo estado.
+    .upsert({ aluno_id: alunoId, route_day: routeDay }, { onConflict: "aluno_id,route_day" });
+
+  if (error) {
+    console.error("Falha ao esvaziar dia da rota:", alunoId, routeDay, error.message);
+    erro("Não foi possível esvaziar o dia.");
+  }
+
+  // A rota persistida é reescrita na próxima leitura da tela do aluno; aqui
+  // limpamos o cache das duas telas para o mentor ver o efeito na hora.
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  redirect(
+    `/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent(
+      `Dia ${routeDay} esvaziado. Ele continua no cronograma — use "Adicionar missão" na data dele para preencher.`
+    )}`
+  );
+}
+
+export async function restaurarDiaDaRota(alunoId: string, routeDay: number) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { error } = await supabase
+    .from("aluno_rota_dias_limpos")
+    .delete()
+    .eq("aluno_id", alunoId)
+    .eq("route_day", routeDay);
+
+  if (error) {
+    console.error("Falha ao restaurar dia da rota:", alunoId, routeDay, error.message);
+    redirect(`/admin/usuarios/${alunoId}?erro=${encodeURIComponent("Não foi possível restaurar o dia.")}`);
+  }
+
+  revalidatePath(`/admin/usuarios/${alunoId}`);
+  revalidatePath("/aluno");
+  revalidatePath("/aluno/cronograma");
+  redirect(
+    `/admin/usuarios/${alunoId}?sucesso=${encodeURIComponent(
+      `Dia ${routeDay} voltou a receber conteúdo do cronograma.`
+    )}`
+  );
+}
+
+// ============================================================================
 // EDITAR PERFIL — incluindo a troca de e-mail da conta
 //
 // O caso de uso: preparar a conta inteira com um e-mail provisório (perfil,
