@@ -164,7 +164,23 @@ export default async function AdminDetalhesUsuarioPage({
   ]);
   const diasLimpos = new Set(((diasLimposData as { route_day: number }[]) ?? []).map((d) => d.route_day));
   const briefing = briefingDoAluno as Record<string, any> | null;
-  const rotaGerada = (rotaDoAlunoDias as { route_day: number; scheduled_date: string; tipo: string; titulo: string; itens: { titulo: string }[]; minutos: number }[]) ?? [];
+  const rotaGerada =
+    (rotaDoAlunoDias as {
+      route_day: number;
+      scheduled_date: string;
+      tipo: string;
+      titulo: string;
+      // `itens` sempre trouxe o item inteiro; a tela é que só usava o
+      // comprimento da lista. A visão completa mostra o que há dentro.
+      itens: { titulo: string; tipo?: string | null; materia?: string | null }[];
+      minutos: number;
+    }[]) ?? [];
+
+  // Totais da rota, para o cabeçalho da visão completa dizer o tamanho real
+  // do que está abaixo em vez de só a contagem de dias.
+  const totalDeItens = rotaGerada.reduce((s, d) => s + (d.itens ?? []).length, 0);
+  const totalDeMinutos = rotaGerada.reduce((s, d) => s + (d.minutos ?? 0), 0);
+
   const sentimentosSalvos = (briefing?.sentimentos ?? {}) as Record<string, string>;
   const diasSalvos = (briefing?.dias_estuda as string[] | null) ?? [];
 
@@ -186,7 +202,9 @@ export default async function AdminDetalhesUsuarioPage({
     .select("*")
     .eq("aluno_id", params.id)
     .order("data", { ascending: false })
-    .limit(30);
+    // 30 não cobria uma rota longa: as missões dos últimos dias ficavam de
+    // fora e o dia aparecia vazio na visão completa mesmo tendo conteúdo.
+    .limit(300);
   const missoes = ((missoesData as AlunoMissao[]) ?? []).sort((m1, m2) => m1.data.localeCompare(m2.data));
   const adicionarMissaoComId = adicionarMissaoIndividual.bind(null, params.id);
 
@@ -550,7 +568,7 @@ export default async function AdminDetalhesUsuarioPage({
 
           {/* O cronograma gerado, lido de `aluno_rota_dias` — a MESMA tabela
               que a tela do aluno usa. É a conferência que o mentor precisa. */}
-          <div className="mt-4 max-w-2xl rounded-2xl bg-white p-6 shadow">
+          <div className="mt-4 max-w-4xl rounded-2xl bg-white p-6 shadow">
             <h3 className="font-display font-bold text-navy-dark">Cronograma gerado</h3>
             {rotaGerada.length === 0 ? (
               <p className="mt-2 text-sm text-navy-dark/60">
@@ -559,14 +577,23 @@ export default async function AdminDetalhesUsuarioPage({
             ) : (
               <>
                 <p className="mt-1 text-sm text-navy-dark/60">
-                  {rotaGerada.length} dias — é exatamente o que o aluno está vendo. Para ajustar o conteúdo dos dias,
-                  use{" "}
+                  {rotaGerada.length} dias, {totalDeItens} itens, {Math.round(totalDeMinutos / 60)}h no total — é
+                  exatamente o que o aluno está vendo. Para ajustar o conteúdo dos dias, use{" "}
                   <Link href="/admin/trilha" className="font-semibold text-navy hover:underline">
                     Conteúdo → Cronograma
                   </Link>{" "}
                   ou acrescente missões individuais na seção abaixo.
                 </p>
-                <ul className="mt-3 max-h-96 divide-y divide-navy-dark/10 overflow-y-auto text-sm">
+                {/* Visão COMPLETA: cada dia com os itens que o aluno vai abrir.
+                    Antes esta lista era um resumo — uma linha por dia, com
+                    "N itens · M min" e nada sobre o que eram esses itens. O
+                    mentor conferia a forma do cronograma sem conseguir
+                    conferir o conteúdo, que é justamente o que ele precisa
+                    revisar depois da mentoria.
+
+                    Sem altura máxima: "cronograma completo" quer dizer rolar a
+                    página, não rolar uma caixinha de 384px dentro dela. */}
+                <ul className="mt-3 divide-y divide-navy-dark/10 text-sm">
                   {rotaGerada.map((d) => {
                     const vazio = diasLimpos.has(d.route_day);
                     // Missões que o mentor já colocou NA DATA deste dia. É o
@@ -605,6 +632,47 @@ export default async function AdminDetalhesUsuarioPage({
                           >
                             Esvaziar
                           </ConfirmSubmitButton>
+                        )}
+
+                        {/* Os itens do dia. É o que faltava para isto ser o
+                            cronograma e não o índice dele. */}
+                        {!vazio && (d.itens ?? []).length > 0 && (
+                          <ul className="mt-1 w-full space-y-1 pl-[72px]">
+                            {(d.itens ?? []).map((item, indice) => (
+                              <li
+                                key={`${d.route_day}-${indice}`}
+                                className="flex flex-wrap items-baseline gap-2 text-xs text-navy-dark/70"
+                              >
+                                <span className="text-navy-dark/35">•</span>
+                                <span>{item.titulo}</span>
+                                {item.materia && (
+                                  <span className="rounded bg-sky px-1.5 py-0.5 text-[11px] text-navy-dark/60">
+                                    {item.materia}
+                                  </span>
+                                )}
+                                {item.tipo && <span className="text-[11px] text-navy-dark/40">{item.tipo}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {/* As missões que o mentor acrescentou nesta data
+                            aparecem junto do dia a que pertencem — inclusive
+                            quando o dia foi esvaziado, que é o caso em que
+                            elas são a única coisa ali. */}
+                        {manuais.length > 0 && (
+                          <ul className="mt-1 w-full space-y-1 pl-[72px]">
+                            {manuais.map((m) => (
+                              <li key={m.id} className="flex flex-wrap items-baseline gap-2 text-xs text-navy">
+                                <span className="text-navy/40">+</span>
+                                <span className="font-semibold">{m.titulo}</span>
+                                {m.materia && (
+                                  <span className="rounded bg-blue-soft px-1.5 py-0.5 text-[11px]">{m.materia}</span>
+                                )}
+                                <span className="text-[11px] text-navy/50">do mentor</span>
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </li>
                     );
