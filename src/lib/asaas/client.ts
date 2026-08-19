@@ -232,6 +232,45 @@ export async function pingAsaas(): Promise<{ ok: true } | { ok: false; mensagem:
   }
 }
 
+/**
+ * O status REAL de uma cobrança, direto no Asaas.
+ *
+ * O webhook é o caminho oficial, mas ele depende de estar cadastrado e de
+ * chegar. Consultar a cobrança dá à plataforma uma segunda fonte da mesma
+ * verdade — a do próprio Asaas — para o caso de o webhook não ter chegado.
+ * Sem isso, um Pix pago com o webhook mal configurado fica pendente para
+ * sempre na tela, mesmo com o dinheiro já na conta.
+ */
+export interface AsaasPagamento {
+  id: string;
+  status: string;
+  value: number;
+  billingType: AsaasBillingType;
+  externalReference: string | null;
+  paymentDate?: string | null;
+  confirmedDate?: string | null;
+}
+
+/**
+ * Status que significam "o dinheiro entrou".
+ *
+ * RECEIVED = compensado. CONFIRMED = confirmado pela operadora (cartão), o
+ * repasse ainda vai cair. Os dois liberam o acesso — são os mesmos que o
+ * webhook trata em ASAAS_CONFIRMATION_EVENTS.
+ *
+ * RECEIVED_IN_CASH fica de fora de propósito: é baixa manual registrada no
+ * painel do Asaas, não pagamento pelo checkout.
+ */
+export const STATUS_PAGOS = ["RECEIVED", "CONFIRMED"] as const;
+
+export function estaPago(status: string | null | undefined): boolean {
+  return (STATUS_PAGOS as readonly string[]).includes(String(status ?? ""));
+}
+
+export async function getPayment(chargeId: string): Promise<AsaasPagamento> {
+  return asaasFetch<AsaasPagamento>(`/payments/${encodeURIComponent(chargeId)}`);
+}
+
 // Pix: o QR Code é obtido em uma chamada separada, após a cobrança criada.
 export interface AsaasPixQrCode {
   encodedImage: string; // base64 do QR Code
