@@ -224,3 +224,28 @@ test("a venda guarda quem comprou, para o painel não depender de join", async (
   assert.equal(venda.plano_nome, "VOO GUIADO");
   assert.equal(venda.forma_pagamento, "pix");
 });
+
+// ══════════════════════════════ O QUE QUEBROU EM PRODUÇÃO EM 19/08 ══════════
+//
+// Duas confirmações da mesma compra correram juntas (o webhook e a consulta
+// que a tela faz a cada 5s). O convite perdedor voltou com o erro do Postgres,
+// não com a frase amigável do Supabase:
+//
+//   duplicate key value violates unique constraint "users_email_partial_key"
+//
+// A rede de segurança testava /already|registered|exists/ e não pegava isso,
+// então a compra parava sem matrícula — e, como `convertido` nunca era
+// gravado, a tela tentava de novo a cada 5 segundos, reenviando o convite.
+
+test("o erro de chave duplicada é reconhecido como conta já existente", () => {
+  const reconhece = (m) => /already|registered|exists|duplicate key|23505/i.test(m);
+
+  // As mensagens reais, as duas formas.
+  assert.ok(reconhece('duplicate key value violates unique constraint "users_email_partial_key"'));
+  assert.ok(reconhece("failed to close prepared statement: ERROR: current transaction is aborted (SQLSTATE 25P02): ERROR: duplicate key value violates unique constraint (SQLSTATE 23505)"));
+  assert.ok(reconhece("A user with this email address has already been registered"));
+
+  // E o que NÃO pode ser confundido com conta existente.
+  assert.ok(!reconhece("Failed to fetch"));
+  assert.ok(!reconhece("invalid email"));
+});
