@@ -1,9 +1,14 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AdminAlert } from "@/components/admin/admin-alert";
+import { Card, PageHeader, StatCard } from "@/components/admin/card";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
+import { consultaDeVendas, resumoDeVendas } from "@/lib/vendas/consulta";
+import { descreverPeriodo, limitesDoPeriodo } from "@/lib/vendas/periodo";
+import { atalhosDePeriodo } from "@/lib/vendas/atalhos";
 import { marcarComissaoPaga } from "./actions";
 import type { Pagamento, ComissaoParceiro } from "@/types/database";
 
@@ -42,21 +47,21 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   await requireAdmin();
   const supabase = createAdminClient();
 
-  let query = supabase.from("pagamentos").select("*").order("data_pagamento", { ascending: false });
+  // Os mesmos filtros da tabela, aplicados num lugar só (ver
+  // lib/vendas/consulta.ts) — é o que garante que o total do topo é o total
+  // das vendas listadas embaixo.
+  const filtros = {
+    de: searchParams.de,
+    ate: searchParams.ate,
+    planoId: searchParams.planoId,
+    status: searchParams.status,
+    cupom: searchParams.cupom,
+    parceiroId: searchParams.parceiroId
+  };
+  const { invertido } = limitesDoPeriodo(searchParams.de, searchParams.ate);
 
-  if (searchParams.de) query = query.gte("data_pagamento", new Date(searchParams.de).toISOString());
-  if (searchParams.ate) {
-    const fim = new Date(searchParams.ate);
-    fim.setHours(23, 59, 59, 999);
-    query = query.lte("data_pagamento", fim.toISOString());
-  }
-  if (searchParams.planoId) query = query.eq("plano_id", searchParams.planoId);
-  if (searchParams.status) query = query.eq("status", searchParams.status);
-  if (searchParams.cupom) query = query.eq("cupom_codigo", searchParams.cupom.trim().toUpperCase());
-  if (searchParams.parceiroId) query = query.eq("parceiro_id", searchParams.parceiroId);
-
-  const [{ data: vendas }, { data: planos }, { data: cupons }, { data: parceiros }, { data: comissoesData }] = await Promise.all([
-    query,
+  const [{ data: vendas }, { data: planos }, { data: cupons }, { data: parceiros }, { data: comissoesData }, totais] = await Promise.all([
+    consultaDeVendas(supabase, filtros),
     supabase.from("planos").select("id, nome").order("ordem"),
     supabase.from("cupons").select("codigo").order("codigo"),
     supabase.from("profiles").select("id, nome").eq("role", "parceiro").order("nome"),
@@ -68,7 +73,10 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
     supabase
       .from("comissoes_parceiro")
       .select("*, parceiro:parceiro_id(nome), pagamento:pagamento_id(comprador_nome, plano_nome, data_pagamento)")
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false }),
+    // O resumo é uma consulta própria, que varre TODAS as linhas do período
+    // em blocos — não uma soma das linhas que couberam na tabela acima.
+    resumoDeVendas(supabase, filtros)
   ]);
 
   const lista = (vendas as Pagamento[]) ?? [];
@@ -80,60 +88,94 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   const comissoesPendentes = comissoes.filter((c) => c.status === "pendente");
   const totalComissaoPendenteCentavos = comissoesPendentes.reduce((soma, c) => soma + c.valor_centavos, 0);
 
-  // Resumo. "Vendido"/"líquido" considera apenas vendas confirmadas ou
-  // recebidas — pendentes, estornadas e falhas não entram no faturamento.
-  const efetivadas = lista.filter((v) => v.status === "confirmado" || v.status === "recebido");
-  const totalVendidoCentavos = efetivadas.reduce((soma, v) => soma + v.valor_centavos, 0);
-  const totalLiquidoCentavos = efetivadas.reduce(
-    (soma, v) => soma + (v.valor_liquido_centavos ?? v.valor_centavos - v.comissao_centavos),
-    0
-  );
-  const ticketMedioCentavos = efetivadas.length > 0 ? Math.round(totalVendidoCentavos / efetivadas.length) : 0;
+  // O resumo vem do banco, não das linhas acima: `lista` é limitada pelo teto
+  // de linhas por resposta do PostgREST, e um total que para de crescer em
+  // silêncio é pior do que total nenhum.
+  const { resumo, incompleto, erro: erroDoResumo } = totais;
+  const avisoDoResumo = invertido
+    ? "A data inicial é posterior à data final — nenhum período foi somado. Corrija as datas."
+    : erroDoResumo
+      ? `Não foi possível calcular o total do período: ${erroDoResumo}`
+      : incompleto
+        ? "O período tem vendas demais para somar de uma vez — o total abaixo está incompleto. Filtre um intervalo menor."
+        : undefined;
 
-  const vendasPorPlano = new Map<string, { quantidade: number; totalCentavos: number }>();
-  for (const v of efetivadas) {
-    const chave = v.plano_nome ?? "Sem plano";
-    const atual = vendasPorPlano.get(chave) ?? { quantidade: 0, totalCentavos: 0 };
-    atual.quantidade += 1;
-    atual.totalCentavos += v.valor_centavos;
-    vendasPorPlano.set(chave, atual);
+  // Os atalhos trocam só o período: plano, status, cupom e parceiro que já
+  // estiverem aplicados continuam valendo, senão trocar de mês significaria
+  // perder o resto do filtro sem avisar.
+  const atalhos = atalhosDePeriodo();
+  function linkDoAtalho(de: string, ate: string): string {
+    const params = new URLSearchParams({ de, ate });
+    for (const chave of ["planoId", "status", "cupom", "parceiroId"] as const) {
+      const valor = searchParams[chave];
+      if (valor) params.set(chave, valor);
+    }
+    return `/admin/vendas?${params.toString()}`;
   }
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-navy-dark">Vendas</h1>
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+      <PageHeader title="Vendas" subtitle="Tudo que entrou, no período que você escolher. Use o filtro abaixo para mudar o intervalo." />
+      <AdminAlert erro={avisoDoResumo ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Total vendido", value: formatarCentavos(totalVendidoCentavos) },
-          { label: "Total líquido recebido", value: formatarCentavos(totalLiquidoCentavos) },
-          { label: "Quantidade de vendas", value: String(efetivadas.length) },
-          { label: "Ticket médio", value: formatarCentavos(ticketMedioCentavos) }
-        ].map((card) => (
-          <div key={card.label} className="rounded-2xl bg-white p-6 shadow">
-            <p className="text-sm text-navy-dark/60">{card.label}</p>
-            <p className="mt-1 font-display text-2xl font-extrabold text-navy-dark">{card.value}</p>
-          </div>
-        ))}
-      </div>
+      {/* O total do período é o número que o admin veio buscar — vem primeiro
+          e sozinho, com o intervalo escrito por extenso embaixo para não
+          restar dúvida de qual período foi somado. */}
+      <div className="mt-5 grid gap-3 lg:grid-cols-[1.4fr_2fr]">
+        <Card className="border-green/25 bg-green/[0.04]">
+          <p className="text-[11px] font-extrabold uppercase tracking-widest text-green/70">Vendas no período</p>
+          <p className="mt-1 font-display text-3xl font-extrabold text-green sm:text-4xl">
+            {formatarCentavos(resumo.totalCentavos)}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-navy-dark/60">
+            {descreverPeriodo(searchParams.de, searchParams.ate)}
+          </p>
+          <p className="mt-2.5 border-t border-green/20 pt-2.5 text-[11px] font-semibold text-navy-dark/50">
+            {resumo.quantidade} venda{resumo.quantidade !== 1 ? "s" : ""} paga
+            {resumo.quantidade !== 1 ? "s" : ""} · líquido {formatarCentavos(resumo.liquidoCentavos)}
+          </p>
+        </Card>
 
-      <div className="mt-6 rounded-2xl bg-white p-6 shadow">
-        <h2 className="font-display font-bold text-navy-dark">Vendas por plano</h2>
-        <div className="mt-3 flex flex-wrap gap-3">
-          {[...vendasPorPlano.entries()].map(([plano, dados]) => (
-            <div key={plano} className="rounded-xl bg-navy/5 px-4 py-3">
-              <p className="text-sm font-semibold text-navy-dark">{plano}</p>
-              <p className="text-xs text-navy-dark/60">
-                {dados.quantidade} venda{dados.quantidade !== 1 ? "s" : ""} · {formatarCentavos(dados.totalCentavos)}
-              </p>
-            </div>
-          ))}
-          {vendasPorPlano.size === 0 && <p className="text-sm text-navy-dark/50">Nenhuma venda no período/filtro selecionado.</p>}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Ticket médio" value={formatarCentavos(resumo.ticketMedioCentavos)} />
+          <StatCard label="Vendas pagas" value={String(resumo.quantidade)} />
+          <StatCard label="Líquido recebido" value={formatarCentavos(resumo.liquidoCentavos)} />
         </div>
       </div>
 
-      <form className="mt-8 flex flex-wrap items-end gap-3 rounded-2xl bg-white p-6 shadow" action="/admin/vendas">
+      <div className="mt-3">
+        <Card>
+          <h2 className="text-[11px] font-extrabold uppercase tracking-widest text-navy-dark/40">Vendas por plano no período</h2>
+          <div className="mt-2.5 flex flex-wrap gap-2.5">
+            {resumo.porPlano.map((dados) => (
+              <div key={dados.plano} className="rounded-xl bg-navy/5 px-3.5 py-2.5">
+                <p className="text-sm font-bold text-navy-dark">{dados.plano}</p>
+                <p className="text-[11px] font-semibold text-navy-dark/60">
+                  {dados.quantidade} venda{dados.quantidade !== 1 ? "s" : ""} · {formatarCentavos(dados.totalCentavos)}
+                </p>
+              </div>
+            ))}
+            {resumo.porPlano.length === 0 && (
+              <p className="text-sm font-semibold text-navy-dark/50">Nenhuma venda paga no período/filtro selecionado.</p>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-extrabold uppercase tracking-widest text-navy-dark/40">Período rápido</span>
+        {atalhos.map((atalho) => (
+          <Link
+            key={atalho.rotulo}
+            href={linkDoAtalho(atalho.de, atalho.ate)}
+            className="rounded-full border border-navy-dark/10 bg-white px-3 py-1.5 text-xs font-bold text-navy-dark hover:border-orange/40 hover:text-orange"
+          >
+            {atalho.rotulo}
+          </Link>
+        ))}
+      </div>
+
+      <form className="mt-3 flex flex-wrap items-end gap-3 rounded-2xl border border-navy-dark/10 bg-white p-[18px]" action="/admin/vendas">
         <div>
           <label className="text-xs font-semibold text-navy-dark/60" htmlFor="de">De</label>
           <input id="de" name="de" type="date" defaultValue={searchParams.de} className="mt-1 rounded-lg border p-2 text-sm" />
