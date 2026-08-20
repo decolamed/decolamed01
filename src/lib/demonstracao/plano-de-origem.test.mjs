@@ -63,3 +63,33 @@ test("o fallback NÃO é a tela de redefinir senha", () => {
   assert.equal(planoDeOrigem("qualquer coisa"), null);
   assert.notEqual(planoDeOrigem("qualquer coisa"), "/redefinir-senha");
 });
+
+// ═══════════════════════ O CAMINHO DE IDA E VOLTA ═══════════════════════════
+// Validar o parâmetro isolado não basta: entre a página do plano e a
+// demonstração o valor passa por encodeURIComponent e pela leitura do
+// searchParams. É nessa ida e volta que o slug pode chegar deformado e o
+// visitante terminar num plano que não é o dele.
+
+/** Exatamente o href que a página de inscrição monta. */
+const linkDaDemonstracao = (slug) => `/demonstracao?voltar=${encodeURIComponent(`/inscricao/${slug}`)}`;
+
+/** O que o Next entrega em searchParams.voltar. */
+const comoChegaNoServidor = (href) => new URL(href, "https://exemplo.test").searchParams.get("voltar");
+
+test("quem entra pelo plano A volta para o plano A", () => {
+  assert.equal(planoDeOrigem(comoChegaNoServidor(linkDaDemonstracao("voo-guiado"))), "/inscricao/voo-guiado");
+});
+
+test("cada plano preserva a própria origem", () => {
+  for (const slug of ["voo-guiado", "decolando-pro", "plano-teste-2", "a"]) {
+    assert.equal(
+      planoDeOrigem(comoChegaNoServidor(linkDaDemonstracao(slug))),
+      `/inscricao/${slug}`,
+      `o plano ${slug} não voltou para si mesmo`
+    );
+  }
+});
+
+test("link solto, sem origem, não inventa um plano", () => {
+  assert.equal(planoDeOrigem(comoChegaNoServidor("/demonstracao")), null);
+});

@@ -40,6 +40,10 @@ const ETAPAS: { id: Etapa; rotulo: string }[] = [
   { id: "recursos", rotulo: "Recursos" }
 ];
 
+export function ChamadaDeCompraCompacta({ voltarPara }: { voltarPara: string | null }) {
+  return <ChamadaDeCompra voltarPara={voltarPara} />;
+}
+
 export function TourDaDemonstracao({ voltarPara }: { voltarPara: string | null }) {
   const [etapa, setEtapa] = useState<Etapa>("painel");
   const [escolha, setEscolha] = useState<string | null>(null);
@@ -289,32 +293,14 @@ function Recursos({ voltarPara }: { voltarPara: string | null }) {
       </Cartao>
 
       <Cartao className="text-center">
-        <p className="font-display text-xl font-extrabold text-app-txt">É assim todo dia. ✈️</p>
-        <p className="mt-1.5 text-sm font-semibold text-app-sub">
-          Esta foi uma amostra. Na sua conta, o cronograma é montado a partir da sua data de prova e do
-          tempo que você tem.
+        <p className="font-display text-2xl font-extrabold text-app-txt">Gostou do que viu?</p>
+        <p className="mt-1.5 text-sm font-semibold leading-relaxed text-app-sub">
+          Tenha acesso completo à Decola MED e comece sua jornada rumo à aprovação. Na sua conta, o
+          cronograma é montado a partir da sua data de prova e do tempo que você tem.
         </p>
-        {/* Quem chegou pela página de um plano volta para ELE. Quem abriu o
-            link solto (o caso do WhatsApp) não tem plano de origem, e não há
-            catálogo público para onde mandar — `/planos` e a raiz do domínio
-            redirecionam para o login, o que seria um beco sem saída para
-            alguém que ainda não é aluno. Nesse caso o caminho é falar com a
-            equipe. */}
-        {voltarPara ? (
-          <Link
-            href={voltarPara}
-            className="mt-4 block w-full rounded-full bg-orange px-6 py-3 font-display text-base font-bold text-white hover:bg-orange-dark"
-          >
-            Quero começar
-          </Link>
-        ) : (
-          <Link
-            href="/contato"
-            className="mt-4 block w-full rounded-full bg-orange px-6 py-3 font-display text-base font-bold text-white hover:bg-orange-dark"
-          >
-            Falar com a equipe
-          </Link>
-        )}
+        <div className="mt-5">
+          <ChamadaDeCompra voltarPara={voltarPara} destaque />
+        </div>
       </Cartao>
     </div>
   );
@@ -333,6 +319,53 @@ function Numero({ valor, rotulo }: { valor: string; rotulo: string }) {
       <p className="font-display text-lg font-extrabold text-app-txt">{valor}</p>
       <p className="text-[10px] font-extrabold uppercase tracking-wide text-app-faint">{rotulo}</p>
     </div>
+  );
+}
+
+/**
+ * O botão que leva à compra.
+ *
+ * Quem chegou pela página de um plano volta para ELE — é o ponto todo de
+ * carregar a origem na URL: alguém que veio do VOO GUIADO não pode terminar a
+ * demonstração numa página de outro plano, nem numa lista genérica.
+ *
+ * Quem abriu o link solto (o caso do WhatsApp repassado) não tem plano de
+ * origem, e não há catálogo público para onde mandar: `/planos` e a raiz do
+ * domínio redirecionam para o login, o que seria um beco sem saída para quem
+ * ainda não é aluno. Aí o próximo passo honesto é falar com a equipe — e o
+ * texto muda junto, porque prometer "adquira já" e abrir um formulário de
+ * contato seria enganar quem clicou.
+ */
+function ChamadaDeCompra({ voltarPara, destaque = false }: { voltarPara: string | null; destaque?: boolean }) {
+  const temPlano = Boolean(voltarPara);
+  const destino = voltarPara ?? "/contato";
+  const texto = temPlano ? "Adquira já a plataforma" : "Falar com a equipe";
+
+  if (!destaque) {
+    return (
+      <Link
+        href={destino}
+        className="shrink-0 rounded-full bg-orange px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-orange-dark"
+      >
+        {temPlano ? "Adquira já" : "Falar com a equipe"}
+      </Link>
+    );
+  }
+
+  return (
+    <>
+      <Link
+        href={destino}
+        className="block w-full rounded-full bg-orange px-6 py-4 text-center font-display text-lg font-extrabold text-white shadow-lg shadow-orange/20 hover:bg-orange-dark"
+      >
+        {texto}
+      </Link>
+      {temPlano && (
+        <p className="mt-2 text-[11px] font-semibold text-app-faint">
+          Você volta para a página do plano, com valor e benefícios.
+        </p>
+      )}
+    </>
   );
 }
 

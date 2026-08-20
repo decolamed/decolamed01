@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { TourDaDemonstracao } from "@/components/demonstracao/tour";
+import { TourDaDemonstracao, ChamadaDeCompraCompacta } from "@/components/demonstracao/tour";
 import { planoDeOrigem } from "@/lib/demonstracao/plano-de-origem";
 
 // ============================================================================
@@ -45,12 +44,14 @@ export default function DemonstracaoPage({ searchParams }: { searchParams: { vol
           <span className="hidden text-[11px] font-semibold text-app-sub sm:inline">
             Dados de exemplo — esta não é uma conta real
           </span>
-          <Link
-            href="/contato"
-            className="ml-auto text-[11px] font-bold text-app-sub underline hover:text-app-txt"
-          >
-            Falar com a equipe
-          </Link>
+          {/* A saída para a compra fica visível desde o primeiro segundo e
+              acompanha a rolagem, mas em tamanho de etiqueta: quem ainda está
+              conhecendo a plataforma não deve ser empurrado, e quem já se
+              decidiu no meio do caminho não deveria ter de chegar ao fim para
+              conseguir comprar. O CTA de peso fica no encerramento. */}
+          <div className="ml-auto">
+            <ChamadaDeCompraCompacta voltarPara={voltarPara} />
+          </div>
         </div>
       </div>
 
