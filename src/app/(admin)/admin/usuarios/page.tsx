@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
+import { ExcluirUsuario } from "@/components/admin/excluir-usuario";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { resumosDosAlunos } from "@/lib/site/desempenho-servidor";
@@ -18,6 +19,7 @@ import {
   reenviarSenha,
   desativarUsuario,
   reativarUsuario,
+  excluirUsuario,
   tornarAdmin,
   removerAdmin,
   tornarParceiro,
@@ -291,6 +293,15 @@ export default async function AdminUsuariosPage({
                     </ConfirmSubmitButton>
                   </form>
                 ))}
+
+              {/* Separado do resto de propósito: tudo acima é reversível, isto
+                  não é. A exclusão pede o e-mail digitado antes de mostrar o
+                  botão — ver components/admin/excluir-usuario.tsx. */}
+              {u.id !== adminAtual.id && (
+                <div className="mt-1 w-full border-t border-navy-dark/10 pt-1.5">
+                  <ExcluirUsuario id={u.id} nome={u.nome} email={u.email} acao={excluirUsuario} />
+                </div>
+              )}
             </div>
           )}
         />
