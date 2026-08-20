@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { TourDaDemonstracao, ChamadaDeCompraCompacta } from "@/components/demonstracao/tour";
 import { planoDeOrigem } from "@/lib/demonstracao/plano-de-origem";
+import { destinoDaCompra, levaAComprar } from "@/lib/demonstracao/destino-da-compra";
+import { createClient } from "@/lib/supabase/server";
+import { textoConfig } from "@/lib/site/configuracoes";
 
 // ============================================================================
 // /demonstracao — A PLATAFORMA, SEM CONTA
@@ -11,10 +14,16 @@ import { planoDeOrigem } from "@/lib/demonstracao/plano-de-origem";
 // não uma página sobre a plataforma. Por isso o fundo é o mesmo `app-bg` do
 // app do aluno.
 //
-// Não recebe `searchParams` de dado nenhum além de `voltar`, não toca no
-// Supabase e não tem server action. A rota é renderizada por requisição
-// (por causa do `voltar`), mas não consulta nada: todo o conteúdo sai de
-// `lib/demonstracao/dados.ts`. Um visitante não alcança nada real daqui.
+// Não recebe `searchParams` de dado nenhum além de `voltar` e não tem server
+// action. Todo o CONTEÚDO da demonstração sai de `lib/demonstracao/dados.ts`
+// — nada de aluno, questão, cronograma ou métrica real aparece aqui.
+//
+// A única leitura do banco é uma linha de `configuracoes`: o link de compra
+// que o administrador escreve no painel. É configuração pública do site (a
+// mesma tabela do WhatsApp e do Instagram do rodapé; os segredos ficam em
+// `configuracoes_secretas`, protegida por is_admin). Leitura, uma chave, sem
+// sessão — a demonstração continua sem alcançar dado de aluno e sem escrever
+// nada.
 // ============================================================================
 
 export const metadata: Metadata = {
@@ -24,12 +33,26 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true }
 };
 
-export default function DemonstracaoPage({ searchParams }: { searchParams: { voltar?: string } }) {
-  // O plano de origem, para o botão "Quero começar" levar de volta para a
+export default async function DemonstracaoPage({ searchParams }: { searchParams: { voltar?: string } }) {
+  // O plano de origem, para o botão "Adquira já" levar de volta para a
   // inscrição que a pessoa estava vendo. O valor vem da URL, então é
   // validado: só uma página de inscrição passa, e qualquer outra coisa vira
   // null (ver lib/demonstracao/plano-de-origem.ts).
-  const voltarPara = planoDeOrigem(searchParams.voltar);
+  const origem = planoDeOrigem(searchParams.voltar);
+
+  // O link que o administrador configurou. Vale quando NÃO há plano de
+  // origem — o caso do link repassado no WhatsApp, que antes caía em
+  // /contato. Ver lib/demonstracao/destino-da-compra.ts para a precedência.
+  const supabase = createClient();
+  const { data: config } = await supabase
+    .from("configuracoes")
+    .select("valor")
+    .eq("chave", "demonstracao.link_compra")
+    .maybeSingle();
+
+  const linkConfigurado = textoConfig(config?.valor);
+  const destino = destinoDaCompra(origem, linkConfigurado);
+  const ehCompra = levaAComprar(origem, linkConfigurado);
 
   return (
     <main className="min-h-screen bg-app-bg font-body">
@@ -50,7 +73,7 @@ export default function DemonstracaoPage({ searchParams }: { searchParams: { vol
               decidiu no meio do caminho não deveria ter de chegar ao fim para
               conseguir comprar. O CTA de peso fica no encerramento. */}
           <div className="ml-auto">
-            <ChamadaDeCompraCompacta voltarPara={voltarPara} />
+            <ChamadaDeCompraCompacta destino={destino} ehCompra={ehCompra} />
           </div>
         </div>
       </div>
@@ -65,7 +88,7 @@ export default function DemonstracaoPage({ searchParams }: { searchParams: { vol
         </p>
       </header>
 
-      <TourDaDemonstracao voltarPara={voltarPara} />
+      <TourDaDemonstracao destino={destino} ehCompra={ehCompra} />
     </main>
   );
 }

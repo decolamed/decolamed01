@@ -40,11 +40,11 @@ const ETAPAS: { id: Etapa; rotulo: string }[] = [
   { id: "recursos", rotulo: "Recursos" }
 ];
 
-export function ChamadaDeCompraCompacta({ voltarPara }: { voltarPara: string | null }) {
-  return <ChamadaDeCompra voltarPara={voltarPara} />;
+export function ChamadaDeCompraCompacta({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
+  return <ChamadaDeCompra destino={destino} ehCompra={ehCompra} />;
 }
 
-export function TourDaDemonstracao({ voltarPara }: { voltarPara: string | null }) {
+export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
   const [etapa, setEtapa] = useState<Etapa>("painel");
   const [escolha, setEscolha] = useState<string | null>(null);
   const [respondida, setRespondida] = useState(false);
@@ -69,7 +69,7 @@ export function TourDaDemonstracao({ voltarPara }: { voltarPara: string | null }
           />
         )}
 
-        {etapa === "recursos" && <Recursos voltarPara={voltarPara} />}
+        {etapa === "recursos" && <Recursos destino={destino} ehCompra={ehCompra} />}
       </div>
     </div>
   );
@@ -248,7 +248,7 @@ function Questao({
 }
 
 // ────────────────────────────────────────────────────────── etapa 3: recursos ─
-function Recursos({ voltarPara }: { voltarPara: string | null }) {
+function Recursos({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
   return (
     <div className="space-y-3">
       <Cartao className="border-orange/30 bg-app-orange-soft">
@@ -299,7 +299,7 @@ function Recursos({ voltarPara }: { voltarPara: string | null }) {
           cronograma é montado a partir da sua data de prova e do tempo que você tem.
         </p>
         <div className="mt-5">
-          <ChamadaDeCompra voltarPara={voltarPara} destaque />
+          <ChamadaDeCompra destino={destino} ehCompra={ehCompra} destaque />
         </div>
       </Cartao>
     </div>
@@ -325,29 +325,28 @@ function Numero({ valor, rotulo }: { valor: string; rotulo: string }) {
 /**
  * O botão que leva à compra.
  *
- * Quem chegou pela página de um plano volta para ELE — é o ponto todo de
- * carregar a origem na URL: alguém que veio do VOO GUIADO não pode terminar a
- * demonstração numa página de outro plano, nem numa lista genérica.
- *
- * Quem abriu o link solto (o caso do WhatsApp repassado) não tem plano de
- * origem, e não há catálogo público para onde mandar: `/planos` e a raiz do
- * domínio redirecionam para o login, o que seria um beco sem saída para quem
- * ainda não é aluno. Aí o próximo passo honesto é falar com a equipe — e o
- * texto muda junto, porque prometer "adquira já" e abrir um formulário de
- * contato seria enganar quem clicou.
+ * Quem decide o destino é a página (ver lib/demonstracao/destino-da-compra):
+ * o plano de origem vence, e na falta dele vale o link que o administrador
+ * configurou no painel. Aqui só resta desenhar — e ajustar o texto, porque
+ * prometer "Adquira já a plataforma" e abrir um formulário de contato seria
+ * enganar quem clicou.
  */
-function ChamadaDeCompra({ voltarPara, destaque = false }: { voltarPara: string | null; destaque?: boolean }) {
-  const temPlano = Boolean(voltarPara);
-  const destino = voltarPara ?? "/contato";
-  const texto = temPlano ? "Adquira já a plataforma" : "Falar com a equipe";
-
+function ChamadaDeCompra({
+  destino,
+  ehCompra,
+  destaque = false
+}: {
+  destino: string;
+  ehCompra: boolean;
+  destaque?: boolean;
+}) {
   if (!destaque) {
     return (
       <Link
         href={destino}
         className="shrink-0 rounded-full bg-orange px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-orange-dark"
       >
-        {temPlano ? "Adquira já" : "Falar com a equipe"}
+        {ehCompra ? "Adquira já" : "Falar com a equipe"}
       </Link>
     );
   }
@@ -358,11 +357,11 @@ function ChamadaDeCompra({ voltarPara, destaque = false }: { voltarPara: string 
         href={destino}
         className="block w-full rounded-full bg-orange px-6 py-4 text-center font-display text-lg font-extrabold text-white shadow-lg shadow-orange/20 hover:bg-orange-dark"
       >
-        {texto}
+        {ehCompra ? "Adquira já a plataforma" : "Falar com a equipe"}
       </Link>
-      {temPlano && (
+      {ehCompra && (
         <p className="mt-2 text-[11px] font-semibold text-app-faint">
-          Você volta para a página do plano, com valor e benefícios.
+          Você vai para a página de compra, com valor e benefícios.
         </p>
       )}
     </>
