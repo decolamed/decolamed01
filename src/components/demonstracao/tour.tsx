@@ -12,6 +12,7 @@ import {
   QUESTAO_DEMO,
   RESPOSTA_CORRETA_DEMO,
   EXPLICACAO_DEMO,
+  FLASHCARD_DEMO,
   RECURSOS
 } from "@/lib/demonstracao/dados";
 
@@ -32,11 +33,12 @@ import {
 // nenhum: não há server action, não há fetch, não há Supabase.
 // ============================================================================
 
-type Etapa = "painel" | "questao" | "recursos";
+type Etapa = "painel" | "questao" | "flashcard" | "recursos";
 
 const ETAPAS: { id: Etapa; rotulo: string }[] = [
   { id: "painel", rotulo: "Painel" },
   { id: "questao", rotulo: "Questão" },
+  { id: "flashcard", rotulo: "Flashcard" },
   { id: "recursos", rotulo: "Recursos" }
 ];
 
@@ -48,6 +50,8 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
   const [etapa, setEtapa] = useState<Etapa>("painel");
   const [escolha, setEscolha] = useState<string | null>(null);
   const [respondida, setRespondida] = useState(false);
+  const [cartaoVirado, setCartaoVirado] = useState(false);
+  const [cartaoJulgado, setCartaoJulgado] = useState<"acertei" | "errei" | null>(null);
 
   const acertou = escolha === RESPOSTA_CORRETA_DEMO;
 
@@ -65,6 +69,16 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
             acertou={acertou}
             onEscolher={setEscolha}
             onConfirmar={() => setRespondida(true)}
+            onAvancar={() => setEtapa("flashcard")}
+          />
+        )}
+
+        {etapa === "flashcard" && (
+          <Flashcard
+            virado={cartaoVirado}
+            julgado={cartaoJulgado}
+            onVirar={() => setCartaoVirado((v) => !v)}
+            onJulgar={setCartaoJulgado}
             onAvancar={() => setEtapa("recursos")}
           />
         )}
@@ -247,7 +261,97 @@ function Questao({
   );
 }
 
-// ────────────────────────────────────────────────────────── etapa 3: recursos ─
+// ────────────────────────────────────────────────────── etapa 3: flashcard ─
+//
+// Mesma mecânica da tela real (flashcards-study.tsx): o cartão vira ao toque
+// e o aluno julga a própria memória. Aqui o julgamento não grava revisão
+// nenhuma — só muda o texto na tela, para a pessoa entender o gesto.
+function Flashcard({
+  virado,
+  julgado,
+  onVirar,
+  onJulgar,
+  onAvancar
+}: {
+  virado: boolean;
+  julgado: "acertei" | "errei" | null;
+  onVirar: () => void;
+  onJulgar: (v: "acertei" | "errei") => void;
+  onAvancar: () => void;
+}) {
+  const c = FLASHCARD_DEMO;
+
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-sm font-semibold text-app-sub">
+        Flashcards são para memorizar rápido. Toque no cartão para virar.
+      </p>
+
+      <Cartao>
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">
+            Cartão 1 de 1
+          </span>
+          <span className="rounded-full bg-app-chip px-2.5 py-1 text-[11px] font-bold text-app-sub">
+            {c.materia} · {c.assunto}
+          </span>
+        </div>
+
+        <button
+          onClick={onVirar}
+          aria-label={virado ? "Ver a pergunta" : "Ver a resposta"}
+          className={`mt-3 flex min-h-[180px] w-full flex-col items-center justify-center rounded-2xl border p-6 text-center transition ${
+            virado ? "border-app-green/30 bg-app-green-soft" : "border-app-line bg-app-card2"
+          }`}
+        >
+          <span className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">
+            {virado ? "Resposta" : "Pergunta — toque para virar"}
+          </span>
+          <p className="mt-3 font-display text-lg font-bold leading-snug text-app-txt">
+            {virado ? c.verso : c.frente}
+          </p>
+        </button>
+
+        {/* Os dois botões só aparecem depois de virar: julgar a própria
+            memória antes de ver a resposta não quer dizer nada. */}
+        {virado && !julgado && (
+          <div className="mt-4 flex gap-2.5">
+            <button
+              onClick={() => onJulgar("errei")}
+              className="flex-1 rounded-full border-2 border-app-red px-4 py-3 font-display text-sm font-bold text-app-red"
+            >
+              Errei
+            </button>
+            <button
+              onClick={() => onJulgar("acertei")}
+              className="flex-1 rounded-full bg-app-green px-4 py-3 font-display text-sm font-bold text-white"
+            >
+              Acertei ✓
+            </button>
+          </div>
+        )}
+
+        {julgado && (
+          <div className="mt-4 rounded-xl border border-app-line bg-app-card2 p-3.5">
+            <p className="text-sm font-bold text-app-txt">
+              {julgado === "acertei" ? "Boa. 🎯" : "Sem problema. 🔁"}
+            </p>
+            <p className="mt-1 text-[13px] font-semibold leading-relaxed text-app-sub">
+              {julgado === "acertei"
+                ? "Na plataforma, um cartão que você acerta volta a aparecer mais adiante — só o suficiente para não esquecer."
+                : "Na plataforma, um cartão que você erra volta logo, e volta mais vezes, até parar de escapar."}
+            </p>
+            <div className="mt-3">
+              <BotaoPrincipal onClick={onAvancar}>Ver os recursos da plataforma →</BotaoPrincipal>
+            </div>
+          </div>
+        )}
+      </Cartao>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────── etapa 4: recursos ─
 function Recursos({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
   return (
     <div className="space-y-3">
