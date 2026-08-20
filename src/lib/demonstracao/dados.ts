@@ -85,6 +85,20 @@ export const EXPLICACAO_DEMO =
   "água e poderia sofrer lise (alternativa A).";
 
 /** Os recursos apresentados no fim da demonstração. */
+/**
+ * O flashcard da demonstração.
+ *
+ * Escolhido para ser respondível de cabeça por quem ainda não estuda para
+ * Medicina: a graça da etapa é sentir a mecânica de virar o cartão e julgar a
+ * própria memória, não ser reprovado numa pergunta difícil e desistir do tour.
+ */
+export const FLASHCARD_DEMO = {
+  materia: "Biologia",
+  assunto: "Citologia",
+  frente: "Qual organela é responsável pela produção de ATP na célula?",
+  verso: "A mitocôndria — por meio da respiração celular."
+};
+
 export const RECURSOS = [
   {
     icone: "calendar",
