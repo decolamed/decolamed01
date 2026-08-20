@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { InscricaoForm } from "@/components/site/matricula-form";
 import type { Plano } from "@/types/database";
@@ -51,6 +52,18 @@ export default async function InscricaoPage({ params }: { params: { slug: string
           ))}
         </ul>
       )}
+
+      {/* A demonstração é um caminho paralelo à compra, não um concorrente
+          dela: fica acima do formulário, com peso visual de link secundário,
+          para quem ainda não se convenceu ter o que ver antes de desistir.
+          `voltar` traz a pessoa de volta para ESTE plano no fim do tour. */}
+      <Link
+        href={`/demonstracao?voltar=${encodeURIComponent(`/inscricao/${params.slug}`)}`}
+        className="mx-auto mt-6 flex w-full max-w-md items-center justify-center gap-2 rounded-full border border-white/25 px-6 py-3 font-display text-sm font-bold text-white hover:bg-white/10"
+      >
+        <span aria-hidden>▶</span>
+        Ver demonstração da plataforma
+      </Link>
 
       <InscricaoForm plano={p} />
     </section>

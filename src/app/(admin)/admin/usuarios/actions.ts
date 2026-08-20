@@ -538,3 +538,81 @@ export async function alterarPlano(formData: FormData) {
   if (error) erro("Não foi possível atualizar o plano do usuário.");
   revalidatePath(PATH);
 }
+
+// ----------------------------------------------------------------------------
+// Excluir usuário permanentemente
+//
+// Diferente de DESATIVAR, que continua existindo e é o caminho normal:
+// desativar bane o login e mantém o cadastro, o histórico e os números do
+// aluno intactos, e pode ser desfeito com um clique em Reativar. Excluir
+// remove a pessoa e todo o material de estudo dela, sem volta.
+//
+// O que sai e o que fica está definido nas chaves estrangeiras (migração
+// 069), não aqui — é o banco que garante, mesmo se um dia alguém apagar por
+// outro caminho:
+//
+//   SAI     respostas, revisões de flashcard, tentativas de simulado e de
+//           atividade, progresso, missões, cronograma e ajustes, sessões de
+//           questões, briefing, tudo do Copiloto, notificações, permissões.
+//   FICA    matrículas e pagamentos (o faturamento não pode perder uma venda
+//           porque o aluno foi removido), o histórico administrativo, e todo
+//           conteúdo que a pessoa tenha cadastrado — questões, simulados,
+//           flashcards, banners, aulas. O acervo é da plataforma; some só a
+//           autoria.
+//
+// A exclusão é feita em `auth.users`. É de lá que a cascata desce para
+// `profiles` e, a partir dele, para o resto — apagar só o profile deixaria a
+// conta de login viva, com o e-mail preso e a pessoa ainda conseguindo pedir
+// "esqueci minha senha".
+// ----------------------------------------------------------------------------
+export async function excluirUsuario(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get("id"));
+
+  if (id === admin.id) erro("Você não pode excluir a própria conta.");
+
+  const supabase = createAdminClient();
+
+  // Quem é, antes de deixar de existir: o nome e o e-mail vão para a
+  // auditoria e para a mensagem de confirmação.
+  const { data: alvo, error: erroPerfil } = await supabase
+    .from("profiles")
+    .select("nome, email, role")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (erroPerfil) erro("Não foi possível carregar o usuário para exclusão.");
+  if (!alvo) erro("Usuário não encontrado. Ele pode já ter sido excluído.");
+
+  // Ficar sem nenhum administrador tranca a plataforma para sempre: não há
+  // outro caminho para promover alguém a admin a não ser pelo painel, que
+  // exige um admin. Este é o único caso em que a exclusão é recusada.
+  if (alvo.role === "admin") {
+    const { count, error: erroContagem } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "admin");
+
+    if (erroContagem) erro("Não foi possível verificar quantos administradores existem. Exclusão cancelada.");
+    if ((count ?? 0) <= 1) erro("Este é o único administrador da plataforma. Promova outro antes de excluí-lo.");
+  }
+
+  // A auditoria é gravada ANTES, com nome e e-mail no corpo: depois da
+  // exclusão o vínculo se perde (ON DELETE SET NULL) e sobraria um registro
+  // sem dizer de quem se tratava.
+  await registrarHistoricoAdmin(supabase, {
+    tipo: "usuario_excluido",
+    usuarioAlvoId: id,
+    adminId: admin.id,
+    detalhes: { nome: alvo.nome, email: alvo.email, role: alvo.role, excluido_em: new Date().toISOString() }
+  });
+
+  const { error: erroExclusao } = await supabase.auth.admin.deleteUser(id);
+  if (erroExclusao) {
+    console.error("Falha ao excluir usuário:", id, erroExclusao.message);
+    erro(`Não foi possível excluir o usuário: ${erroExclusao.message}`);
+  }
+
+  revalidatePath(PATH);
+  sucesso(`Usuário ${alvo.nome ?? alvo.email ?? ""} foi excluído permanentemente.`);
+}

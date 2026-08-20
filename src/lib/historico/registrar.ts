@@ -20,6 +20,11 @@ export type TipoHistoricoAdmin =
   // porque é a única que mexe na autenticação da conta — e é a que alguém
   // vai querer auditar depois ("por que este aluno entra com outro e-mail?").
   | "perfil_editado"
+  // Exclusão permanente. O `usuario_alvo_id` desta linha vira nulo assim que
+  // o usuário some (a FK é ON DELETE SET NULL, de propósito, para a auditoria
+  // sobreviver), então quem grava precisa deixar nome e e-mail em `detalhes`
+  // — senão fica um registro dizendo que alguém excluiu alguém.
+  | "usuario_excluido"
   | "email_alterado";
 
 /**

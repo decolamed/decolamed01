@@ -25,7 +25,16 @@ const CAMPOS = [
   { chave: "redacao.base_temas_url", label: "Link da Base de Temas de redação" },
   // O app do aluno já tinha o botão "Termos de Uso", mas não havia onde
   // dizer para onde ele aponta — o botão existia sem destino.
-  { chave: "site.termos_uso_url", label: "Link dos Termos de Uso (aceita qualquer URL, inclusive Canva)" }
+  { chave: "site.termos_uso_url", label: "Link dos Termos de Uso (aceita qualquer URL, inclusive Canva)" },
+  // Destino do botão "Adquira já" da demonstração pública (/demonstracao)
+  // quando o visitante chegou por link direto — o caso do link repassado no
+  // WhatsApp, que não carrega plano de origem. Quem entra pela página de um
+  // plano volta para ELE, independente do que estiver aqui.
+  {
+    chave: "demonstracao.link_compra",
+    label:
+      "Link de compra da demonstração — para onde vai o botão \"Adquira já\" quando alguém abre a demonstração por link direto (ex.: /inscricao/voo-guiado)"
+  }
 ];
 
 // Parâmetros do algoritmo do Copiloto. Antes eram constantes no código —
@@ -142,6 +151,7 @@ async function salvarConfiguracoes(formData: FormData) {
   // confirmação de pagamento — não existe mais home/contato pra revalidar.
   revalidatePath("/admin/configuracoes");
   revalidatePath("/inscricao/[slug]", "page");
+  revalidatePath("/demonstracao");
 
   const falhou = resultados.some((r) => r.error);
   if (falhou) {
