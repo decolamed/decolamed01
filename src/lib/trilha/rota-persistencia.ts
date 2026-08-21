@@ -19,7 +19,7 @@ import {
   type SimuladoDoCatalogo
 } from "@/lib/trilha/simulados-da-rota";
 import { contextoVazio, type ContextoDoAluno } from "@/lib/trilha/prioridade";
-import { chaveMateria } from "@/lib/site/materia-canonica";
+import { chaveCanonica } from "@/lib/site/materia-canonica";
 import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 
 // ============================================================================
@@ -200,11 +200,11 @@ async function contextoDoAluno(
     const ctx = contextoVazio();
 
     ((pesos as { materia: string; peso: number; qtd_questoes: number }[]) ?? []).forEach((m) => {
-      ctx.pesos.set(chaveMateria(m.materia), { peso: Number(m.peso) || 0, qtdQuestoes: Number(m.qtd_questoes) || 0 });
+      ctx.pesos.set(chaveCanonica(m.materia), { peso: Number(m.peso) || 0, qtdQuestoes: Number(m.qtd_questoes) || 0 });
     });
 
     ((respostas as { correta: boolean; questoes?: { materia?: string | null } | null }[]) ?? []).forEach((r) => {
-      const chave = chaveMateria(r.questoes?.materia ?? "");
+      const chave = chaveCanonica(r.questoes?.materia);
       if (!chave) return;
       const atual = ctx.desempenho.get(chave) ?? { acertos: 0, erros: 0 };
       if (r.correta) atual.acertos += 1;

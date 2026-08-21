@@ -86,10 +86,26 @@ export function materiaCanonica(materia: string | null | undefined): string {
   return SINONIMOS[chaveMateria(bruto)] ?? bruto;
 }
 
+/**
+ * A chave para indexar QUALQUER coisa por matéria.
+ *
+ * É `chaveMateria` depois de resolver o sinônimo — a diferença entre as duas
+ * é justamente Literatura, Português e as variações de Linguagens.
+ * `chaveMateria` sozinha devolve "literatura", que não existe em
+ * `materias_peso`; esta devolve "linguagens", que existe.
+ *
+ * Use esta em todo mapa cuja chave é uma matéria (pesos da prova, desempenho
+ * por matéria). `chaveMateria` crua só serve para comparar dois nomes que já
+ * se sabe serem da mesma origem.
+ */
+export function chaveCanonica(materia: string | null | undefined): string {
+  return chaveMateria(materiaCanonica(materia));
+}
+
 /** Duas matérias são a mesma? Use SEMPRE isto no lugar de `a === b`. */
 export function mesmaMateria(a: string | null | undefined, b: string | null | undefined): boolean {
-  const ca = chaveMateria(materiaCanonica(a));
-  const cb = chaveMateria(materiaCanonica(b));
+  const ca = chaveCanonica(a);
+  const cb = chaveCanonica(b);
   return ca !== "" && ca === cb;
 }
 
