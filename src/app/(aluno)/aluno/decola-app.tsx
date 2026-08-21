@@ -1937,6 +1937,72 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       [I("alert", 16, C.red), h("span", { key: "t", style: { flex: 1 } }, this.state.aviso)]
     );
   }
+  // ---------- o conteúdo ocupando a tela do computador ----------
+  //
+  // A coluna de conteúdo era fixa em 640px, centralizada ao lado da barra
+  // lateral. Num monitor de 1440px isso deixava quase metade da área vazia à
+  // direita: o desenho estava certo, só não usava a tela.
+  //
+  // Telas de painel (Mapa de Voo e Painel de Bordo) são feitas de cartões
+  // independentes — é o caso em que a coluna única desperdiça espaço. Elas
+  // passam a fluir em DUAS colunas. As demais (questão, simulado, flashcard,
+  // leitura) continuam em coluna única, porque ali largura demais atrapalha:
+  // linha de texto comprida cansa, e alternativa de questão esticada fica
+  // pior de acertar o clique. Para elas muda só a largura: 640 → 860.
+  //
+  // O fluxo em colunas do CSS (`columnCount`) foi escolhido no lugar de uma
+  // grade. Numa grade, cada filho ocupa uma célula mesmo quando não desenha
+  // nada — e a faixa de banners, vazia para quem não tem banner, abria um
+  // buraco no meio do painel. No fluxo em colunas um bloco sem altura não
+  // custa nada, e as duas colunas ainda se equilibram sozinhas.
+  //
+  // `CABECALHOS_LARGOS` diz quantos filhos do topo ficam FORA do fluxo,
+  // atravessando a largura toda: a logo e a saudação, no Mapa; a barra de
+  // título, no Painel. Sem isso a saudação cairia na segunda coluna.
+  conteudoLargo(children: any) {
+    const { h } = this.ui();
+    // Por tela: quantos filhos do topo ficam FORA do fluxo (atravessando a
+    // largura toda) e se o primeiro deles é a logo — que no computador já
+    // aparece na barra lateral e, repetida no topo, fica sobrando.
+    const PAINEIS: Record<string, { atravessam: number; logoRepetida?: boolean }> = {
+      mapa: { atravessam: 1, logoRepetida: true },
+      painel: { atravessam: 1 }
+    };
+    const tela = this.state.screen as string;
+    const painel = PAINEIS[tela];
+
+    if (!painel) {
+      return h(
+        "div",
+        { style: { display: "flex", flexDirection: "column", maxWidth: 860, margin: "0 auto", padding: "26px 32px 60px" } },
+        children
+      );
+    }
+
+    const todos = (Array.isArray(children) ? children : [children]).filter(Boolean);
+    const filhos = painel.logoRepetida ? todos.slice(1) : todos;
+    const cabecalho = filhos.slice(0, painel.atravessam);
+    const corpo = filhos.slice(painel.atravessam);
+
+    return h("div", { style: { maxWidth: 1200, margin: "0 auto", padding: "26px 24px 60px" } }, [
+      h("div", { key: "topo" }, cabecalho),
+      h(
+        "div",
+        { key: "corpo", style: { columnCount: 2, columnGap: 10, marginTop: 4 } },
+        corpo.map((filho: any, i: number) =>
+          h(
+            "div",
+            // `breakInside: avoid` impede um cartão de ser partido ao meio na
+            // virada de coluna. `display: block` porque um filho com display
+            // flex ignoraria a regra de quebra em alguns navegadores.
+            { key: "bl" + i, style: { breakInside: "avoid", display: "block" } },
+            filho
+          )
+        )
+      )
+    ]);
+  }
+
   screenWrap(children: any, opts: any = {}) {
     const { C, h } = this.ui();
     if (this.wide()) {
@@ -1944,7 +2010,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         this.comKey("sidebar", this.sidebarDesktop()),
         h("div", { key: "m", style: { flex: 1, minWidth: 0, minHeight: "100vh", position: "relative", background: C.bg, color: C.txt } }, [
           this.comKey("demo", this.demoBanner()),
-          h("div", { key: "c", style: { display: "flex", flexDirection: "column", maxWidth: 640, margin: "0 auto", padding: "26px 32px 60px" } }, children),
+          this.comKey("c", this.conteudoLargo(children)),
           this.state.notifOpen ? this.comKey("notif", this.notifSheet()) : null,
           this.comKey("aviso", this.avisoToast())
         ])
@@ -3237,7 +3303,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
             h("text", { key: "x", x: 43, y: 47, textAnchor: "middle", fontSize: 17, fontWeight: 900, fill: C.txt, fontFamily: "inherit" }, pctResp + "%")
           ]),
           h("div", { key: "t", style: { flex: 1 } }, [
-            h("div", { key: "a", style: { fontSize: 14.5, fontWeight: 800 } }, totalResp + " questão" + (totalResp === 1 ? "" : "ões") + " respondida" + (totalResp === 1 ? "" : "s")),
+            h("div", { key: "a", style: { fontSize: 14.5, fontWeight: 800 } }, totalResp + (totalResp === 1 ? " questão respondida" : " questões respondidas")),
             h("div", { key: "b", style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 3, lineHeight: 1.5 } }, acertos + " acertos · " + (totalResp - acertos) + " erros"),
             h("div", { key: "c", onClick: () => this.nav("painel"), style: { fontSize: 11.5, fontWeight: 800, color: C.orange, marginTop: 6, cursor: "pointer" } }, "Ver relatório completo →")
           ])
