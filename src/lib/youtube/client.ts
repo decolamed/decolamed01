@@ -262,3 +262,114 @@ export async function buscarTitulosYoutube(videoIds: string[]): Promise<Resultad
 
   return { titulos, erro: null };
 }
+
+// ============================================================================
+// O ESTADO DE UM VÍDEO: DURA QUANTO, E DÁ PARA ASSISTIR AQUI DENTRO?
+//
+// Uma consulta só responde às duas perguntas, e as duas são necessárias:
+//
+//   - `duracaoMinutos` alimenta o cálculo de capacidade do cronograma, para
+//     uma aula de 10 minutos não ocupar o mesmo espaço de uma de 50.
+//   - `disponivel` / `incorporavel` dizem se o aluno consegue assistir. Vídeo
+//     removido ou privado simplesmente não volta na resposta da API; vídeo
+//     que o dono proibiu de incorporar volta com `embeddable: false` e falha
+//     dentro do player sem dar nenhum sinal ao servidor.
+//
+// Consultar as duas juntas evita gastar duas chamadas de cota por vídeo.
+// ============================================================================
+
+export interface EstadoDoVideo {
+  videoId: string;
+  /** O vídeo existe e está público/não listado. */
+  disponivel: boolean;
+  /** Pode tocar dentro da plataforma (o dono não bloqueou a incorporação). */
+  incorporavel: boolean;
+  duracaoMinutos: number;
+  titulo: string | null;
+  canal: string | null;
+  canalId: string | null;
+  /** Por que não dá para usar, quando não dá. Texto para o admin ler. */
+  motivo: string | null;
+}
+
+export interface ResultadoEstados {
+  estados: Map<string, EstadoDoVideo>;
+  erro: string | null;
+}
+
+function indisponivel(videoId: string, motivo: string): EstadoDoVideo {
+  return { videoId, disponivel: false, incorporavel: false, duracaoMinutos: 0, titulo: null, canal: null, canalId: null, motivo };
+}
+
+/**
+ * O estado de vários vídeos de uma vez.
+ *
+ * Vídeo que não volta na resposta é vídeo que não existe mais para quem
+ * consulta: removido, privado ou id errado. O YouTube não devolve erro nesse
+ * caso — ele simplesmente omite o item, e é por isso que a ausência precisa
+ * ser tratada explicitamente aqui em vez de virar "não sei".
+ */
+export async function estadoDosVideos(videoIds: string[]): Promise<ResultadoEstados> {
+  const estados = new Map<string, EstadoDoVideo>();
+  const ids = [...new Set(videoIds.filter(Boolean))];
+  if (ids.length === 0) return { estados, erro: null };
+
+  const apiKey = await getYoutubeApiKey();
+  if (!apiKey) {
+    return { estados, erro: "Nenhuma chave da YouTube Data API configurada. Cadastre em Configurações." };
+  }
+
+  const LOTE = 50; // teto do endpoint /videos
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const lote = ids.slice(i, i + LOTE);
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,status,snippet&id=${lote.join(",")}&key=${encodeURIComponent(apiKey)}`,
+        { cache: "no-store", signal: AbortSignal.timeout(15000) }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const motivo: string = data?.error?.message ?? `HTTP ${res.status}`;
+        console.error("[youtube] falha ao consultar estado dos vídeos:", motivo);
+        return { estados, erro: motivo };
+      }
+
+      const vistos = new Set<string>();
+      for (const v of data.items ?? []) {
+        vistos.add(v.id);
+        const privado = v.status?.privacyStatus === "private";
+        const processado = v.status?.uploadStatus === "processed";
+        const incorporavel = v.status?.embeddable !== false;
+        const segundos = parseDuracaoISO8601(v.contentDetails?.duration ?? "PT0S");
+
+        estados.set(v.id, {
+          videoId: v.id,
+          disponivel: !privado && processado,
+          incorporavel,
+          duracaoMinutos: Math.max(0, Math.round(segundos / 60)),
+          titulo: v.snippet?.title ?? null,
+          canal: v.snippet?.channelTitle ?? null,
+          canalId: v.snippet?.channelId ?? null,
+          motivo: privado
+            ? "O vídeo está privado."
+            : !processado
+              ? "O vídeo não está disponível no YouTube."
+              : !incorporavel
+                ? "O dono do vídeo não permite reprodução fora do YouTube."
+                : null
+        });
+      }
+
+      // O que não voltou: removido, privado ou id inválido. Ausência é
+      // resposta, não silêncio.
+      for (const id of lote) {
+        if (!vistos.has(id)) estados.set(id, indisponivel(id, "O vídeo foi removido ou está indisponível."));
+      }
+    } catch (e) {
+      console.error("[youtube] erro de rede ao consultar vídeos:", e instanceof Error ? e.message : e);
+      return { estados, erro: "Não foi possível falar com o YouTube agora." };
+    }
+  }
+
+  return { estados, erro: null };
+}

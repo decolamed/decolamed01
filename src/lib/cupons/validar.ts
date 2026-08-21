@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Cupom } from "@/types/database";
+import { cupomValeNoPlano } from "./planos-aplicaveis";
 
 export interface ResultadoCupom {
   cupom: Cupom;
@@ -7,7 +8,7 @@ export interface ResultadoCupom {
   valorFinalCentavos: number;
 }
 
-export type ErroCupom = "nao_encontrado" | "inativo" | "expirado" | "limite_atingido";
+export type ErroCupom = "nao_encontrado" | "inativo" | "expirado" | "limite_atingido" | "plano_nao_elegivel";
 
 /**
  * Valida um cupom e calcula o desconto SEMPRE no servidor — nunca confiamos
@@ -17,7 +18,11 @@ export type ErroCupom = "nao_encontrado" | "inativo" | "expirado" | "limite_atin
 export async function validarCupom(
   supabase: SupabaseClient,
   codigo: string,
-  valorOriginalCentavos: number
+  valorOriginalCentavos: number,
+  // Em qual plano o cupom está sendo usado. Opcional na assinatura para não
+  // quebrar quem já chamava, mas quem valida uma compra DEVE passar: um cupom
+  // restrito sem plano informado é recusado (ver `cupomValeNoPlano`).
+  planoId?: string | null
 ): Promise<{ ok: true; resultado: ResultadoCupom } | { ok: false; erro: ErroCupom }> {
   const { data: cupom } = await supabase
     .from("cupons")
@@ -29,6 +34,12 @@ export async function validarCupom(
   if (!cupom.ativo) return { ok: false, erro: "inativo" };
   if (cupom.valido_ate && new Date(cupom.valido_ate) < new Date()) return { ok: false, erro: "expirado" };
   if (cupom.limite_usos !== null && cupom.usos >= cupom.limite_usos) return { ok: false, erro: "limite_atingido" };
+  // A restrição por plano vem depois das outras: um cupom expirado E fora do
+  // plano deve dizer "expirado", que é a informação que o cliente consegue
+  // agir sobre.
+  if (!cupomValeNoPlano((cupom as { planos_aplicaveis?: unknown }).planos_aplicaveis, planoId)) {
+    return { ok: false, erro: "plano_nao_elegivel" };
+  }
 
   const descontoCentavos =
     cupom.tipo === "percentual"

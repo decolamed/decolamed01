@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { findOrCreateCustomer, createCharge, getPixQrCode, getPayment, AsaasValidacaoError } from "@/lib/asaas/client";
 import { podeReaproveitar } from "@/lib/matricula/cobranca-reaproveitavel";
 import { validarCupom } from "@/lib/cupons/validar";
+import { MENSAGEM_PLANO_NAO_ELEGIVEL } from "@/lib/cupons/planos-aplicaveis";
 import { lerConfiguracao, opcaoEscolhida } from "@/lib/planos/parcelamento";
 
 const bodySchema = z.object({
@@ -105,9 +106,20 @@ export async function POST(request: Request) {
   let precoFinalCentavos = plano.preco_centavos;
   let descontoCentavos = 0;
   if (cupomCodigo) {
-    const resultado = await validarCupom(supabase, cupomCodigo, plano.preco_centavos);
+    const resultado = await validarCupom(supabase, cupomCodigo, plano.preco_centavos, planoId);
     if (!resultado.ok) {
-      return NextResponse.json({ error: "Cupom inválido ou expirado." }, { status: 400 });
+      // O motivo importa: "cupom inválido" faz a pessoa conferir se digitou
+      // certo, quando na verdade o código está certo e só não vale para o
+      // plano que ela escolheu.
+      return NextResponse.json(
+        {
+          error:
+            resultado.erro === "plano_nao_elegivel"
+              ? MENSAGEM_PLANO_NAO_ELEGIVEL
+              : "Cupom inválido ou expirado."
+        },
+        { status: 400 }
+      );
     }
     descontoCentavos = resultado.resultado.descontoCentavos;
     precoFinalCentavos = resultado.resultado.valorFinalCentavos;

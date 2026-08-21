@@ -5,7 +5,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { Icon } from "@/components/admin/icon";
 import { Toggle, Toast, useToast, PrimaryButton, GhostButton, TextArea, TextInput, FieldLabel } from "@/components/admin/interactive";
 import { buscarInfoYoutube, type AulaYoutubeInfo } from "@/lib/importacao/youtube";
-import { criarConteudo, criarConteudosEmLote, atualizarConteudo, alternarAtivoConteudo, excluirConteudo, atualizarTitulosGenericos } from "./actions";
+import { criarConteudo, criarConteudosEmLote, atualizarConteudo, alternarAtivoConteudo, excluirConteudo, atualizarTitulosGenericos, revisarVideoaulas } from "./actions";
 import { normalizar } from "@/lib/trilha/catalogo";
 
 interface AulaYoutubePrevia extends AulaYoutubeInfo {
@@ -34,6 +34,8 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
   const [corrigindoTitulos, setCorrigindoTitulos] = useState(false);
   const [progressoTitulos, setProgressoTitulos] = useState("");
   const [avisoTitulos, setAvisoTitulos] = useState<string | null>(null);
+  const [revisando, setRevisando] = useState(false);
+  const [relatorioRevisao, setRelatorioRevisao] = useState<string[] | null>(null);
 
   const [importando, setImportando] = useState(false);
   const [links, setLinks] = useState("");
@@ -118,6 +120,34 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
     } finally {
       setCorrigindoTitulos(false);
       setProgressoTitulos("");
+    }
+  }
+
+  // Verifica todas as aulas no YouTube: grava a duração real de cada uma e
+  // troca as que não tocam mais. Ver revisarVideoaulas() em actions.ts.
+  async function revisar() {
+    setRevisando(true);
+    setRelatorioRevisao(null);
+    try {
+      const r = await revisarVideoaulas().catch(() => null);
+      if (!r) return show("Não foi possível revisar as aulas agora.");
+      if (!r.ok) return show(r.erro);
+
+      const linhas = [
+        `${r.verificadas} aula(s) verificada(s) no YouTube.`,
+        `${r.duracoesGravadas} duração(ões) real(is) gravada(s) — o cronograma passa a usar o tempo certo de cada aula.`,
+        `${r.quebradas} aula(s) com problema de reprodução.`,
+        `${r.substituidas} substituída(s) automaticamente por outra do mesmo assunto.`
+      ];
+      // As que não puderam ser trocadas precisam de nome: são as que exigem
+      // ação do admin, e um número solto não diz qual aula procurar.
+      for (const pendente of r.semSubstituta) linhas.push(`Sem substituta: ${pendente.motivo}`);
+      if (r.aviso) linhas.push(`Aviso do YouTube: ${r.aviso}`);
+
+      setRelatorioRevisao(linhas);
+      if (r.duracoesGravadas > 0 || r.substituidas > 0) window.location.reload();
+    } finally {
+      setRevisando(false);
     }
   }
 
@@ -223,9 +253,28 @@ export function CursosManager({ aulas: inicial }: { aulas: any[] }) {
               {corrigindoTitulos ? progressoTitulos || "Buscando títulos…" : `🔎 Corrigir ${genericas} título(s) genérico(s)`}
             </GhostButton>
           )}
+          <GhostButton onClick={revisar} className={revisando ? "opacity-60" : ""}>
+            {revisando ? "Verificando no YouTube…" : "⏱️ Revisar aulas (duração e vídeos quebrados)"}
+          </GhostButton>
           <GhostButton onClick={() => setImportando((v) => !v)}>{importando ? "Fechar importação" : "Importar do YouTube"}</GhostButton>
         </div>
       </div>
+
+      {relatorioRevisao && (
+        <div className="mb-3 rounded-[11px] border border-navy-dark/15 bg-white p-3 text-xs font-semibold text-navy-dark">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[11px] font-extrabold uppercase tracking-wide text-navy-dark/40">Revisão das aulas</span>
+            <button onClick={() => setRelatorioRevisao(null)} className="text-navy-dark/40 hover:text-navy-dark">
+              fechar
+            </button>
+          </div>
+          <ul className="space-y-1">
+            {relatorioRevisao.map((linha, i) => (
+              <li key={i}>· {linha}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {avisoTitulos && (
         <div className="mb-3 flex items-start gap-2 rounded-[11px] border border-orange/40 bg-orange/[0.06] p-3 text-xs font-semibold text-navy-dark">

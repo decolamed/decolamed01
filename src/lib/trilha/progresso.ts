@@ -80,8 +80,36 @@ export const MINUTOS_POR_TIPO: Record<string, number> = {
   livre: 0
 };
 
+/**
+ * Quanto tempo o item ocupa no dia.
+ *
+ * Videoaula usa a duração REAL quando ela é conhecida — aulas variam de 5 a
+ * 60+ minutos, e tratar todas como 30 é o que fazia um dia de 2h receber uma
+ * única aula de 10 minutos enquanto outro estourava com três de 50.
+ *
+ * "Conhecida" é uma marca explícita, não um palpite: `duracao_real` só chega
+ * aqui quando a duração veio da fonte (ver `duracao_confirmada` em
+ * conteudos_biblioteca, migração 070). Sem a marca, vale a média por tipo —
+ * que é o comportamento de sempre, e o que continua valendo para questões,
+ * revisão, flashcards e todo o resto, porque a duração deles depende de quem
+ * estuda, não do conteúdo.
+ */
 export function minutosDoItem(item: TrilhaItem): number {
+  const real = duracaoRealDoItem(item);
+  if (real !== null) return real;
   return MINUTOS_POR_TIPO[item.tipo] ?? 30;
+}
+
+/** A duração real de uma videoaula, se ela for confiável. */
+export function duracaoRealDoItem(item: TrilhaItem): number | null {
+  if (item.tipo !== "aula") return null;
+  const i = item as unknown as { duracao_real?: boolean; duracao_minutos?: number };
+  if (!i.duracao_real) return null;
+  const minutos = i.duracao_minutos;
+  // Duração marcada como real mas inutilizável (zero, negativa, ausente) cai
+  // na média: é melhor uma estimativa do que somar zero e o dia receber aula
+  // demais.
+  return Number.isFinite(minutos) && (minutos as number) > 0 ? Math.round(minutos as number) : null;
 }
 
 // Itens que não valem reagendamento: "livre" é descanso e "revisao" é

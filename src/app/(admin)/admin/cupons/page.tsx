@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
+import { valorParaGravar, descreverAplicacao } from "@/lib/cupons/planos-aplicaveis";
 import type { Cupom } from "@/types/database";
 
 async function criarCupom(formData: FormData) {
@@ -43,7 +44,11 @@ async function criarCupom(formData: FormData) {
     // este cupom passa a gerar comissão automaticamente (ver migração 005 —
     // trigger sync_comissao_parceiro).
     parceiro_id: parceiroId || null,
-    percentual_comissao: parceiroId && percentualComissao ? Number(percentualComissao) : 0
+    percentual_comissao: parceiroId && percentualComissao ? Number(percentualComissao) : 0,
+    // Nenhum plano marcado = vale em todos, que é o comportamento de sempre.
+    // `valorParaGravar` transforma lista vazia em nulo (ver
+    // lib/cupons/planos-aplicaveis.ts).
+    planos_aplicaveis: valorParaGravar(formData.getAll("planos_aplicaveis"))
   });
 
   revalidatePath("/admin/cupons");
@@ -80,6 +85,21 @@ async function vincularParceiro(formData: FormData) {
   if (error) {
     redirect(`/admin/cupons?erro=${encodeURIComponent("Não foi possível salvar o vínculo com o parceiro. Confira se o percentual está entre 0 e 100.")}`);
   }
+}
+
+async function salvarPlanosDoCupom(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("cupons")
+    .update({ planos_aplicaveis: valorParaGravar(formData.getAll("planos_aplicaveis")) })
+    .eq("id", String(formData.get("id")));
+  revalidatePath("/admin/cupons");
+  if (error) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent("Não foi possível salvar os planos deste cupom.")}`);
+  }
+  redirect(`/admin/cupons?sucesso=${encodeURIComponent("Planos do cupom atualizados.")}`);
 }
 
 async function alternarAtivo(formData: FormData) {
@@ -122,6 +142,12 @@ export default async function AdminCuponsPage({
     .select("id, nome")
     .eq("role", "parceiro")
     .order("nome");
+  // Todos os planos, inclusive inativos: um cupom pode estar preso a um plano
+  // que foi desativado temporariamente, e sumir a marcação da tela faria o
+  // admin salvar sem perceber que apagou a restrição.
+  const { data: planos } = await supabase.from("planos").select("id, nome, ativo").order("ordem");
+  const listaDePlanos = (planos as { id: string; nome: string; ativo: boolean }[]) ?? [];
+  const nomePorPlano = new Map(listaDePlanos.map((p) => [p.id, p.nome]));
   const lista = (cupons as (Cupom & { parceiros: { nome: string } | null })[]) ?? [];
 
   return (
@@ -146,6 +172,36 @@ export default async function AdminCuponsPage({
             },
             { titulo: "Usos", celula: (cupom) => `${cupom.usos}${cupom.limite_usos ? ` / ${cupom.limite_usos}` : ""}` },
             { titulo: "Status", celula: (cupom) => (cupom.ativo ? "Ativo" : "Inativo") },
+            {
+              titulo: "Cursos/Planos aplicáveis",
+              celula: (cupom) => (
+                <div>
+                  <form action={salvarPlanosDoCupom} className="space-y-1">
+                    <input type="hidden" name="id" value={cupom.id} />
+                    {listaDePlanos.map((plano) => (
+                      <label key={plano.id} className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          name="planos_aplicaveis"
+                          value={plano.id}
+                          defaultChecked={(cupom.planos_aplicaveis ?? []).includes(plano.id)}
+                        />
+                        <span className={plano.ativo ? "" : "text-navy-dark/40"}>
+                          {plano.nome}
+                          {!plano.ativo && " (inativo)"}
+                        </span>
+                      </label>
+                    ))}
+                    <SubmitButton pendingText="..." className="text-orange-dark hover:underline text-xs">
+                      Salvar planos
+                    </SubmitButton>
+                  </form>
+                  <p className="mt-1 text-xs text-navy-dark/50">
+                    {descreverAplicacao(cupom.planos_aplicaveis, nomePorPlano)}
+                  </p>
+                </div>
+              )
+            },
             {
               titulo: "Parceiro (afiliado)",
               celula: (cupom) => (
@@ -250,6 +306,23 @@ export default async function AdminCuponsPage({
                 placeholder="0"
                 className="mt-1 w-full rounded-lg border p-3"
               />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-semibold">Cursos/Planos aplicáveis</label>
+            <p className="mt-0.5 text-xs text-navy-dark/50">
+              Nenhum marcado = vale em todos os planos. Marque um ou mais para restringir.
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {listaDePlanos.map((plano) => (
+                <label key={plano.id} className="flex items-center gap-2 rounded-lg border p-2.5 text-sm">
+                  <input type="checkbox" name="planos_aplicaveis" value={plano.id} />
+                  <span className={plano.ativo ? "" : "text-navy-dark/40"}>
+                    {plano.nome}
+                    {!plano.ativo && " (inativo)"}
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
           <SubmitButton

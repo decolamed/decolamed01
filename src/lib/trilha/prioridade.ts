@@ -1,5 +1,5 @@
 import type { TrilhaItem } from "@/types/database";
-import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
+import { chaveMateria, chaveCanonica, mesmaMateria } from "@/lib/site/materia-canonica";
 import { chaveDeItemTrilha, minutosDoItem } from "@/lib/trilha/progresso";
 
 // ============================================================================
@@ -39,11 +39,11 @@ export interface DesempenhoDaMateria {
 }
 
 export interface ContextoDoAluno {
-  /** `materias_peso`, indexado por `chaveMateria`. */
+  /** `materias_peso`, indexado por `chaveCanonica`. */
   pesos: Map<string, PesoDaMateria>;
   /** Autoavaliação do briefing: matéria → Domínio | Atenção | Turbulência. */
   sentimentos: Record<string, string>;
-  /** Respostas já dadas, por matéria (`chaveMateria`). */
+  /** Respostas já dadas, por matéria (`chaveCanonica`). */
   desempenho: Map<string, DesempenhoDaMateria>;
   /** Chaves de `aluno_progresso_itens` que o aluno já concluiu. */
   concluidos: Set<string>;
@@ -85,7 +85,11 @@ export function retornoDaMateria(materia: string | null | undefined, ctx: Contex
   if (ctx.pesos.size === 0) return 0.5; // sem pesos cadastrados, ninguém tem vantagem
   const potenciais = [...ctx.pesos.values()].map((p) => Math.max(0, p.peso) * Math.max(0, p.qtdQuestoes));
   const maior = Math.max(...potenciais, 1);
-  const daMateria = ctx.pesos.get(chaveMateria(materia ?? ""));
+  // `chaveCanonica`, não `chaveMateria`: um conteúdo de "Literatura" precisa
+  // encontrar o peso de "Linguagens". Com a chave crua ele não casava com peso
+  // nenhum e caía no 0.35 de matéria desconhecida — o peso oficial da FACAPE,
+  // que é o maior fator da nota, simplesmente não valia para esses itens.
+  const daMateria = ctx.pesos.get(chaveCanonica(materia));
   if (!daMateria) return 0.35; // matéria sem peso cadastrado não some, mas não lidera
   return Math.min(1, (Math.max(0, daMateria.peso) * Math.max(0, daMateria.qtdQuestoes)) / maior);
 }
@@ -98,7 +102,10 @@ export function retornoDaMateria(materia: string | null | undefined, ctx: Contex
  * o fundo da fila.
  */
 export function carenciaDaMateria(materia: string | null | undefined, ctx: ContextoDoAluno): number {
-  const d = ctx.desempenho.get(chaveMateria(materia ?? ""));
+  // Mesma razão do retorno: as respostas de Literatura contam no desempenho
+  // de Linguagens, senão o aluno aparece sem histórico numa matéria em que já
+  // respondeu.
+  const d = ctx.desempenho.get(chaveCanonica(materia));
   const total = (d?.acertos ?? 0) + (d?.erros ?? 0);
   if (total === 0) return 0.5;
   const taxaErro = (d?.erros ?? 0) / total;

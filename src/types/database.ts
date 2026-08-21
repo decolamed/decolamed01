@@ -48,6 +48,10 @@ export interface Cupom {
   ativo: boolean;
   parceiro_id: string | null;
   percentual_comissao: number; // 0-100
+  // Planos em que o cupom vale. Nulo ou vazio = todos os planos — é o que
+  // mantém funcionando todo cupom criado antes desta coluna existir.
+  // Ver lib/cupons/planos-aplicaveis.ts.
+  planos_aplicaveis: string[] | null;
   created_at: string;
 }
 
