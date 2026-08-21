@@ -3073,6 +3073,40 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ])
         ])
       ),
+      // Enviar redação, direto em Estudos. Antes só existia em Configurações
+      // — dois toques a mais, num lugar onde ninguém procura material de
+      // estudo. O destino é a MESMA tela de sempre (`scrRedacao`): o envio,
+      // a correção, o histórico e a contagem de créditos não mudaram.
+      h(
+        "div",
+        { key: "redacao-atalho", style: { margin: "14px 18px 0" } },
+        card(
+          { padding: 16 },
+          [
+            h("div", { key: "r", style: { display: "flex", gap: 12, alignItems: "center" } }, [
+              iconBox("note", C.peach, C.dark ? C.peachTxt : "#9a5218", 44, 20),
+              h("div", { key: "t", style: { flex: 1, minWidth: 0 } }, [
+                h("div", { key: "a", style: { fontSize: 13.5, fontWeight: 800 } }, "Enviar redação"),
+                h(
+                  "div",
+                  { key: "b", style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2 } },
+                  "Correção particular com feedback detalhado"
+                )
+              ]),
+              this.props.dados.creditosRedacaoDisponiveis > 0
+                ? h(
+                    "span",
+                    { key: "c", style: { fontSize: 10.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "3px 9px", borderRadius: 99, whiteSpace: "nowrap" } },
+                    this.props.dados.creditosRedacaoDisponiveis +
+                      " crédito" +
+                      (this.props.dados.creditosRedacaoDisponiveis === 1 ? "" : "s")
+                  )
+                : I("chevR", 15, C.faint)
+            ])
+          ],
+          () => this.nav("redacao")
+        )
+      ),
       h(
         "div",
         { key: "grid", style: { margin: "14px 18px 4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },

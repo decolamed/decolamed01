@@ -9,6 +9,7 @@ import {
   type Rota,
   type SimuladoDisponivel
 } from "@/lib/trilha/rota";
+import { comDuracaoReal, aulasReferenciadas, type DuracaoConhecida } from "@/lib/trilha/duracao-das-aulas";
 import { descreverViolacoes, requisitosDoTemplate, validarRota } from "@/lib/trilha/validador-rota";
 import { aplicarQuestoesExtras } from "@/lib/trilha/questoes-extras-servidor";
 import {
@@ -61,6 +62,39 @@ interface LinhaRota {
  *   • a prova já passou.
  * Preferimos não mostrar rota nenhuma a mostrar uma rota chutada.
  */
+
+/**
+ * Quanto dura cada videoaula referenciada pelo template.
+ *
+ * Busca só os `ref_id` que o template usa — algumas dezenas, não o acervo
+ * inteiro. Falha de consulta devolve mapa vazio de propósito: sem duração
+ * confirmada o cronograma volta a usar a média por tipo, que é o
+ * comportamento de sempre. Nenhum aluno fica sem cronograma por causa disto.
+ */
+async function duracoesDasAulas(
+  supabase: ClienteSupabase,
+  template: TrilhaDia[]
+): Promise<Map<string, DuracaoConhecida>> {
+  const ids = aulasReferenciadas(template);
+  if (ids.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("conteudos_biblioteca")
+    .select("id, duracao_minutos, duracao_confirmada")
+    .in("id", ids);
+
+  if (error) {
+    console.error("[rota] não foi possível ler a duração das aulas:", error.message);
+    return new Map();
+  }
+
+  const mapa = new Map<string, DuracaoConhecida>();
+  for (const linha of (data ?? []) as { id: string; duracao_minutos: number; duracao_confirmada: boolean }[]) {
+    mapa.set(linha.id, { duracaoMinutos: linha.duracao_minutos, confirmada: Boolean(linha.duracao_confirmada) });
+  }
+  return mapa;
+}
+
 export async function rotaDoAluno(
   supabase: ClienteSupabase,
   alunoId: string,
@@ -76,8 +110,12 @@ export async function rotaDoAluno(
   const parametros = parametrosDoBriefing(opcoes.briefing, opcoes.hoje);
   if (!parametros) return null;
 
+  // A duração real das videoaulas entra ANTES de gerar: é a conta de quanto o
+  // dia comporta que muda, não as regras de escolha. Ver duracao-das-aulas.ts.
+  const template = comDuracaoReal(opcoes.template, await duracoesDasAulas(supabase, opcoes.template));
+
   const contexto = await contextoDoAluno(supabase, alunoId, opcoes.briefing);
-  const rota = gerarRota(opcoes.template, parametros, {
+  const rota = gerarRota(template, parametros, {
     ...(await contextoDaRota(supabase, alunoId)),
     ajustesDoMentor: await ajustesDoMentor(supabase, alunoId),
     contexto
@@ -88,7 +126,7 @@ export async function rotaDoAluno(
   // item principal muda de lugar por causa dela. Ver questoes-extras.ts.
   await aplicarQuestoesExtras(supabase, alunoId, rota, contexto);
 
-  await sincronizarRota(supabase, alunoId, rota, opcoes.template);
+  await sincronizarRota(supabase, alunoId, rota, template);
   return rota;
 }
 
