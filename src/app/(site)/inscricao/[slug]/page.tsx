@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { linkDaDemonstracao } from "@/lib/demonstracao/plano-de-origem";
 import { createClient } from "@/lib/supabase/server";
 import { InscricaoForm } from "@/components/site/matricula-form";
 import type { Plano } from "@/types/database";
@@ -84,9 +85,11 @@ export default async function InscricaoPage({ params }: { params: { slug: string
       {/* A demonstração é um caminho paralelo à compra, não um concorrente
           dela: fica acima do formulário, com peso visual de link secundário,
           para quem ainda não se convenceu ter o que ver antes de desistir.
-          `voltar` traz a pessoa de volta para ESTE plano no fim do tour. */}
+          O link é curto de propósito (/demo/<slug>) — é ele que vai parar
+          num WhatsApp — e o slug traz a pessoa de volta para ESTE plano no fim
+          do tour. */}
       <Link
-        href={`/demonstracao?voltar=${encodeURIComponent(`/inscricao/${params.slug}`)}`}
+        href={linkDaDemonstracao(params.slug)}
         className="mx-auto mt-4 flex w-full max-w-md items-center justify-center gap-2 rounded-full border border-white/25 px-6 py-3.5 font-display text-sm font-bold text-white transition hover:border-white/40 hover:bg-white/10"
       >
         <span aria-hidden>▶</span>

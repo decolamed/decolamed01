@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planoDeOrigem } from "./plano-de-origem.ts";
+import { planoDeOrigem, planoDoCaminho, linkDaDemonstracao, enderecoCurto } from "./plano-de-origem.ts";
 
 test("o caminho legítimo de uma inscrição passa", () => {
   assert.equal(planoDeOrigem("/inscricao/voo-guiado"), "/inscricao/voo-guiado");
@@ -70,20 +70,20 @@ test("o fallback NÃO é a tela de redefinir senha", () => {
 // searchParams. É nessa ida e volta que o slug pode chegar deformado e o
 // visitante terminar num plano que não é o dele.
 
-/** Exatamente o href que a página de inscrição monta. */
-const linkDaDemonstracao = (slug) => `/demonstracao?voltar=${encodeURIComponent(`/inscricao/${slug}`)}`;
+/** O href ANTIGO, com query string — mantido para provar que ainda funciona. */
+const linkAntigo = (slug) => `/demonstracao?voltar=${encodeURIComponent(`/inscricao/${slug}`)}`;
 
 /** O que o Next entrega em searchParams.voltar. */
 const comoChegaNoServidor = (href) => new URL(href, "https://exemplo.test").searchParams.get("voltar");
 
 test("quem entra pelo plano A volta para o plano A", () => {
-  assert.equal(planoDeOrigem(comoChegaNoServidor(linkDaDemonstracao("voo-guiado"))), "/inscricao/voo-guiado");
+  assert.equal(planoDeOrigem(comoChegaNoServidor(linkAntigo("voo-guiado"))), "/inscricao/voo-guiado");
 });
 
 test("cada plano preserva a própria origem", () => {
   for (const slug of ["voo-guiado", "decolando-pro", "plano-teste-2", "a"]) {
     assert.equal(
-      planoDeOrigem(comoChegaNoServidor(linkDaDemonstracao(slug))),
+      planoDeOrigem(comoChegaNoServidor(linkAntigo(slug))),
       `/inscricao/${slug}`,
       `o plano ${slug} não voltou para si mesmo`
     );
@@ -92,4 +92,55 @@ test("cada plano preserva a própria origem", () => {
 
 test("link solto, sem origem, não inventa um plano", () => {
   assert.equal(planoDeOrigem(comoChegaNoServidor("/demonstracao")), null);
+});
+
+// ═══════════════════════════ O LINK CURTO ═══════════════════════════════════
+// `/demonstracao?voltar=%2Finscricao%2Fvooguiado` diz a mesma coisa que
+// `/demo/vooguiado` — com 43 caracteres a mais e três símbolos no meio.
+
+test("o link que a página do plano monta é curto e legível", () => {
+  assert.equal(linkDaDemonstracao("vooguiado"), "/demo/vooguiado");
+  assert.equal(linkDaDemonstracao("decolando-pro"), "/demo/decolando-pro");
+  assert.ok(!linkDaDemonstracao("vooguiado").includes("%"), "sem símbolo codificado");
+  assert.ok(!linkDaDemonstracao("vooguiado").includes("?"), "sem query string");
+});
+
+test("slug estranho não vira link quebrado, vira o link sem plano", () => {
+  for (const ruim of ["", "  ", "com/barra", "../fuga", "com espaço"]) {
+    assert.equal(linkDaDemonstracao(ruim), "/demo", `aceitou ${JSON.stringify(ruim)}`);
+  }
+});
+
+test("o caminho /demo/<slug> devolve a inscrição correspondente", () => {
+  assert.equal(planoDoCaminho(["vooguiado"]), "/inscricao/vooguiado");
+  assert.equal(planoDoCaminho(["decolando-pro"]), "/inscricao/decolando-pro");
+});
+
+test("/demo sozinho não tem plano de origem — e isso é esperado", () => {
+  // É o link repassado no WhatsApp: usa o endereço de compra do painel.
+  assert.equal(planoDoCaminho(undefined), null);
+  assert.equal(planoDoCaminho([]), null);
+});
+
+test("caminho não vira porta de fuga", () => {
+  for (const ruim of [[".."], ["..", "admin"], ["a", "b"], [""], ["  "], ["%2e%2e"]]) {
+    assert.equal(planoDoCaminho(ruim), null, `aceitou ${JSON.stringify(ruim)}`);
+  }
+});
+
+test("o endereço antigo é convertido para o novo", () => {
+  // Links já enviados continuam funcionando, e quem clicar neles passa a ver
+  // o endereço bonito na barra.
+  assert.equal(enderecoCurto("/inscricao/vooguiado"), "/demo/vooguiado");
+  assert.equal(enderecoCurto("/inscricao/decolando-pro"), "/demo/decolando-pro");
+  assert.equal(enderecoCurto(null), "/demo");
+  assert.equal(enderecoCurto("//outro.site"), "/demo", "origem inválida não vira caminho");
+});
+
+test("ida e volta: o link curto reconstrói a mesma origem do link antigo", () => {
+  for (const slug of ["vooguiado", "decolando-pro", "a"]) {
+    const curto = linkDaDemonstracao(slug);
+    const segmentos = curto.replace("/demo/", "").split("/");
+    assert.equal(planoDoCaminho(segmentos), `/inscricao/${slug}`, slug);
+  }
 });
