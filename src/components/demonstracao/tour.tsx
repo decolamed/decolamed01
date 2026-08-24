@@ -12,7 +12,8 @@ import {
   QUESTAO_DEMO,
   RESPOSTA_CORRETA_DEMO,
   EXPLICACAO_DEMO,
-  FLASHCARD_DEMO,
+  FLASHCARDS_DEMO,
+  AULA_DEMO,
   RECURSOS
 } from "@/lib/demonstracao/dados";
 
@@ -33,14 +34,27 @@ import {
 // nenhum: não há server action, não há fetch, não há Supabase.
 // ============================================================================
 
-type Etapa = "painel" | "questao" | "flashcard" | "recursos";
+type Etapa = "painel" | "aula" | "questao" | "flashcard" | "recursos";
 
 const ETAPAS: { id: Etapa; rotulo: string }[] = [
   { id: "painel", rotulo: "Painel" },
+  { id: "aula", rotulo: "Aula" },
   { id: "questao", rotulo: "Questão" },
   { id: "flashcard", rotulo: "Flashcard" },
   { id: "recursos", rotulo: "Recursos" }
 ];
+
+/**
+ * O link do YouTube no formato que um iframe aceita.
+ *
+ * Mesma conversão que o app do aluno faz (`youtubeEmbedUrl` em
+ * decola-app.tsx): a biblioteca guarda o endereço como a pessoa copiou —
+ * `youtu.be/…`, `watch?v=…`, `shorts/…` — e só `/embed/` toca embutido.
+ */
+function urlIncorporavel(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{6,})/i);
+  return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+}
 
 export function ChamadaDeCompraCompacta({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
   return <ChamadaDeCompra destino={destino} ehCompra={ehCompra} />;
@@ -52,6 +66,15 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
   const [respondida, setRespondida] = useState(false);
   const [cartaoVirado, setCartaoVirado] = useState(false);
   const [cartaoJulgado, setCartaoJulgado] = useState<"acertei" | "errei" | null>(null);
+  const [indiceCartao, setIndiceCartao] = useState(0);
+
+  // Passar ao próximo cartão zera o gesto: o seguinte começa com a pergunta
+  // à mostra, como numa sessão de verdade.
+  function proximoCartao() {
+    setIndiceCartao((i) => i + 1);
+    setCartaoVirado(false);
+    setCartaoJulgado(null);
+  }
 
   const acertou = escolha === RESPOSTA_CORRETA_DEMO;
 
@@ -60,7 +83,9 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
       <PassosDaJornada atual={etapa} onIr={setEtapa} />
 
       <div className="mt-5">
-        {etapa === "painel" && <Painel onAvancar={() => setEtapa("questao")} />}
+        {etapa === "painel" && <Painel onAvancar={() => setEtapa("aula")} onAbrir={setEtapa} />}
+
+        {etapa === "aula" && <Aula onAvancar={() => setEtapa("questao")} />}
 
         {etapa === "questao" && (
           <Questao
@@ -75,10 +100,12 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
 
         {etapa === "flashcard" && (
           <Flashcard
+            indice={indiceCartao}
             virado={cartaoVirado}
             julgado={cartaoJulgado}
             onVirar={() => setCartaoVirado((v) => !v)}
             onJulgar={setCartaoJulgado}
+            onProximo={proximoCartao}
             onAvancar={() => setEtapa("recursos")}
           />
         )}
@@ -120,7 +147,7 @@ function PassosDaJornada({ atual, onIr }: { atual: Etapa; onIr: (e: Etapa) => vo
 }
 
 // ──────────────────────────────────────────────────────────── etapa 1: painel ─
-function Painel({ onAvancar }: { onAvancar: () => void }) {
+function Painel({ onAvancar, onAbrir }: { onAvancar: () => void; onAbrir: (e: Etapa) => void }) {
   const a = ALUNO_FICTICIO;
 
   return (
@@ -149,35 +176,42 @@ function Painel({ onAvancar }: { onAvancar: () => void }) {
 
       <Cartao>
         <p className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">Missões de hoje</p>
+        <p className="mt-1 text-[11px] font-semibold text-app-sub">Toque em qualquer missão para abrir.</p>
         <ul className="mt-2.5 space-y-2">
           {MISSOES_DE_HOJE.map((m) => (
-            <li
-              key={m.titulo}
-              className="flex items-center gap-3 rounded-xl border border-app-line bg-app-card2 px-3 py-2.5"
-            >
-              <span
-                aria-hidden
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-black ${
-                  m.concluida ? "bg-app-green-soft text-app-green" : "bg-app-chip text-app-faint"
-                }`}
+            <li key={m.titulo}>
+              {/* Botão, e não <li> decorativo: na conta de verdade tocar num
+                  item do cronograma é como se estuda. Um item que não responde
+                  ao toque ensinaria a coisa errada sobre a plataforma. */}
+              <button
+                onClick={() => onAbrir(m.abre)}
+                className="flex w-full items-center gap-3 rounded-xl border border-app-line bg-app-card2 px-3 py-2.5 text-left transition hover:border-orange/50 hover:bg-app-chip"
               >
-                {m.concluida ? "✓" : ""}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={`truncate text-sm font-bold ${
-                    m.concluida ? "text-app-faint line-through" : "text-app-txt"
+                <span
+                  aria-hidden
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-black ${
+                    m.concluida ? "bg-app-green-soft text-app-green" : "bg-app-chip text-app-faint"
                   }`}
                 >
-                  {m.titulo}
-                </p>
-                <p className="text-[11px] font-semibold text-app-faint">{m.minutos} min</p>
-              </div>
-              {m.doCopiloto && (
-                <span className="shrink-0 rounded-full bg-app-orange-soft px-2 py-1 text-[10px] font-extrabold text-app-orange-txt">
-                  🤖 Copiloto
+                  {m.concluida ? "✓" : ""}
                 </span>
-              )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={`truncate text-sm font-bold ${
+                      m.concluida ? "text-app-faint line-through" : "text-app-txt"
+                    }`}
+                  >
+                    {m.titulo}
+                  </p>
+                  <p className="text-[11px] font-semibold text-app-faint">{m.minutos} min</p>
+                </div>
+                {m.doCopiloto && (
+                  <span className="shrink-0 rounded-full bg-app-orange-soft px-2 py-1 text-[10px] font-extrabold text-app-orange-txt">
+                    🤖 Copiloto
+                  </span>
+                )}
+                <span aria-hidden className="shrink-0 text-app-faint">›</span>
+              </button>
             </li>
           ))}
         </ul>
@@ -203,7 +237,71 @@ function Painel({ onAvancar }: { onAvancar: () => void }) {
         </div>
       </Cartao>
 
-      <BotaoPrincipal onClick={onAvancar}>Responder uma questão →</BotaoPrincipal>
+      <BotaoPrincipal onClick={onAvancar}>Começar pela aula do dia →</BotaoPrincipal>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────── etapa: aula ─
+//
+// A aula toca AQUI, embutida, e não num link que joga a pessoa para fora da
+// demonstração — quem sai para o YouTube não volta. É uma aula real da
+// biblioteca da plataforma: o visitante abre exatamente o que um aluno abre.
+function Aula({ onAvancar }: { onAvancar: () => void }) {
+  const a = AULA_DEMO;
+  const embed = urlIncorporavel(a.url);
+
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-sm font-semibold text-app-sub">
+        Esta é uma aula de verdade da biblioteca. É assim que ela abre no seu cronograma.
+      </p>
+
+      <Cartao>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">
+            Videoaula
+          </span>
+          <span className="shrink-0 rounded-full bg-app-chip px-2.5 py-1 text-[11px] font-bold text-app-sub">
+            {a.materia} · {a.assunto}
+          </span>
+        </div>
+
+        <h2 className="mt-2 font-display text-lg font-extrabold leading-snug text-app-txt">{a.titulo}</h2>
+        <p className="mt-0.5 text-[11px] font-semibold text-app-faint">
+          {a.canal} · {a.minutos} min
+        </p>
+
+        {embed ? (
+          <div className="mt-3 overflow-hidden rounded-xl border border-app-line bg-black">
+            {/* 16:9 pelo padding, que funciona em qualquer cliente sem
+                depender de aspect-ratio. */}
+            <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+              <iframe
+                src={embed}
+                title={a.titulo}
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="absolute inset-0 h-full w-full"
+              />
+            </div>
+          </div>
+        ) : (
+          <a
+            href={a.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 block rounded-xl border border-app-line bg-app-card2 p-4 text-center text-sm font-bold text-orange"
+          >
+            Abrir a aula →
+          </a>
+        )}
+
+        <div className="mt-4">
+          <BotaoPrincipal onClick={onAvancar}>Agora responder uma questão →</BotaoPrincipal>
+        </div>
+      </Cartao>
     </div>
   );
 }
@@ -267,19 +365,28 @@ function Questao({
 // e o aluno julga a própria memória. Aqui o julgamento não grava revisão
 // nenhuma — só muda o texto na tela, para a pessoa entender o gesto.
 function Flashcard({
+  indice,
   virado,
   julgado,
   onVirar,
   onJulgar,
+  onProximo,
   onAvancar
 }: {
+  indice: number;
   virado: boolean;
   julgado: "acertei" | "errei" | null;
   onVirar: () => void;
   onJulgar: (v: "acertei" | "errei") => void;
+  onProximo: () => void;
   onAvancar: () => void;
 }) {
-  const c = FLASHCARD_DEMO;
+  const total = FLASHCARDS_DEMO.length;
+  // O índice é limitado em vez de reiniciar: passar do último não pode
+  // devolver o visitante ao primeiro cartão como se a sessão não acabasse.
+  const posicao = Math.min(indice, total - 1);
+  const c = FLASHCARDS_DEMO[posicao];
+  const ehUltimo = posicao >= total - 1;
 
   return (
     <div className="space-y-3">
@@ -290,7 +397,7 @@ function Flashcard({
       <Cartao>
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">
-            Cartão 1 de 1
+            Cartão {posicao + 1} de {total}
           </span>
           <span className="rounded-full bg-app-chip px-2.5 py-1 text-[11px] font-bold text-app-sub">
             {c.materia} · {c.assunto}
@@ -342,7 +449,11 @@ function Flashcard({
                 : "Na plataforma, um cartão que você erra volta logo, e volta mais vezes, até parar de escapar."}
             </p>
             <div className="mt-3">
-              <BotaoPrincipal onClick={onAvancar}>Ver os recursos da plataforma →</BotaoPrincipal>
+              {ehUltimo ? (
+                <BotaoPrincipal onClick={onAvancar}>Ver os recursos da plataforma →</BotaoPrincipal>
+              ) : (
+                <BotaoPrincipal onClick={onProximo}>Próximo cartão →</BotaoPrincipal>
+              )}
             </div>
           </div>
         )}

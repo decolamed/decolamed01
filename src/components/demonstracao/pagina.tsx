@@ -73,12 +73,19 @@ export async function PaginaDaDemonstracao({ origem }: { origem: string | null }
       </div>
 
       <header className="mx-auto max-w-2xl px-4 pt-6 sm:px-6">
+        {/* O título fala com quem chegou pelo WhatsApp sem saber o que é
+            isto. "Assim funciona a Decola MED" descrevia a página, não o
+            convite — e prometia explicação, quando o que a tela oferece é
+            uso. A contagem de passos saiu do texto de propósito: ela ficava
+            errada sozinha toda vez que uma etapa era acrescentada (dizia
+            "três passos" com quatro etapas na tela), e quem conta os passos
+            são as abas logo abaixo. */}
         <h1 className="font-display text-2xl font-extrabold text-app-txt sm:text-3xl">
-          Assim funciona a Decola MED
+          Experimente a Decola MED
         </h1>
         <p className="mt-1.5 text-sm font-semibold leading-relaxed text-app-sub">
-          Três passos, dois minutos. Você vê o painel de um aluno, responde uma questão de verdade e conhece
-          o Copiloto.
+          Um dia de estudo, do jeito que ele acontece: assista à aula, responda uma questão de verdade,
+          revise com flashcards e veja o Copiloto ajustar seu plano. Sem cadastro.
         </p>
       </header>
 
