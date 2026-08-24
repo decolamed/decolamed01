@@ -181,21 +181,15 @@ export function TourDaDemonstracao({
         {etapa === "recursos" && <Recursos destino={destino} ehCompra={ehCompra} whatsapp={whatsapp} />}
       </div>
 
-      {/* A COMPRA ACOMPANHA O VISITANTE EM TODOS OS PASSOS.
-          Ela ficava só no encerramento, e quem se convencia no passo 2 tinha
-          de percorrer o resto para conseguir comprar — ou desistir. Agora a
-          barra fica presa ao rodapé desde o primeiro passo.
+      {/* NÃO existe barra de compra presa ao rodapé.
+          Ela foi tentada e saiu: ficando por cima do botão que avança o passo,
+          travava a demonstração — havia tela em que não dava para chegar à
+          seguinte, porque o botão de avançar estava embaixo dela.
 
-          No último passo ela some, porque ali o mesmo botão já está no meio da
-          tela, em tamanho grande: duas chamadas idênticas empilhadas diriam ao
-          visitante que ele perdeu alguma coisa. */}
-      {etapa !== "recursos" && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-app-line bg-app-card/95 px-4 py-3 backdrop-blur sm:px-6">
-          <div className="mx-auto max-w-2xl">
-            <ChamadaDeCompra destino={destino} ehCompra={ehCompra} destaque />
-          </div>
-        </div>
-      )}
+          A saída para comprar continua sendo o encerramento, e quem quer
+          resolver antes disso usa "Falar com a equipe", que está no topo desde
+          o primeiro segundo e acompanha a rolagem. Duas saídas bastam; uma
+          terceira, flutuando, custou mais do que rendeu. */}
     </div>
   );
 }
