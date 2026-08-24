@@ -34,9 +34,15 @@ export function MarcaCarregando({
       </div>
       {comAssinatura && (
         <div style={{ width: tamanhoLogo / 2, maxWidth: "30vw", marginTop: 18 }}>
+          {/* `alt=""` de propósito: a assinatura é ornamento, e a marca já foi
+              anunciada pela logo acima. O que decide isto não é acessibilidade
+              e sim o MODO DE FALHAR — com um alt escrito, uma imagem que não
+              carrega vira ícone quebrado com "By Decola" ao lado, bem no meio
+              da abertura que o visitante vê primeiro. Foi o que aconteceu. Sem
+              alt, a mesma falha simplesmente não aparece. */}
           <Image
             src="/assets/logo-by-decola.png"
-            alt="By Decola"
+            alt=""
             width={3000}
             height={2120}
             priority
