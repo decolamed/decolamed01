@@ -339,6 +339,11 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   _ytPlayer: any = null;
   _ytVideoIdAtual: string | null = null;
   _ytProgressoInterval: any = null;
+  // O div que o REACT possui. A API do YouTube SUBSTITUI o elemento que
+  // recebe pelo iframe dela — por isso ela nunca recebe este, e sim um filho
+  // criado aqui dentro. Sem essa separação, o nó que o React acha que
+  // controla deixa de existir no meio da reprodução.
+  _ytHost: HTMLDivElement | null = null;
   _installed: any;
   _deferredInstallPrompt: any = null;
 
@@ -392,6 +397,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       this.setState({ podeInstalarPWA: false, pwaInstalada: true, mostrarInstrucoesPWA: false });
     };
     window.addEventListener("appinstalled", this._installed);
+  }
+  // O player é objeto imperativo: quem o mantém em dia com o state é esta
+  // sincronização, e não o render. Ela é idempotente, então rodar a cada
+  // update é seguro — e é o que faz a troca de aula funcionar sem o ref
+  // precisar ser recriado.
+  componentDidUpdate() {
+    this.sincronizarPlayerYoutube();
   }
   componentWillUnmount() {
     window.removeEventListener("resize", this._r);
@@ -1620,18 +1632,78 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       }
     });
   }
-  // Ref do container do player — cria a instância do YT.Player quando o div
-  // aparece (aula aberta) e destrói quando desaparece (aluno saiu da tela ou
-  // trocou de vídeo), evitando players "fantasma" tocando em segundo plano.
-  refPlayerYoutube(el: HTMLDivElement | null, videoId: string, posicaoInicial: number) {
+  // ─────────────────────────────────────────────── o player que não reinicia ─
+  //
+  // O DEFEITO: a aula travava e voltava ao começo sozinha, a cada poucos
+  // segundos de reprodução.
+  //
+  // A causa eram duas coisas se somando.
+  //
+  //   1. O ref era uma função INLINE: `ref: (el) => this.refPlayer(el, ...)`.
+  //      Uma arrow criada no render tem identidade nova a cada passagem, e o
+  //      React trata isso como um ref diferente: chama o antigo com `null` e
+  //      o novo com o elemento. O `null` caía no ramo que DESTRÓI o player.
+  //
+  //   2. `salvarProgressoDoPlayer` faz `setState` a cada 8 segundos para
+  //      alimentar o "Continuar assistindo".
+  //
+  //   Juntas: a cada 8 segundos o player era destruído e recriado — e recriado
+  //   com `playerPosicaoInicial`, que é onde a aula foi ABERTA. Daí o vídeo
+  //   voltar ao início.
+  //
+  // A correção tem três partes: o ref tem identidade estável (é este campo,
+  // criado uma vez), o React possui um HOST que a API do YouTube nunca toca,
+  // e a criação do player virou uma sincronização idempotente — chamada no
+  // mount e em cada update, ela não faz nada quando o vídeo é o mesmo.
+  _refHostYoutube = (el: HTMLDivElement | null) => {
     if (!el) {
       this.destruirPlayerYoutube();
+      this._ytHost = null;
       return;
     }
-    if (this._ytVideoIdAtual === videoId && this._ytPlayer) return;
+    this._ytHost = el;
+    this.sincronizarPlayerYoutube();
+  };
+
+  /**
+   * Garante que o player em tela corresponde à aula do state. Idempotente.
+   *
+   * Chamada de novo a cada render não custa nada: se o vídeo é o mesmo e o
+   * player existe, ela retorna sem tocar em nada — que é justamente o que
+   * mantém a reprodução viva.
+   */
+  sincronizarPlayerYoutube() {
+    const host = this._ytHost;
+    const desejado = this.state.screen === "player" ? this.youtubeVideoId(this.state.playerUrl || "") : null;
+
+    if (!host || !desejado) {
+      if (!desejado) this.destruirPlayerYoutube();
+      return;
+    }
+    if (this._ytVideoIdAtual === desejado && this._ytPlayer) return;
+
     this.destruirPlayerYoutube();
-    this._ytVideoIdAtual = videoId;
-    this.carregarYoutubeApi(() => this.criarYoutubePlayer(el.id, videoId, posicaoInicial));
+    this._ytVideoIdAtual = desejado;
+
+    // O elemento que a API vai substituir é criado aqui, dentro do host — o
+    // React não sabe dele e não vai tentar removê-lo depois.
+    host.innerHTML = "";
+    const alvo = document.createElement("div");
+    alvo.id = "dm-yt-player-" + desejado;
+    host.appendChild(alvo);
+
+    // A posição vem do progresso ATUAL, não de `playerPosicaoInicial`. Se por
+    // qualquer motivo o player precisar ser recriado, ele volta para onde o
+    // aluno estava — e não para onde ele abriu a aula.
+    const chave = this.state.playerChave as string | null;
+    const posicao = (chave && this.progressoDe(chave)?.posicao_segundos) || this.state.playerPosicaoInicial || 0;
+
+    this.carregarYoutubeApi(() => {
+      // Entre pedir a API e ela ficar pronta o aluno pode ter saído ou
+      // trocado de aula; sem esta conferência, o player nasceria órfão.
+      if (this._ytVideoIdAtual !== desejado || !document.getElementById(alvo.id)) return;
+      this.criarYoutubePlayer(alvo.id, desejado, posicao);
+    });
   }
   pararChecagemDeProgresso() {
     if (this._ytProgressoInterval) clearInterval(this._ytProgressoInterval);
@@ -5141,7 +5213,7 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       ),
       h("div", { key: "video", className: styles.playerVideo }, [
         videoId
-          ? h("div", { key: "yt", id: "dm-yt-player-" + videoId, ref: (el: any) => this.refPlayerYoutube(el, videoId, S.playerPosicaoInicial) })
+          ? h("div", { key: "yt", ref: this._refHostYoutube })
           : url
           ? h("iframe", {
               key: "if",
