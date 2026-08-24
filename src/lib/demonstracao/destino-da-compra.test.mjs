@@ -5,12 +5,16 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  DESTINO_DE_ULTIMO_RECURSO,
-  linkDeCompraValido,
-  destinoDaCompra,
-  levaAComprar
-} from "./destino-da-compra.ts";
+import { linkDeCompraValido, destinoDaCompra, levaAComprar } from "./destino-da-compra.ts";
+
+/**
+ * O último recurso agora é o WHATSAPP, e ele chega como parâmetro.
+ *
+ * Era a constante "/contato" — uma página descontinuada que só faz redirect
+ * para o LOGIN. Quem clicava querendo falar com alguém para comprar caía numa
+ * tela de acesso de uma conta que ainda não tinha.
+ */
+const ZAP = "https://wa.me/5587999999999";
 
 // ═══════════════════════════ A PRECEDÊNCIA ══════════════════════════════════
 test("o plano de origem vence o link configurado", () => {
@@ -18,25 +22,35 @@ test("o plano de origem vence o link configurado", () => {
   // VOO GUIADO, mesmo com outro link salvo no painel. Mandar essa pessoa para
   // um destino genérico seria perder a venda já encaminhada.
   assert.equal(
-    destinoDaCompra("/inscricao/voo-guiado", "https://outro.site/checkout"),
+    destinoDaCompra("/inscricao/voo-guiado", "https://outro.site/checkout", ZAP),
     "/inscricao/voo-guiado"
   );
 });
 
 test("sem plano de origem, vale o link do painel", () => {
   // O caso do link repassado no WhatsApp.
-  assert.equal(destinoDaCompra(null, "https://decolamed.online/checkout"), "https://decolamed.online/checkout");
+  assert.equal(destinoDaCompra(null, "https://decolamed.online/checkout", ZAP), "https://decolamed.online/checkout");
 });
 
-test("sem origem e sem link, sobra falar com a equipe", () => {
-  assert.equal(destinoDaCompra(null, null), DESTINO_DE_ULTIMO_RECURSO);
-  assert.equal(destinoDaCompra(null, ""), DESTINO_DE_ULTIMO_RECURSO);
-  assert.equal(destinoDaCompra(null, "   "), DESTINO_DE_ULTIMO_RECURSO);
+test("sem origem e sem link, sobra o WhatsApp", () => {
+  assert.equal(destinoDaCompra(null, null, ZAP), ZAP);
+  assert.equal(destinoDaCompra(null, "", ZAP), ZAP);
+  assert.equal(destinoDaCompra(null, "   ", ZAP), ZAP);
 });
 
 test("link inválido no painel não vira destino", () => {
-  // Cair no contato é melhor do que um botão que não abre nada.
-  assert.equal(destinoDaCompra(null, "javascript:alert(1)"), DESTINO_DE_ULTIMO_RECURSO);
+  // Cair no WhatsApp é melhor do que um botão que não abre nada — e muito
+  // melhor do que a tela de login, que era onde /contato terminava.
+  assert.equal(destinoDaCompra(null, "javascript:alert(1)", ZAP), ZAP);
+});
+
+test("o último recurso nunca é uma tela interna que exige conta", () => {
+  // A regressão que este arquivo existe para impedir: o visitante da
+  // demonstração NÃO tem login, então o fim de linha não pode ser uma rota
+  // da plataforma.
+  const destino = destinoDaCompra(null, null, ZAP);
+  assert.ok(destino.startsWith("https://"), "o fim de linha tem de ser um endereço externo");
+  assert.doesNotMatch(destino, /^\/(contato|login)/);
 });
 
 // ═══════════════════════ O QUE O PAINEL ACEITA ══════════════════════════════

@@ -1,7 +1,8 @@
-import { TourDaDemonstracao, ChamadaDeCompraCompacta } from "@/components/demonstracao/tour";
+import { TourDaDemonstracao, FalarComAEquipe } from "@/components/demonstracao/tour";
 import { destinoDaCompra, levaAComprar } from "@/lib/demonstracao/destino-da-compra";
 import { createClient } from "@/lib/supabase/server";
 import { textoConfig } from "@/lib/site/configuracoes";
+import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 
 // ============================================================================
 // A DEMONSTRAÇÃO — A PLATAFORMA, SEM CONTA
@@ -16,8 +17,8 @@ import { textoConfig } from "@/lib/site/configuracoes";
 // action. Todo o CONTEÚDO da demonstração sai de `lib/demonstracao/dados.ts`
 // — nada de aluno, questão, cronograma ou métrica real aparece aqui.
 //
-// A única leitura do banco é uma linha de `configuracoes`: o link de compra
-// que o administrador escreve no painel. É configuração pública do site (a
+// A única leitura do banco são duas linhas de `configuracoes`: o link de
+// compra e o WhatsApp. É configuração pública do site (a
 // mesma tabela do WhatsApp e do Instagram do rodapé; os segredos ficam em
 // `configuracoes_secretas`, protegida por is_admin). Leitura, uma chave, sem
 // sessão — a demonstração continua sem alcançar dado de aluno e sem escrever
@@ -34,18 +35,25 @@ import { textoConfig } from "@/lib/site/configuracoes";
  */
 export async function PaginaDaDemonstracao({ origem }: { origem: string | null }) {
 
-  // O link que o administrador configurou. Vale quando NÃO há plano de
-  // origem — o caso do link repassado no WhatsApp, que antes caía em
-  // /contato. Ver lib/demonstracao/destino-da-compra.ts para a precedência.
+  // Duas chaves, uma consulta: o link de compra e o WhatsApp da plataforma.
+  // O primeiro vale quando NÃO há plano de origem — ver a precedência em
+  // lib/demonstracao/destino-da-compra.ts.
+  // O WhatsApp é o MESMO do rodapé do site — uma fonte só para o número, para
+  // a demonstração não passar a ter um contato próprio que ninguém lembra de
+  // atualizar.
   const supabase = createClient();
   const { data: config } = await supabase
     .from("configuracoes")
-    .select("valor")
-    .eq("chave", "demonstracao.link_compra")
-    .maybeSingle();
+    .select("chave, valor")
+    .in("chave", ["demonstracao.link_compra", "site.contato.whatsapp"]);
 
-  const linkConfigurado = textoConfig(config?.valor);
-  const destino = destinoDaCompra(origem, linkConfigurado);
+  const linkConfigurado = textoConfig(config?.find((c) => c.chave === "demonstracao.link_compra")?.valor);
+  const whatsapp = montarLinkWhatsapp(
+    textoConfig(config?.find((c) => c.chave === "site.contato.whatsapp")?.valor),
+    "Olá! Vi a demonstração da Decola MED e quero saber como adquirir a plataforma."
+  );
+
+  const destino = destinoDaCompra(origem, linkConfigurado, whatsapp);
   const ehCompra = levaAComprar(origem, linkConfigurado);
 
   return (
@@ -61,13 +69,18 @@ export async function PaginaDaDemonstracao({ origem }: { origem: string | null }
           <span className="hidden text-[11px] font-semibold text-app-sub sm:inline">
             Dados de exemplo — esta não é uma conta real
           </span>
-          {/* A saída para a compra fica visível desde o primeiro segundo e
-              acompanha a rolagem, mas em tamanho de etiqueta: quem ainda está
-              conhecendo a plataforma não deve ser empurrado, e quem já se
-              decidiu no meio do caminho não deveria ter de chegar ao fim para
-              conseguir comprar. O CTA de peso fica no encerramento. */}
+          {/* Aqui em cima fica FALAR COM A EQUIPE, não a compra.
+              São duas intenções diferentes e cada uma tem o seu botão: quem
+              quer perguntar antes de decidir abre o WhatsApp; quem já se
+              decidiu usa o "Adquira já", que acompanha a rolagem no rodapé de
+              todos os passos.
+
+              Este botão levava a /contato — uma página descontinuada que só
+              faz redirect para o LOGIN. Ou seja: quem clicava querendo falar
+              com alguém para COMPRAR caía num formulário de acesso de uma
+              conta que ainda não tem. */}
           <div className="ml-auto">
-            <ChamadaDeCompraCompacta destino={destino} ehCompra={ehCompra} />
+            <FalarComAEquipe whatsapp={whatsapp} />
           </div>
         </div>
       </div>
@@ -92,7 +105,7 @@ export async function PaginaDaDemonstracao({ origem }: { origem: string | null }
         </p>
       </header>
 
-      <TourDaDemonstracao destino={destino} ehCompra={ehCompra} />
+      <TourDaDemonstracao destino={destino} ehCompra={ehCompra} whatsapp={whatsapp} />
     </main>
   );
 }

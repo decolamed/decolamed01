@@ -10,11 +10,11 @@
 //
 //   2. O LINK CONFIGURADO NO PAINEL. É o caso do link repassado no WhatsApp:
 //      a pessoa abre `/demonstracao` sem nenhuma origem, e antes disso o
-//      botão caía em `/contato` — um formulário, não uma compra. Agora o
+//      botão caía em `/contato` — que redireciona para o LOGIN. Agora o
 //      administrador escreve ali o link de compra que quiser (a própria
 //      página de um plano, um checkout externo, o que for).
 //
-// Sem nenhum dos dois, `/contato` continua sendo o fim de linha: é melhor
+// Sem nenhum dos dois, o WhatsApp é o fim de linha: é melhor
 // falar com a equipe do que um botão que não leva a lugar nenhum.
 //
 // O link do painel é texto livre digitado por uma pessoa, e vai parar num
@@ -23,8 +23,19 @@
 // todo visitante da demonstração.
 // ============================================================================
 
-/** Quando não há plano de origem nem link configurado. */
-export const DESTINO_DE_ULTIMO_RECURSO = "/contato";
+/**
+ * Quando não há plano de origem nem link configurado, o fim de linha é o
+ * WHATSAPP da plataforma — não uma página do site.
+ *
+ * O valor anterior era `/contato`, e isso mandava o visitante para a tela de
+ * LOGIN: aquela página foi descontinuada e hoje só faz `redirect("/login")`.
+ * O efeito era o pior possível numa demonstração — a pessoa que clicou em
+ * "falar com a equipe" queria justamente falar com alguém para COMPRAR, e
+ * caía num formulário de acesso de uma conta que ela ainda não tem.
+ *
+ * O WhatsApp resolve isso porque é onde a conversa de venda acontece de
+ * verdade, e porque não exige conta nenhuma para começar.
+ */
 
 /**
  * O link do painel, pronto para usar — ou null se não dá para confiar nele.
@@ -63,8 +74,12 @@ export function linkDeCompraValido(bruto: string | null | undefined): string | n
  *
  * `planoDeOrigem` já vem validado de `lib/demonstracao/plano-de-origem`.
  */
-export function destinoDaCompra(planoDeOrigem: string | null, linkConfigurado: string | null | undefined): string {
-  return planoDeOrigem ?? linkDeCompraValido(linkConfigurado) ?? DESTINO_DE_ULTIMO_RECURSO;
+export function destinoDaCompra(
+  planoDeOrigem: string | null,
+  linkConfigurado: string | null | undefined,
+  linkDeUltimoRecurso: string
+): string {
+  return planoDeOrigem ?? linkDeCompraValido(linkConfigurado) ?? linkDeUltimoRecurso;
 }
 
 /**

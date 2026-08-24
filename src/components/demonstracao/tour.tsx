@@ -83,11 +83,35 @@ function urlIncorporavel(url: string): string | null {
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
 }
 
-export function ChamadaDeCompraCompacta({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
-  return <ChamadaDeCompra destino={destino} ehCompra={ehCompra} />;
+/**
+ * "Falar com a equipe" — o botão do topo, que abre o WhatsApp.
+ *
+ * `target="_blank"` de propósito: no celular o link do wa.me sai para o
+ * aplicativo do WhatsApp, e sem isto a demonstração seria FECHADA no caminho.
+ * Quem volta do WhatsApp precisa reencontrar o tour onde parou.
+ */
+export function FalarComAEquipe({ whatsapp }: { whatsapp: string }) {
+  return (
+    <a
+      href={whatsapp}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="shrink-0 rounded-full border border-app-line bg-app-chip px-3 py-1.5 text-[11px] font-extrabold text-app-txt hover:border-orange/50"
+    >
+      Falar com a equipe
+    </a>
+  );
 }
 
-export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
+export function TourDaDemonstracao({
+  destino,
+  ehCompra,
+  whatsapp
+}: {
+  destino: string;
+  ehCompra: boolean;
+  whatsapp: string;
+}) {
   const [etapa, setEtapa] = useState<Etapa>("painel");
   // Até onde o visitante já CHEGOU. Voltar é livre; pular à frente não é —
   // sem isso dava para ir do painel ao encerramento sem ver a aula nem
@@ -154,8 +178,24 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
           />
         )}
 
-        {etapa === "recursos" && <Recursos destino={destino} ehCompra={ehCompra} />}
+        {etapa === "recursos" && <Recursos destino={destino} ehCompra={ehCompra} whatsapp={whatsapp} />}
       </div>
+
+      {/* A COMPRA ACOMPANHA O VISITANTE EM TODOS OS PASSOS.
+          Ela ficava só no encerramento, e quem se convencia no passo 2 tinha
+          de percorrer o resto para conseguir comprar — ou desistir. Agora a
+          barra fica presa ao rodapé desde o primeiro passo.
+
+          No último passo ela some, porque ali o mesmo botão já está no meio da
+          tela, em tamanho grande: duas chamadas idênticas empilhadas diriam ao
+          visitante que ele perdeu alguma coisa. */}
+      {etapa !== "recursos" && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-app-line bg-app-card/95 px-4 py-3 backdrop-blur sm:px-6">
+          <div className="mx-auto max-w-2xl">
+            <ChamadaDeCompra destino={destino} ehCompra={ehCompra} destaque />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -567,7 +607,15 @@ function Flashcard({
 }
 
 // ─────────────────────────────────────────────────────────── etapa 4: recursos ─
-function Recursos({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
+function Recursos({
+  destino,
+  ehCompra,
+  whatsapp
+}: {
+  destino: string;
+  ehCompra: boolean;
+  whatsapp: string;
+}) {
   return (
     <div className="space-y-3">
       <Cartao className="border-orange/30 bg-app-orange-soft">
@@ -620,6 +668,17 @@ function Recursos({ destino, ehCompra }: { destino: string; ehCompra: boolean })
         <div className="mt-5">
           <ChamadaDeCompra destino={destino} ehCompra={ehCompra} destaque />
         </div>
+
+        {/* Quem chegou até aqui e ainda tem dúvida não deveria precisar
+            voltar ao topo para achar como perguntar. */}
+        <a
+          href={whatsapp}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block text-[13px] font-bold text-app-sub underline decoration-app-line underline-offset-4 hover:text-app-txt"
+        >
+          Prefere tirar uma dúvida antes? Fale com a equipe
+        </a>
       </Cartao>
     </div>
   );
@@ -659,30 +718,49 @@ function ChamadaDeCompra({
   ehCompra: boolean;
   destaque?: boolean;
 }) {
-  if (!destaque) {
-    return (
-      <Link
-        href={destino}
-        className="shrink-0 rounded-full bg-orange px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-orange-dark"
-      >
-        {ehCompra ? "Adquira já" : "Falar com a equipe"}
-      </Link>
-    );
-  }
+  // Endereço de fora da plataforma (o WhatsApp, ou um checkout externo que o
+  // administrador tenha configurado) abre em outra aba. Sem isto, o clique
+  // FECHA a demonstração — e quem só queria conferir o preço não tem como
+  // voltar para onde parou.
+  const externo = /^https?:\/\//i.test(destino);
+
+  // O rótulo diz o que o botão FAZ, e o que ele faz muda com o destino.
+  // Prometer "Adquira já a plataforma" e abrir uma conversa seria enganar
+  // quem clicou; mas mandar quem quer comprar para um botão escrito "falar
+  // com a equipe" também esconde a intenção de compra — que é a razão de
+  // este botão existir em todos os passos.
+  const rotulo = ehCompra
+    ? destaque
+      ? "Adquira já a plataforma"
+      : "Adquira já"
+    : destaque
+      ? "Quero adquirir a plataforma"
+      : "Quero adquirir";
+
+  const classe = destaque
+    ? "block w-full rounded-full bg-orange px-6 py-4 text-center font-display text-lg font-extrabold text-white shadow-lg shadow-orange/20 hover:bg-orange-dark"
+    : "shrink-0 rounded-full bg-orange px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-orange-dark";
+
+  const botao = externo ? (
+    <a href={destino} target="_blank" rel="noopener noreferrer" className={classe}>
+      {rotulo}
+    </a>
+  ) : (
+    <Link href={destino} className={classe}>
+      {rotulo}
+    </Link>
+  );
+
+  if (!destaque) return botao;
 
   return (
     <>
-      <Link
-        href={destino}
-        className="block w-full rounded-full bg-orange px-6 py-4 text-center font-display text-lg font-extrabold text-white shadow-lg shadow-orange/20 hover:bg-orange-dark"
-      >
-        {ehCompra ? "Adquira já a plataforma" : "Falar com a equipe"}
-      </Link>
-      {ehCompra && (
-        <p className="mt-2 text-[11px] font-semibold text-app-faint">
-          Você vai para a página de compra, com valor e benefícios.
-        </p>
-      )}
+      {botao}
+      <p className="mt-2 text-center text-[11px] font-semibold text-app-faint">
+        {ehCompra
+          ? "Você vai para a página de compra, com valor e benefícios."
+          : "Você fala com a equipe no WhatsApp e recebe o link de compra."}
+      </p>
     </>
   );
 }
