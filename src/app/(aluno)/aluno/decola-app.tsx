@@ -186,19 +186,23 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
   timerNota: ReturnType<typeof setTimeout> | null = null;
   state: any = {
     theme: null,
-    // Primeiro acesso (ou aluno que nunca preencheu o "de voo"): entra
-    // direto no briefing — ao concluir, salvarBriefingReal() manda pro
-    // tutorial (scrTutorial, que também explica como instalar o app) e só
-    // depois pro Mapa. Quem já tem briefing salvo entra direto no Mapa.
+    // Em que tela o app abre.
+    //
+    // O briefing só existe para o plano ADAPTATIVO. Para o Decolando ele não
+    // é apenas desnecessário: era um erro visível. Como esse aluno nunca tem
+    // briefing salvo — e o "Redefinir perfil" apaga o que houver —, a
+    // condição antiga (`sem briefing → briefing`) o mandava para o
+    // questionário TODA VEZ que ele entrava na conta, e de novo depois de
+    // cada redefinição. Ele respondia data de prova e dias da semana que o
+    // cronograma fixo dele ignora.
     screen: (function (self: any) {
       if (self.props.demoMode) return "mapa";
       if (self.props.dados.briefing) return "mapa";
+      // Decolando: cronograma fixo, sem briefing. Entra direto.
+      if (!self.props.dados.temCopiloto) return "mapa";
       // Voo Guiado sem briefing: quem preenche é o mentor, no painel. O aluno
       // entra normalmente e usa o resto da plataforma; só a área de
       // cronograma mostra que o plano está sendo preparado (ver scrPlano).
-      //
-      // O Decolando continua caindo no briefing, exatamente como antes: ele
-      // não tem Copiloto e este ramo não o alcança.
       if (self.props.dados.aguardandoMentor) return "mapa";
       return "briefing";
     })(this),
@@ -4244,23 +4248,46 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         { key: "menu", style: { margin: "14px 18px 4px" } },
         card(
           { padding: "6px 16px" },
-          [
-            ["note", "Redação · Correção via WhatsApp", this.props.dados.creditosRedacaoDisponiveis + " crédito" + (this.props.dados.creditosRedacaoDisponiveis === 1 ? "" : "s")],
-            ["calendar", "Recalibrar plano de voo", ""],
-            ["bell", "Notificações", ""],
-            ["logout", "Sair da conta", ""]
-          ].map((r, i) =>
+          // Uma lista de objetos, e não dois arrays casados por índice.
+          // O arranjo anterior — rótulos num array, `onClick` noutro, mais
+          // `i < 3` para a borda e `i === 3` para o vermelho — quebrava em
+          // silêncio assim que um item deixasse de existir: os cliques
+          // passavam a apontar para a linha errada. E era exatamente o que
+          // precisava acontecer aqui, porque "Recalibrar" some para quem não
+          // tem Copiloto.
+          (
+            [
+              {
+                icone: "note",
+                titulo: "Redação · Correção via WhatsApp",
+                selo:
+                  this.props.dados.creditosRedacaoDisponiveis +
+                  " crédito" +
+                  (this.props.dados.creditosRedacaoDisponiveis === 1 ? "" : "s"),
+                acao: () => this.nav("redacao")
+              },
+              // Recalibrar só existe para plano ADAPTATIVO, e só depois de
+              // ele estar montado. O Decolando tem cronograma fixo: abrir o
+              // briefing para ele é pedir data de prova e dias da semana que
+              // o plano não usa para nada.
+              ...(this.props.dados.temCopiloto && !this.props.dados.aguardandoMentor
+                ? [{ icone: "calendar", titulo: "Recalibrar plano de voo", selo: "", acao: () => this.nav("briefing") }]
+                : []),
+              { icone: "bell", titulo: "Notificações", selo: "", acao: () => this.setState({ notifOpen: true }) },
+              { icone: "logout", titulo: "Sair da conta", selo: "", acao: this.logout, perigo: true }
+            ] as { icone: string; titulo: string; selo: string; acao: () => void; perigo?: boolean }[]
+          ).map((r, i, arr) =>
             h(
               "div",
               {
-                key: i,
-                onClick: [() => this.nav("redacao"), () => this.nav("briefing"), () => this.setState({ notifOpen: true }), this.logout][i],
-                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < 3 ? "1px solid " + C.line : "none", cursor: "pointer" }
+                key: r.titulo,
+                onClick: r.acao,
+                style: { display: "flex", gap: 12, alignItems: "center", padding: "13px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.line : "none", cursor: "pointer" }
               },
               [
-                I(r[0], 18, i === 3 ? C.red : C.sub),
-                h("span", { key: "t", style: { flex: 1, fontSize: 13, fontWeight: 700, color: i === 3 ? C.red : C.txt } }, r[1]),
-                r[2] ? h("span", { key: "b", style: { fontSize: 10.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "3px 9px", borderRadius: 99 } }, r[2]) : I("chevR", 15, C.faint)
+                I(r.icone, 18, r.perigo ? C.red : C.sub),
+                h("span", { key: "t", style: { flex: 1, fontSize: 13, fontWeight: 700, color: r.perigo ? C.red : C.txt } }, r.titulo),
+                r.selo ? h("span", { key: "b", style: { fontSize: 10.5, fontWeight: 800, color: C.orange, background: C.orangeSoft, padding: "3px 9px", borderRadius: 99 } }, r.selo) : I("chevR", 15, C.faint)
               ]
             )
           )
@@ -4356,7 +4383,13 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           h(
             "div",
             { key: "d", style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 6, lineHeight: 1.55 } },
-            "Apaga seu histórico, progresso, estatísticas, cronograma personalizado e as adaptações do Copiloto. Seu cadastro, plano e créditos de redação continuam. Seu perfil é montado de novo a partir do briefing."
+            // O que o reset faz é diferente nos dois planos, e prometer a
+            // mesma coisa aos dois seria mentir para um deles: o Decolando
+            // não tem briefing nem Copiloto para reconstruir — ele volta ao
+            // bloco 1 do mesmo cronograma de sempre.
+            this.props.dados.temCopiloto
+              ? "Apaga seu histórico, progresso, estatísticas, cronograma personalizado e as adaptações do Copiloto. Seu cadastro, plano e créditos de redação continuam. Seu perfil é montado de novo a partir do briefing."
+              : "Apaga seu histórico, progresso e estatísticas, e devolve seu cronograma ao Dia 1. Seu cadastro, plano e créditos de redação continuam. Os 40 dias do plano continuam os mesmos."
           ),
           this.state.resetConfirmando
             ? h("div", { key: "c", style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 8 } }, [
@@ -5913,7 +5946,14 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
       tutorial: () => this.scrTutorial(),
       anotacoes: () => this.scrAnotacoes()
     };
-    const fn = map[S.screen] || map.mapa;
+    // Última defesa: o briefing não existe fora do plano adaptativo.
+    //
+    // As entradas para ele já estão fechadas uma a uma (tela inicial, os dois
+    // menus, a rota /aluno/briefing). Esta linha é o que garante que uma
+    // entrada NOVA — ou um estado antigo guardado no navegador — não reabra
+    // para o Decolando um questionário que o cronograma fixo dele ignora.
+    const tela = S.screen === "briefing" && !this.props.dados.temCopiloto ? "mapa" : S.screen;
+    const fn = map[tela] || map.mapa;
     return fn();
   }
 
