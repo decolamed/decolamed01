@@ -76,16 +76,19 @@ export async function PaginaDaDemonstracao({ origem }: { origem: string | null }
         {/* O título fala com quem chegou pelo WhatsApp sem saber o que é
             isto. "Assim funciona a Decola MED" descrevia a página, não o
             convite — e prometia explicação, quando o que a tela oferece é
-            uso. A contagem de passos saiu do texto de propósito: ela ficava
-            errada sozinha toda vez que uma etapa era acrescentada (dizia
-            "três passos" com quatro etapas na tela), e quem conta os passos
-            são as abas logo abaixo. */}
+            uso.
+
+            O subtítulo dizia "um dia de estudo, do jeito que ele acontece" —
+            promessa grande demais para quatro telas. Isto aqui é uma AMOSTRA,
+            e chamá-la de dia de estudo faz o visitante esperar mais do que vai
+            receber. A contagem de passos voltou porque agora ela é fixa e a
+            barra de progresso mostra os mesmos cinco. */}
         <h1 className="font-display text-2xl font-extrabold text-app-txt sm:text-3xl">
           Experimente a Decola MED
         </h1>
         <p className="mt-1.5 text-sm font-semibold leading-relaxed text-app-sub">
-          Um dia de estudo, do jeito que ele acontece: assista à aula, responda uma questão de verdade,
-          revise com flashcards e veja o Copiloto ajustar seu plano. Sem cadastro.
+          Uma amostra rápida da plataforma, em cinco passos: você vê o painel, assiste a um trecho de aula,
+          responde uma questão e revisa um flashcard. Sem cadastro.
         </p>
       </header>
 

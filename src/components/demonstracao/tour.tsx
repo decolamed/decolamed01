@@ -36,12 +36,39 @@ import {
 
 type Etapa = "painel" | "aula" | "questao" | "flashcard" | "recursos";
 
-const ETAPAS: { id: Etapa; rotulo: string }[] = [
-  { id: "painel", rotulo: "Painel" },
-  { id: "aula", rotulo: "Aula" },
-  { id: "questao", rotulo: "Questão" },
-  { id: "flashcard", rotulo: "Flashcard" },
-  { id: "recursos", rotulo: "Recursos" }
+/**
+ * As etapas, em ordem, e o que cada uma É.
+ *
+ * A frase de `oQueE` aparece no topo a cada passo. Sem ela o visitante via
+ * telas bonitas sem saber que ferramenta estava usando — "mostrar o que é
+ * cada coisa" é metade do trabalho de uma demonstração.
+ */
+const ETAPAS: { id: Etapa; rotulo: string; oQueE: string }[] = [
+  {
+    id: "painel",
+    rotulo: "Painel",
+    oQueE: "O painel de bordo: onde o aluno abre o app e vê o dia dele, o progresso e o que falta fazer."
+  },
+  {
+    id: "aula",
+    rotulo: "Aula",
+    oQueE: "A videoaula do dia, que abre dentro da plataforma — sem procurar nada no YouTube."
+  },
+  {
+    id: "questao",
+    rotulo: "Questão",
+    oQueE: "O banco de questões: você responde e recebe a correção e a resolução na hora."
+  },
+  {
+    id: "flashcard",
+    rotulo: "Flashcards",
+    oQueE: "A revisão rápida, para o que precisa ficar na memória até o dia da prova."
+  },
+  {
+    id: "recursos",
+    rotulo: "Recursos",
+    oQueE: "O Copiloto reagindo ao seu erro, e o resto do que tem dentro da plataforma."
+  }
 ];
 
 /**
@@ -62,6 +89,10 @@ export function ChamadaDeCompraCompacta({ destino, ehCompra }: { destino: string
 
 export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehCompra: boolean }) {
   const [etapa, setEtapa] = useState<Etapa>("painel");
+  // Até onde o visitante já CHEGOU. Voltar é livre; pular à frente não é —
+  // sem isso dava para ir do painel ao encerramento sem ver a aula nem
+  // responder nada, e a demonstração deixava de demonstrar.
+  const [maxIndice, setMaxIndice] = useState(0);
   const [escolha, setEscolha] = useState<string | null>(null);
   const [respondida, setRespondida] = useState(false);
   const [cartaoVirado, setCartaoVirado] = useState(false);
@@ -76,16 +107,29 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
     setCartaoJulgado(null);
   }
 
+  const indiceAtual = ETAPAS.findIndex((e) => e.id === etapa);
+
+  /** Vai para uma etapa, respeitando a ordem. */
+  function irPara(destinoEtapa: Etapa) {
+    const i = ETAPAS.findIndex((e) => e.id === destinoEtapa);
+    // O passo seguinte é sempre permitido: é ele que faz a jornada andar.
+    if (i > maxIndice + 1) return;
+    setEtapa(destinoEtapa);
+    setMaxIndice((m) => Math.max(m, i));
+  }
+
   const acertou = escolha === RESPOSTA_CORRETA_DEMO;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-24 pt-4 sm:px-6">
-      <PassosDaJornada atual={etapa} onIr={setEtapa} />
+      <PassosDaJornada atual={etapa} maxIndice={maxIndice} onIr={irPara} />
 
       <div className="mt-5">
-        {etapa === "painel" && <Painel onAvancar={() => setEtapa("aula")} onAbrir={setEtapa} />}
+        {etapa === "painel" && (
+          <Painel onAvancar={() => irPara("aula")} onAbrir={irPara} maxIndice={maxIndice} />
+        )}
 
-        {etapa === "aula" && <Aula onAvancar={() => setEtapa("questao")} />}
+        {etapa === "aula" && <Aula onAvancar={() => irPara("questao")} />}
 
         {etapa === "questao" && (
           <Questao
@@ -94,7 +138,7 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
             acertou={acertou}
             onEscolher={setEscolha}
             onConfirmar={() => setRespondida(true)}
-            onAvancar={() => setEtapa("flashcard")}
+            onAvancar={() => irPara("flashcard")}
           />
         )}
 
@@ -106,7 +150,7 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
             onVirar={() => setCartaoVirado((v) => !v)}
             onJulgar={setCartaoJulgado}
             onProximo={proximoCartao}
-            onAvancar={() => setEtapa("recursos")}
+            onAvancar={() => irPara("recursos")}
           />
         )}
 
@@ -116,38 +160,77 @@ export function TourDaDemonstracao({ destino, ehCompra }: { destino: string; ehC
   );
 }
 
-// ─────────────────────────────────────────────────────────── os três passos ─
-function PassosDaJornada({ atual, onIr }: { atual: Etapa; onIr: (e: Etapa) => void }) {
+// ────────────────────────────────────────────────────────── o progresso ─
+//
+// Eram cinco abas com o rótulo escrito, dividindo a largura igualmente. Em
+// 360px "FLASHCARD" e "RECURSOS" não cabem, e como cada aba tinha largura
+// mínima de conteúdo a faixa empurrava a PÁGINA para o lado: aparecia uma
+// borda branca à direita e o último passo ficava cortado.
+//
+// Trocado por bolinhas mais o nome do passo atual. Cabe em qualquer largura
+// sem rolagem lateral, e diz melhor o que a jornada virou: uma sequência, não
+// um menu de onde se escolhe qualquer ponto.
+function PassosDaJornada({
+  atual,
+  maxIndice,
+  onIr
+}: {
+  atual: Etapa;
+  maxIndice: number;
+  onIr: (e: Etapa) => void;
+}) {
   const indiceAtual = ETAPAS.findIndex((e) => e.id === atual);
+  const etapaAtual = ETAPAS[indiceAtual];
 
   return (
-    <nav aria-label="Etapas da demonstração" className="flex gap-2">
-      {ETAPAS.map((e, i) => {
-        const ativo = i === indiceAtual;
-        const passado = i < indiceAtual;
-        return (
-          <button
-            key={e.id}
-            onClick={() => onIr(e.id)}
-            aria-current={ativo ? "step" : undefined}
-            className={`flex-1 rounded-full px-3 py-2 text-[11px] font-extrabold uppercase tracking-wide transition ${
-              ativo
-                ? "bg-orange text-white"
-                : passado
-                  ? "bg-app-chip text-app-txt"
-                  : "bg-app-chip text-app-faint"
-            }`}
-          >
-            {e.rotulo}
-          </button>
-        );
-      })}
-    </nav>
+    <div>
+      <nav aria-label="Etapas da demonstração" className="flex items-center gap-2">
+        {ETAPAS.map((e, i) => {
+          const alcancada = i <= maxIndice;
+          const ativo = i === indiceAtual;
+          return (
+            <button
+              key={e.id}
+              onClick={() => onIr(e.id)}
+              disabled={!alcancada}
+              aria-current={ativo ? "step" : undefined}
+              aria-label={`Passo ${i + 1}: ${e.rotulo}${alcancada ? "" : " (ainda não liberado)"}`}
+              className={`h-2 flex-1 rounded-full transition ${
+                ativo
+                  ? "bg-orange"
+                  : alcancada
+                    ? "cursor-pointer bg-app-sub hover:bg-app-txt"
+                    : "cursor-not-allowed bg-app-chip"
+              }`}
+            />
+          );
+        })}
+      </nav>
+
+      <div className="mt-2.5 flex items-baseline gap-2">
+        <span className="shrink-0 text-[11px] font-extrabold uppercase tracking-widest text-orange">
+          Passo {indiceAtual + 1} de {ETAPAS.length}
+        </span>
+        <span className="truncate font-display text-sm font-extrabold text-app-txt">
+          {etapaAtual.rotulo}
+        </span>
+      </div>
+
+      <p className="mt-1 text-[13px] font-semibold leading-relaxed text-app-sub">{etapaAtual.oQueE}</p>
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────── etapa 1: painel ─
-function Painel({ onAvancar, onAbrir }: { onAvancar: () => void; onAbrir: (e: Etapa) => void }) {
+function Painel({
+  onAvancar,
+  onAbrir,
+  maxIndice
+}: {
+  onAvancar: () => void;
+  onAbrir: (e: Etapa) => void;
+  maxIndice: number;
+}) {
   const a = ALUNO_FICTICIO;
 
   return (
@@ -176,16 +259,29 @@ function Painel({ onAvancar, onAbrir }: { onAvancar: () => void; onAbrir: (e: Et
 
       <Cartao>
         <p className="text-[11px] font-extrabold uppercase tracking-widest text-app-faint">Missões de hoje</p>
-        <p className="mt-1 text-[11px] font-semibold text-app-sub">Toque em qualquer missão para abrir.</p>
+        <p className="mt-1 text-[11px] font-semibold text-app-sub">
+          As missões abrem de verdade — a demonstração segue a ordem do dia.
+        </p>
         <ul className="mt-2.5 space-y-2">
           {MISSOES_DE_HOJE.map((m) => (
             <li key={m.titulo}>
               {/* Botão, e não <li> decorativo: na conta de verdade tocar num
-                  item do cronograma é como se estuda. Um item que não responde
-                  ao toque ensinaria a coisa errada sobre a plataforma. */}
-              <button
-                onClick={() => onAbrir(m.abre)}
-                className="flex w-full items-center gap-3 rounded-xl border border-app-line bg-app-card2 px-3 py-2.5 text-left transition hover:border-orange/50 hover:bg-app-chip"
+                  item do cronograma é como se estuda.
+                  Mas só abre o que a jornada já alcançou (ou o passo logo
+                  adiante): deixar qualquer missão pular para o fim é o que
+                  fazia o visitante chegar ao encerramento sem ter visto a
+                  aula nem respondido nada. A missão travada não vira clique
+                  morto — ela diz que vem a seguir. */}
+              {(() => {
+                const destino = ETAPAS.findIndex((e) => e.id === m.abre);
+                const liberada = destino <= maxIndice + 1;
+                const Elemento = liberada ? "button" : "div";
+                return (
+              <Elemento
+                {...(liberada ? { onClick: () => onAbrir(m.abre) } : { "aria-disabled": true })}
+                className={`flex w-full items-center gap-3 rounded-xl border border-app-line bg-app-card2 px-3 py-2.5 text-left transition ${
+                  liberada ? "hover:border-orange/50 hover:bg-app-chip" : "opacity-60"
+                }`}
               >
                 <span
                   aria-hidden
@@ -210,8 +306,16 @@ function Painel({ onAvancar, onAbrir }: { onAvancar: () => void; onAbrir: (e: Et
                     🤖 Copiloto
                   </span>
                 )}
-                <span aria-hidden className="shrink-0 text-app-faint">›</span>
-              </button>
+                {liberada ? (
+                  <span aria-hidden className="shrink-0 text-app-faint">›</span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-app-chip px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-app-faint">
+                    a seguir
+                  </span>
+                )}
+              </Elemento>
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -254,7 +358,7 @@ function Aula({ onAvancar }: { onAvancar: () => void }) {
   return (
     <div className="space-y-3">
       <p className="px-1 text-sm font-semibold text-app-sub">
-        Esta é uma aula de verdade da biblioteca. É assim que ela abre no seu cronograma.
+        Toque no play — é a mesma aula que abre no cronograma do aluno.
       </p>
 
       <Cartao>
@@ -325,7 +429,7 @@ function Questao({
   return (
     <div className="space-y-3">
       <p className="px-1 text-sm font-semibold text-app-sub">
-        Esta é a tela real de questões da plataforma. Escolha uma alternativa e confirme.
+        Escolha uma alternativa e confirme. A tela é a mesma que o aluno usa.
       </p>
 
       <CartaoQuestao
@@ -391,7 +495,7 @@ function Flashcard({
   return (
     <div className="space-y-3">
       <p className="px-1 text-sm font-semibold text-app-sub">
-        Flashcards são para memorizar rápido. Toque no cartão para virar.
+        Toque no cartão para virar e depois julgue a sua memória.
       </p>
 
       <Cartao>
