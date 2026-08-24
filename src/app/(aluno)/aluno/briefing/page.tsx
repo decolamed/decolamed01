@@ -36,10 +36,19 @@ export default async function AlunoBriefingPage({
   // cronograma por conta própria — que é justamente o que a mudança tirou.
   //
   // Depois que o mentor envia, esta mesma tela volta a ser o RECALIBRAR VOO,
-  // que continua sendo do aluno. E o Decolando nunca cai aqui: ele não tem
-  // Copiloto e o fluxo dele segue igual.
+  // que continua sendo do aluno.
   if (temCopiloto && !briefing) {
     redirect("/aluno/cronograma");
+  }
+
+  // O DECOLANDO NÃO TEM BRIEFING. O cronograma dele é fixo — os mesmos 40
+  // blocos, sem data de prova, sem dias da semana, sem horas por dia. Antes
+  // esta tela só não era alcançada porque nada linkava para cá; bastava
+  // digitar o endereço para responder um questionário que não muda nada no
+  // plano dele, e ainda gravar um briefing que faria o resto da plataforma
+  // tratá-lo como aluno de plano adaptativo.
+  if (!temCopiloto) {
+    redirect("/aluno");
   }
 
   return (

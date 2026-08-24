@@ -8,6 +8,7 @@ import {
   type Pendencia, type DiaAlvo
 } from "@/lib/copiloto/pendencias";
 import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { diaAtualDaRota, gerarRota, parametrosDoBriefing } from "@/lib/trilha/rota";
 import { chaveMateria, mesmaMateria } from "@/lib/site/materia-canonica";
 import { carregarConfigCopiloto, type ConfigCopiloto } from "@/lib/copiloto/configuracao";
@@ -1817,6 +1818,19 @@ async function registrarEvento(alunoId: string, gatilho: string, materia?: strin
 // ============================================================================
 
 export async function rodarCopiloto(ctx: ContextoAluno): Promise<void> {
+  // O COPILOTO NÃO EXISTE PARA O DECOLANDO.
+  //
+  // A guarda mora aqui, e não em quem chama, porque são quatro pontos de
+  // entrada (questão, simulado, flashcard, atividade) e nenhum deles
+  // checava nada: o motor rodava para QUALQUER aluno que respondesse
+  // alguma coisa. Na prática o Decolando — que vende um cronograma fixo —
+  // ganhava missões criadas por IA, recomendações de revisão e reagendamento
+  // automático, tudo em cima de um plano que não deveria se adaptar a nada.
+  //
+  // Uma quinta chamada aparecerá algum dia. Com a regra num lugar só, ela
+  // nasce correta.
+  if (!(await alunoTemCopiloto(ctx.alunoId))) return;
+
   let dados: DadosAluno;
   try {
     dados = await carregarDados(ctx);

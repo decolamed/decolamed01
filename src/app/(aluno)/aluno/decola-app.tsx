@@ -1157,8 +1157,9 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
         this.avisar("Não foi possível salvar essa missão. Verifique sua conexão e tente de novo.");
       });
   }
-  // Redefinir perfil: apaga histórico/progresso e remonta o perfil a partir
-  // do briefing. Confirmação em dois passos porque é irreversível.
+  // Redefinir perfil: apaga histórico e progresso. Confirmação em dois passos
+  // porque é irreversível. Para onde ir DEPOIS depende do plano — ver o
+  // comentário no corpo.
   confirmarRedefinirPerfil() {
     if (this.state.resetEmAndamento) return;
     if (this.props.demoMode) {
@@ -1172,16 +1173,25 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           this.setState({ resetEmAndamento: false });
           return this.avisar(res.erro);
         }
-        // Vai direto para o briefing, com navegação de página inteira.
+        // Para onde ir depende do plano, e a diferença é de propósito.
         //
-        // Duas razões. A primeira: o reset apaga também o briefing, então a
-        // próxima coisa que o aluno precisa fazer é montar a nova jornada —
-        // é o passo 4 do que foi pedido. A segunda: só uma navegação
-        // completa descarta o estado que este componente guarda em memória
-        // (missões, recomendações, progresso, sentimentos). Um reload de
-        // /aluno traria a mesma tela com os cartões antigos ainda montados,
-        // que é exatamente a impressão de "o reset não concluiu".
-        if (typeof window !== "undefined") window.location.href = "/aluno/briefing";
+        // VOO GUIADO vai ao briefing: o reset apaga o briefing junto, e sem
+        // um novo não há jornada nenhuma para montar.
+        //
+        // DECOLANDO vai para /aluno. O cronograma dele é FIXO — os mesmos 40
+        // blocos, sem briefing, sem data de prova, sem dias da semana. Aqui
+        // "redefinir" quer dizer só voltar ao bloco 1, e mandar este aluno
+        // responder um briefing seria pedir dados que o plano dele não usa
+        // para nada.
+        //
+        // Nos dois casos a navegação é de página inteira, e não um reload:
+        // só ela descarta o estado que este componente guarda em memória
+        // (missões, progresso, sentimentos). Um reload traria a mesma tela
+        // com os cartões antigos montados — a impressão exata de "o reset
+        // não concluiu".
+        if (typeof window !== "undefined") {
+          window.location.href = this.props.dados.temCopiloto ? "/aluno/briefing" : "/aluno";
+        }
       })
       .catch(() => {
         this.setState({ resetEmAndamento: false });
@@ -4228,13 +4238,22 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
           ([
             ["user", "Editar perfil", () => this.nav("perfil")],
             ["lock", "Alterar senha", () => this.nav("senha")],
-            // Recalibrar continua sendo do aluno — mas só faz sentido depois
-            // de existir um plano. Antes do envio do mentor não há o que
-            // recalibrar, e abrir o formulário aqui seria justamente o
-            // briefing inicial que saiu das mãos do aluno.
-            ...(this.props.dados.aguardandoMentor
-              ? []
-              : [["calendar", "Recalibrar plano de voo", () => this.nav("briefing")] as [string, string, () => void]]),
+            // Recalibrar continua sendo do aluno — mas só existe para quem
+            // tem um plano ADAPTATIVO, e só depois que ele foi montado.
+            //
+            // Fora do Voo Guiado isto não é um item a menos: é um item que
+            // nunca deveria estar ali. O Decolando tem cronograma fixo, e
+            // este atalho abria para ele o briefing — um questionário sobre
+            // data de prova e dias da semana que o plano dele não usa para
+            // nada, e cuja resposta faria o resto da plataforma passar a
+            // tratá-lo como aluno de plano adaptativo.
+            //
+            // Antes do envio do mentor também não aparece: não há o que
+            // recalibrar, e o formulário seria o briefing inicial que saiu
+            // das mãos do aluno.
+            ...(this.props.dados.temCopiloto && !this.props.dados.aguardandoMentor
+              ? [["calendar", "Recalibrar plano de voo", () => this.nav("briefing")] as [string, string, () => void]]
+              : []),
             ...(this.props.dados.termosUsoUrl
               ? [["file", "Termos de Uso", () => this.openBrowser("Termos de Uso", this.props.dados.termosUsoUrl as string, "config")] as [string, string, () => void]]
               : [])

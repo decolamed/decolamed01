@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
-import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { diaDoDecolando } from "@/lib/trilha/decolando";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
 import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
@@ -201,10 +201,14 @@ export default async function AlunoCronogramaPage() {
     cronogramaCompactado = rota.dias.length < resolvidos.length;
     diaAtual = diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null;
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
-  } else if (matricula?.acesso_liberado_em && !aguardandoMentor) {
-    // Plano Decolando: 40 dias fixos a partir da matrícula, sem briefing.
+  } else if (!aguardandoMentor) {
+    // Plano Decolando: os mesmos 40 blocos para todos, sem briefing — e o
+    // bloco atual é o primeiro ainda não concluído, não uma conta de dias
+    // desde a matrícula. Ver lib/trilha/decolando.ts.
     todosOsDias = resolvidos;
-    diaAtual = calcularDiaTrilha(matricula.acesso_liberado_em);
+    // `concluidas` já vem do banco filtrado por concluida = true (ver a
+    // consulta acima), então é exatamente o conjunto que a regra espera.
+    diaAtual = diaDoDecolando(todosOsDias, concluidas);
     diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
   }
 

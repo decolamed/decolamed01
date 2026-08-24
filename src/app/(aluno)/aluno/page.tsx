@@ -2,7 +2,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto, planoDoAluno } from "@/lib/copiloto/permissao";
-import { calcularDiaTrilha } from "@/lib/trilha/dia";
+import { diaDoDecolando, chavesConcluidas } from "@/lib/trilha/decolando";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
 import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
@@ -221,8 +221,6 @@ export default async function AlunoHomePage({
     hoje: hojeStr
   });
 
-  const acessoLiberadoEm = (matricula as any)?.acesso_liberado_em as string | undefined;
-
   // Voo Guiado ainda sem briefing = o mentor não montou o cronograma dele.
   // O briefing inicial passou a ser preenchido pelo mentor no painel, depois
   // da mentoria; até lá este aluno NÃO recebe o template linear de 40 dias.
@@ -259,11 +257,17 @@ export default async function AlunoHomePage({
   // `diaAtualDaRota()` — a mesma função que a tela de cronograma usa, para
   // as duas nunca mais discordarem. Sem rota, o cálculo antigo pela data de
   // matrícula, que é o correto para o Plano Decolando.
+  //
+  // No Decolando quem decide é a CONCLUSÃO, não a data. Era
+  // `calcularDiaTrilha(acesso_liberado_em)` — dias corridos desde a matrícula
+  // —, e por isso quem sumia duas semanas voltava quatorze dias à frente, com
+  // blocos "anteriores" que nunca abriu; passados 40 dias de matrícula não
+  // havia bloco nenhum, porque `dia_numero` 41 não existe. O plano vende um
+  // conteúdo fixo, não uma assinatura de rotina: o cronograma espera o aluno.
+  // Ver lib/trilha/decolando.ts.
   const diaTrilhaHoje = rota
     ? diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null
-    : acessoLiberadoEm
-      ? calcularDiaTrilha(acessoLiberadoEm)
-      : null;
+    : diaDoDecolando(todosDias, chavesConcluidas(progressoItensData as AlunoProgressoItem[]));
 
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do
