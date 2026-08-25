@@ -2773,28 +2773,34 @@ export default class DecolaApp extends React.Component<DecolaAppProps, any> {
    * Sem rota (Plano Decolando), fica só "Missão do Dia".
    */
   /**
-   * O dia da rota que o aluno tem de fato pela frente: o PRIMEIRO ainda não
-   * concluído, não o que o calendário aponta.
+   * O NÚMERO do dia que este cartão está mostrando.
    *
-   * Os dois divergem exatamente quando importa. Quem deixou o Dia 3 pela
-   * metade e chegou no dia 5 do calendário precisa ver "Missão 3" — mandá-lo
-   * para a missão de hoje é fingir que o atraso não existe. E quem terminou
-   * tudo hoje já enxerga a próxima.
+   * Tem de sair da MESMA fonte que o título, a lista de passos e a barra de
+   * progresso logo ao lado — e é justamente isso que faltava.
+   *
+   * COMO ERA
+   * --------
+   * O rótulo saía de um "primeiro dia ainda não concluído", calculado só aqui;
+   * o título, a sequência e o percentual saíam de `trilhaHoje`. Enquanto o
+   * aluno tinha algo pendente hoje os dois coincidiam e ninguém percebia. No
+   * instante em que ele terminava os itens do dia, o número — e SÓ o número —
+   * pulava para o dia seguinte:
+   *
+   *   rótulo:    "MISSÃO DO DIA · DIA 2 DE 44"
+   *   título:    "Biologia · História · Literatura"   ← o dia 1
+   *   sequência:  os 6 itens do dia 1, todos marcados
+   *   progresso:  78%                                 ← e o dia 1 nem 100%
+   *
+   * Uma aluna leu exatamente isso: a tela dizia dia 2 e listava o dia 1, que
+   * ela já tinha feito. O cartão contradizia a si mesmo em quatro lugares.
+   *
+   * A ideia por trás daquele cálculo — apontar o dia atrasado para quem ficou
+   * para trás — não estava implementada: o número mudava e o CONTEÚDO não,
+   * então ele nunca levou ninguém a lugar nenhum. Mostrar o dia atrasado de
+   * verdade é mudar o que o cartão exibe, não como ele é rotulado.
    */
-  diaAtualDaRota(): DiaDoCronograma | null {
-    const d = this.props.dados;
-    const emOrdem = [...(d.trilhaAnteriores || []), ...(d.trilhaHoje ? [d.trilhaHoje] : []), ...(d.trilhaProximos || [])];
-    const pendente = emOrdem.find((dia) => {
-      const itens = dia.itens || [];
-      const contam = itensQueContam(itens);
-      if (contam.length === 0) return false;
-      return !contam.every(({ item, indice }) => this.estaConcluido(this.chaveDeItemTrilha(dia.dia_numero, indice, item)));
-    });
-    return pendente ?? d.trilhaHoje ?? emOrdem[emOrdem.length - 1] ?? null;
-  }
-
   rotuloMissaoDoDia(): string {
-    const dia = this.diaAtualDaRota()?.dia_numero ?? this.props.dados.diaTrilhaHoje;
+    const dia = this.props.dados.trilhaHoje?.dia_numero ?? this.props.dados.diaTrilhaHoje;
     const total = this.props.dados.totalDiasCronograma;
     if (!dia) return "Missão do Dia";
     return "Missão do Dia · Dia " + dia + (total ? " de " + total : "");
