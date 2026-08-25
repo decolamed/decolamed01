@@ -266,6 +266,14 @@ export interface AsaasPagamento {
   invoiceUrl?: string | null;
   bankSlipUrl?: string | null;
   installmentCount?: number | null;
+  // Numa compra parcelada, `value` acima é o valor de UMA PARCELA. Estes três
+  // campos são o que permite reconstruir o valor da COMPRA — ver
+  // lib/matricula/valor-da-venda.ts. `installment` é o id do grupo de
+  // parcelas: as N cobranças da mesma compra o compartilham, e é por ele que a
+  // venda é identificada no painel.
+  installment?: string | null;
+  installmentNumber?: number | null;
+  description?: string | null;
 }
 
 /**
@@ -310,11 +318,17 @@ export interface AsaasWebhookPayload {
   payment: {
     id: string;
     customer: string;
+    /** Num parcelamento, o valor de UMA PARCELA — ver `installment` abaixo. */
     value: number;
     status: string;
     billingType: AsaasBillingType;
     externalReference?: string;
     paymentDate?: string;
+    /** Id do grupo de parcelas: as N cobranças da mesma compra o compartilham. */
+    installment?: string | null;
+    installmentNumber?: number | null;
+    installmentCount?: number | null;
+    description?: string | null;
   };
 }
 

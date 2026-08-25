@@ -81,6 +81,10 @@ export interface PreCadastro {
   asaas_charge_id: string | null;
   cupom_codigo: string | null;
   desconto_centavos: number;
+  /** O total da compra fechado no checkout, em centavos. Null nas compras antigas. */
+  valor_total_centavos: number | null;
+  /** Em quantas vezes foi cobrada. 1 (ou null, nas antigas) para à vista. */
+  parcelas: number | null;
   convertido: boolean;
   created_at: string;
 }
@@ -109,7 +113,16 @@ export interface Pagamento {
   matricula_id: string | null;
   pre_cadastro_id: string | null;
   asaas_payment_id: string | null;
+  /**
+   * Id do GRUPO de parcelas no Asaas. É a chave de idempotência da venda
+   * parcelada: as parcelas seguintes não criam linha nova.
+   */
+  asaas_installment_id: string | null;
+  /** O total da COMPRA, não o da parcela. Uma venda em 3x de R$ 151,23 vale 45369. */
   valor_centavos: number;
+  parcelas: number;
+  /** O valor de cada parcela, ou null quando a venda foi à vista. */
+  valor_parcela_centavos: number | null;
   forma_pagamento: FormaPagamento | null;
   status: PagamentoStatus;
   data_pagamento: string | null;

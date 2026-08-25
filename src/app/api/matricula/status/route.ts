@@ -73,7 +73,14 @@ export async function GET(request: Request) {
   const resultado = await confirmarPagamento(supabase, {
     asaasPaymentId: pagamento.id,
     preCadastroId: pagamento.externalReference ?? preCadastro.id,
+    // Parcelado, `value` é o valor de UMA parcela — o total da venda sai de
+    // lib/matricula/valor-da-venda.ts. Este caminho é justamente o que
+    // registrou a venda de 25/08 (o webhook não chegou), então ele precisa
+    // mandar exatamente os mesmos campos que o webhook.
     valor: pagamento.value,
+    installmentId: pagamento.installment ?? null,
+    installmentCount: pagamento.installmentCount ?? null,
+    descricao: pagamento.description ?? null,
     billingType: pagamento.billingType,
     dataPagamento: pagamento.paymentDate ?? pagamento.confirmedDate ?? null,
     recebido: pagamento.status === "RECEIVED",

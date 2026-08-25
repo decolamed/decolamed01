@@ -210,7 +210,14 @@ export async function POST(request: Request) {
       telefone,
       plano_id: planoId,
       cupom_codigo: cupomCodigo ? cupomCodigo.trim().toUpperCase() : null,
-      desconto_centavos: descontoCentavos
+      desconto_centavos: descontoCentavos,
+      // O total e o número de parcelas ficam GRAVADOS, não só enviados ao
+      // gateway. É o único lugar onde o valor da compra existe de forma
+      // exata: na confirmação, o Asaas devolve o valor de uma PARCELA, e foi
+      // por isso que uma venda de R$ 453,69 em 3x entrou no painel financeiro
+      // como R$ 151,23. Ver lib/matricula/valor-da-venda.ts.
+      valor_total_centavos: valorTotalCentavos,
+      parcelas: parcelasCobradas
     })
     .select()
     .single();

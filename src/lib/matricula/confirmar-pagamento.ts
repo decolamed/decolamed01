@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapBillingTypeToFormaPagamento, type AsaasBillingType } from "@/lib/asaas/client";
 import { dataDePagamento } from "@/lib/vendas/periodo";
+import { chaveDaVenda, valorDaVenda } from "@/lib/matricula/valor-da-venda";
 
 // ============================================================================
 // PAGAMENTO CONFIRMADO → CONTA LIBERADA
@@ -35,8 +36,19 @@ export interface PagamentoConfirmado {
   asaasPaymentId: string;
   /** `externalReference`: o id do pré-cadastro criado no checkout. */
   preCadastroId: string;
-  /** Valor em reais, como o Asaas devolve. */
+  /**
+   * Valor em reais, como o Asaas devolve.
+   *
+   * ATENÇÃO: num parcelamento este é o valor de UMA PARCELA, não o da compra.
+   * Quem decide o total da venda é `valorDaVenda` — ver o módulo ao lado.
+   */
   valor: number;
+  /** `payment.installment`: o id do GRUPO de parcelas, quando a compra é parcelada. */
+  installmentId?: string | null;
+  /** `payment.installmentCount`, quando o Asaas o informa. */
+  installmentCount?: number | null;
+  /** `payment.description` — "Parcela 1 de 3. …", último recurso para a contagem. */
+  descricao?: string | null;
   billingType?: AsaasBillingType;
   dataPagamento?: string | null;
   /** RECEIVED (compensado) marca a venda como recebida; o resto, confirmada. */
@@ -72,7 +84,27 @@ export async function confirmarPagamento(
     return { ok: false, motivo: "Pré-cadastro não encontrado.", repetir: false };
   }
 
+  // ---- Quanto valeu a venda ------------------------------------------------
+  //
+  // Não é `dados.valor`: num parcelamento o Asaas manda o valor de UMA parcela
+  // em `payment.value`, e era ele que entrava no painel financeiro como se
+  // fosse a compra inteira. O total sai do que o CHECKOUT fechou, guardado no
+  // pré-cadastro — ver lib/matricula/valor-da-venda.ts.
+  const cobranca = {
+    valorDaCobranca: dados.valor,
+    installmentId: dados.installmentId,
+    installmentCount: dados.installmentCount,
+    descricao: dados.descricao
+  };
+  const venda = valorDaVenda(cobranca, {
+    valorTotalCentavos: preCadastro.valor_total_centavos,
+    parcelas: preCadastro.parcelas
+  });
+
   // ---- Comissão do parceiro, quando a compra veio por cupom de afiliado ----
+  //
+  // Sobre o TOTAL da venda. Enquanto saía do valor da cobrança, o parceiro de
+  // uma compra em 3x recebia a comissão de um terço do que foi vendido.
   let parceiroId: string | null = null;
   let comissaoCentavos = 0;
   if (preCadastro.cupom_codigo) {
@@ -83,7 +115,7 @@ export async function confirmarPagamento(
       .maybeSingle();
     if (cupomInfo?.parceiro_id) {
       parceiroId = cupomInfo.parceiro_id;
-      comissaoCentavos = Math.round((dados.valor * 100 * (cupomInfo.percentual_comissao ?? 0)) / 100);
+      comissaoCentavos = Math.round((venda.totalCentavos * (cupomInfo.percentual_comissao ?? 0)) / 100);
     }
   }
 
@@ -107,30 +139,46 @@ export async function confirmarPagamento(
   }
 
   // ---- A venda ------------------------------------------------------------
-  // Idempotente por `asaas_payment_id`: reenvio atualiza a mesma linha em vez
-  // de criar outra. É o que impede a mesma compra de aparecer duas vezes em
-  // /admin/vendas e a comissão do parceiro de ser gerada em dobro.
-  const { error: erroPagamento } = await supabase.from("pagamentos").upsert(
-    {
-      asaas_payment_id: dados.asaasPaymentId,
-      pre_cadastro_id: preCadastro.id,
-      matricula_id: matriculaId,
-      valor_centavos: Math.round(dados.valor * 100),
-      forma_pagamento: mapBillingTypeToFormaPagamento(dados.billingType),
-      status: dados.recebido ? "recebido" : "confirmado",
-      data_pagamento: dataDePagamento(dados.dataPagamento),
-      payload: dados.payload,
-      origem_pagamento: "asaas",
-      cupom_codigo: preCadastro.cupom_codigo,
-      parceiro_id: parceiroId,
-      comissao_centavos: comissaoCentavos,
-      comprador_nome: preCadastro.nome,
-      comprador_email: preCadastro.email,
-      plano_nome: preCadastro.planos?.nome ?? null,
-      plano_id: preCadastro.plano_id
-    },
-    { onConflict: "asaas_payment_id" }
-  );
+  const chave = chaveDaVenda(cobranca, dados.asaasPaymentId);
+  const linhaDaVenda = {
+    asaas_payment_id: dados.asaasPaymentId,
+    asaas_installment_id: dados.installmentId ?? null,
+    pre_cadastro_id: preCadastro.id,
+    matricula_id: matriculaId,
+    valor_centavos: venda.totalCentavos,
+    parcelas: venda.parcelas,
+    valor_parcela_centavos: venda.valorDaParcelaCentavos,
+    forma_pagamento: mapBillingTypeToFormaPagamento(dados.billingType),
+    status: dados.recebido ? "recebido" : "confirmado",
+    data_pagamento: dataDePagamento(dados.dataPagamento),
+    payload: dados.payload,
+    origem_pagamento: "asaas",
+    cupom_codigo: preCadastro.cupom_codigo,
+    parceiro_id: parceiroId,
+    comissao_centavos: comissaoCentavos,
+    comprador_nome: preCadastro.nome,
+    comprador_email: preCadastro.email,
+    plano_nome: preCadastro.planos?.nome ?? null,
+    plano_id: preCadastro.plano_id
+  };
+
+  // Idempotente, por chaves diferentes conforme a compra:
+  //
+  // À VISTA — por `asaas_payment_id`, como sempre foi. Reenvio do Asaas ou
+  // consulta simultânea da tela atualizam a MESMA linha, e é isso que faz a
+  // transição confirmado → recebido chegar ao painel.
+  //
+  // PARCELADA — pelo GRUPO de parcelas, e sem sobrescrever. A linha já tem o
+  // total da compra e a data em que ela foi feita; a parcela que confirmar em
+  // setembro não pode criar uma venda nova (contaria a mesma compra três
+  // vezes) nem reescrever a linha existente — mudaria `data_pagamento` para
+  // setembro e a venda sumiria do relatório de agosto.
+  const { error: erroPagamento } =
+    chave.coluna === "asaas_installment_id"
+      ? await supabase
+          .from("pagamentos")
+          .upsert(linhaDaVenda, { onConflict: "asaas_installment_id", ignoreDuplicates: true })
+      : await supabase.from("pagamentos").upsert(linhaDaVenda, { onConflict: "asaas_payment_id" });
 
   if (erroPagamento) {
     // O aluno já tem acesso (a matrícula foi criada acima) — isto não o

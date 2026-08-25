@@ -59,7 +59,13 @@ export async function POST(request: Request) {
   const resultado = await confirmarPagamento(createAdminClient(), {
     asaasPaymentId: payment.id,
     preCadastroId: payment.externalReference,
+    // `payment.value` é o valor de UMA parcela quando a compra é parcelada; o
+    // total da venda é decidido em lib/matricula/valor-da-venda.ts, com os
+    // três campos abaixo e o que o checkout guardou no pré-cadastro.
     valor: payment.value,
+    installmentId: payment.installment ?? null,
+    installmentCount: payment.installmentCount ?? null,
+    descricao: payment.description ?? null,
     billingType: payment.billingType,
     dataPagamento: payment.paymentDate ?? null,
     recebido: payload.event === "PAYMENT_RECEIVED",

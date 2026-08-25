@@ -245,7 +245,24 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
               )
             },
             { titulo: "Plano", celula: (v) => v.plano_nome ?? "—" },
-            { titulo: "Valor bruto", celula: (v) => formatarCentavos(v.valor_centavos) },
+            {
+              // O valor é sempre o da COMPRA. O parcelamento aparece embaixo,
+              // menor: trocar o total pela parcela era exatamente o defeito —
+              // uma venda de R$ 453,69 em 3x lida como R$ 151,23 — mas some a
+              // informação de como ela foi paga se ele não estiver em lugar
+              // nenhum.
+              titulo: "Valor bruto",
+              celula: (v) => (
+                <div>
+                  <p>{formatarCentavos(v.valor_centavos)}</p>
+                  {v.parcelas > 1 && v.valor_parcela_centavos ? (
+                    <p className="text-xs text-navy-dark/50">
+                      {v.parcelas}× de {formatarCentavos(v.valor_parcela_centavos)}
+                    </p>
+                  ) : null}
+                </div>
+              )
+            },
             { titulo: "Valor líquido", celula: (v) => formatarCentavos(v.valor_liquido_centavos ?? v.valor_centavos) },
             { titulo: "Forma", celula: (v) => v.forma_pagamento ?? "—" },
             { titulo: "Origem", celula: (v) => ORIGEM_LABEL[v.origem_pagamento] ?? v.origem_pagamento },
