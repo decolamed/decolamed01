@@ -27,6 +27,7 @@ import {
 } from "./actions";
 import { reenviarConvite, reenviarSenha } from "../actions";
 import type { Matricula, Pagamento, HistoricoAdmin, Profile, AlunoMissao } from "@/types/database";
+import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
 const TIPO_MISSAO_LABEL: Record<string, string> = {
   aula: "Aula",
@@ -134,11 +135,21 @@ export default async function AdminDetalhesUsuarioPage({
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const { data: usuario } = await supabase
+  const { data: usuario, error: erro_usuario } = await supabase
     .from("profiles")
     .select(`*, ${PLANO_DO_ALUNO}(nome, creditos_redacao)`)
     .eq("id", params.id)
     .maybeSingle();
+
+  // Falha de consulta NÃO é 404. Enquanto as duas caíam no mesmo `if`, uma
+  // indisponibilidade fazia o painel afirmar que o usuário não existe — e um
+  // admin que lê "não encontrado" na ficha de um aluno conclui coisas erradas
+  // sobre a conta dele. A página de erro do Next diz "algo deu errado", que é
+  // a verdade; `notFound()` diria uma mentira.
+  if (erro_usuario) {
+    console.error("Falha ao carregar a ficha do usuário:", params.id, erro_usuario.message);
+    throw new Error(`Não foi possível carregar este usuário: ${erro_usuario.message}`);
+  }
 
   if (!usuario) notFound();
 
@@ -193,12 +204,12 @@ export default async function AdminDetalhesUsuarioPage({
   const sentimentosSalvos = (briefing?.sentimentos ?? {}) as Record<string, string>;
   const diasSalvos = (briefing?.dias_estuda as string[] | null) ?? [];
 
-  const { data: consumidos } = await supabase
+  const { data: consumidos, error: erro_consumidos } = await supabase
     .from("redacoes_creditos_consumidos")
     .select("*")
     .eq("aluno_id", params.id)
     .order("created_at", { ascending: false });
-  const { data: ajustes } = await supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", params.id);
+  const { data: ajustes, error: erro_ajustes } = await supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", params.id);
   const totalConsumidos = (consumidos ?? []).length;
   const ajustesManuais = (ajustes ?? []).reduce((soma, a: any) => soma + a.quantidade, 0);
   const creditosTotais = (profile.planos?.creditos_redacao ?? 0) + ajustesManuais;
@@ -206,7 +217,7 @@ export default async function AdminDetalhesUsuarioPage({
 
   const registrarComId = registrarConsumoRedacao.bind(null, params.id);
 
-  const { data: missoesData } = await supabase
+  const { data: missoesData, error: erro_missoesData } = await supabase
     .from("aluno_missoes")
     .select("*")
     .eq("aluno_id", params.id)
@@ -220,7 +231,7 @@ export default async function AdminDetalhesUsuarioPage({
   // Materiais que a missão manual pode abrir. Vêm da MESMA biblioteca que o
   // app do aluno já lê (`conteudos_biblioteca`) — anexar aqui é apontar para
   // um registro que existe, não cadastrar um material paralelo.
-  const { data: materiaisData } = await supabase
+  const { data: materiaisData, error: erro_materiaisData } = await supabase
     .from("conteudos_biblioteca")
     .select("id, titulo, tipo, materia")
     .eq("ativo", true)
@@ -229,7 +240,7 @@ export default async function AdminDetalhesUsuarioPage({
     .order("titulo");
   const materiais = (materiaisData ?? []) as { id: string; titulo: string; tipo: string; materia: string | null }[];
 
-  const { data: matriculasData } = await supabase
+  const { data: matriculasData, error: erro_matriculasData } = await supabase
     .from("matriculas")
     .select("*, planos(nome)")
     .eq("aluno_id", params.id)
@@ -273,7 +284,7 @@ export default async function AdminDetalhesUsuarioPage({
   // e o aluno passam a mostrar percentuais diferentes da mesma pessoa.
   const desempenho = await carregarDesempenho(supabase, params.id);
 
-  const { data: historicoData } = await supabase
+  const { data: historicoData, error: erro_historicoData } = await supabase
     .from("historico_admin")
     .select("*")
     .eq("usuario_alvo_id", params.id)
@@ -283,6 +294,11 @@ export default async function AdminDetalhesUsuarioPage({
   const totalPagoCentavos = pagamentos
     .filter((p) => p.status === "confirmado" || p.status === "recebido")
     .reduce((soma, p) => soma + p.valor_centavos, 0);
+
+  // A falha de cada consulta é NOMEADA na tela. Esta página junta sete
+  // consultas independentes: sem isto, uma que falha apaga a sua seção e
+  // deixa as outras seis parecendo completas.
+  const falhaDeCarga = falhaAoCarregar({ "usuário": { error: erro_usuario }, "créditos consumidos": { error: erro_consumidos }, "ajustes de crédito": { error: erro_ajustes }, "missões": { error: erro_missoesData }, "materiais": { error: erro_materiaisData }, "matrículas": { error: erro_matriculasData }, "histórico": { error: erro_historicoData } });
 
   return (
     <div>
@@ -294,7 +310,7 @@ export default async function AdminDetalhesUsuarioPage({
         <h1 className="font-display text-2xl font-bold text-navy-dark">{profile.nome}</h1>
         <StatusBadge ativo={profile.ativo} />
       </div>
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+      <AdminAlert erro={falhaDeCarga ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl bg-white p-6 shadow">

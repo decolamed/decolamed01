@@ -18,12 +18,29 @@ export async function salvarProgressoVideo(chave: string, posicaoSegundos: numbe
 
   const concluida = finalizado || (duracaoSegundos > 0 && posicaoSegundos / duracaoSegundos >= LIMIAR_CONCLUSAO);
 
-  const { data: atual } = await supabase
+  // Esta leitura existe para NÃO REBAIXAR uma conclusão: quem já terminou a
+  // aula e a reabre para rever um trecho não pode voltar a "não concluída" só
+  // porque parou no minuto 2.
+  //
+  // Por isso a falha dela não pode ser ignorada. Com `atual` indefinido, o
+  // upsert abaixo grava `concluida: false` numa aula que estava concluída — o
+  // aluno vê a marca sumir sozinha, e o Decolando, que decide o bloco atual
+  // pela conclusão, o devolve para um bloco que ele já tinha fechado.
+  //
+  // Não gravar é seguro: o player chama esta ação de tempos em tempos
+  // enquanto a aula roda, então a próxima chamada corrige a posição. Gravar
+  // com dado incompleto, não.
+  const { data: atual, error: erroLeitura } = await supabase
     .from("aluno_progresso_itens")
     .select("concluida")
     .eq("aluno_id", profile.id)
     .eq("chave", chave)
     .maybeSingle();
+
+  if (erroLeitura) {
+    console.error("Progresso do vídeo: leitura falhou, nada foi gravado:", chave, erroLeitura.message);
+    return { ok: false, erro: erroLeitura.message, concluida: false };
+  }
 
   const { error } = await supabase.from("aluno_progresso_itens").upsert(
     {

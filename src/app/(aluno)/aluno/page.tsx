@@ -99,7 +99,7 @@ export default async function AlunoHomePage({
     { data: pesosData },
     { data: missoesData },
     { data: trilhaDiasData },
-    { data: progressoItensData },
+    rProgressoItens,
     { data: recomendacoesData },
     { data: notificacoesData },
     { data: briefingData },
@@ -266,9 +266,22 @@ export default async function AlunoHomePage({
   // havia bloco nenhum, porque `dia_numero` 41 não existe. O plano vende um
   // conteúdo fixo, não uma assinatura de rotina: o cronograma espera o aluno.
   // Ver lib/trilha/decolando.ts.
+  // O progresso é o único destes que não pode degradar em silêncio: no
+  // Decolando o bloco atual É o primeiro não concluído, então um progresso
+  // vazio POR FALHA devolve o bloco 1 e joga o aluno de volta ao começo — com
+  // cara de tela normal. Sem progresso confiável, a tela fica sem missão do
+  // dia em vez de apontar a errada; /aluno/cronograma explica o motivo.
+  const falhouOProgresso = Boolean(rProgressoItens.error);
+  if (falhouOProgresso) {
+    console.error("Painel do aluno: falha ao ler o progresso:", profile.id, rProgressoItens.error!.message);
+  }
+  const progressoItensData = rProgressoItens.data;
+
   const diaTrilhaHoje = rota
     ? diaAtualDaRota(rota.dias, hojeStr)?.routeDay ?? null
-    : diaDoDecolando(todosDias, chavesConcluidas(progressoItensData as AlunoProgressoItem[]));
+    : falhouOProgresso
+      ? null
+      : diaDoDecolando(todosDias, chavesConcluidas(progressoItensData as AlunoProgressoItem[]));
 
   const trilhaHoje = diaTrilhaHoje ? todosDias.find((d) => d.dia_numero === diaTrilhaHoje) ?? null : null;
   // Próximos dias do cronograma (limite de 7 pra não inflar o payload do

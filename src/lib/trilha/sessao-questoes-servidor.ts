@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { materiaCanonica, mesmaMateria } from "@/lib/site/materia-canonica";
 import { selecionarQuestoes, type SelecaoDeQuestoes } from "@/lib/trilha/sessao-questoes";
 import type { Questao } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 // ============================================================================
 // Carrega — ou cria uma única vez — a sessão de questões de uma atividade.
@@ -62,7 +63,10 @@ export async function carregarOuCriarSessao(p: {
   // Pool da matéria. A comparação é canônica: uma questão gravada como
   // "Português" entra numa atividade de "Linguagens", e Inglês nunca entra
   // numa de Espanhol.
-  const { data: doBanco } = await supabase.from("questoes").select("id, materia").eq("ativo", true);
+  const rBanco = await supabase.from("questoes").select("id, materia").eq("ativo", true);
+  // Falha aqui deixa o aluno sem questão nenhuma na atividade. Continua sendo
+  // vazio na tela, mas agora com motivo no log em vez de "o banco está vazio".
+  const doBanco = listaOuVazio(rBanco, "banco de questões da atividade");
   const disponiveis = ((doBanco as { id: string; materia: string }[]) ?? [])
     .filter((q) => mesmaMateria(q.materia, materia))
     .map((q) => q.id)
@@ -72,10 +76,13 @@ export async function carregarOuCriarSessao(p: {
 
   // O que ESTE aluno já recebeu em atividades anteriores. O histórico é
   // individual — uma questão usada por outro aluno continua disponível aqui.
-  const { data: anteriores } = await supabase
+  const rAnteriores = await supabase
     .from("aluno_sessao_questoes")
     .select("questao_ids")
     .eq("aluno_id", p.alunoId);
+  // Falha aqui não impede a atividade — só faz o sorteio ignorar o histórico e
+  // repetir questões que o aluno já viu. Degradação aceitável, silêncio não.
+  const anteriores = listaOuVazio(rAnteriores, "histórico de questões do aluno");
   const jaUsadas = ((anteriores as { questao_ids: string[] }[]) ?? []).flatMap((s) => s.questao_ids ?? []);
 
   const selecao: SelecaoDeQuestoes = selecionarQuestoes({

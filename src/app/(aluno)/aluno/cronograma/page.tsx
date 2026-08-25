@@ -4,6 +4,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { alunoTemCopiloto } from "@/lib/copiloto/permissao";
 import { diaDoDecolando } from "@/lib/trilha/decolando";
+import { listaOuVazio, linhaOuNula } from "@/lib/supabase/resultado";
 import { resolverCronograma } from "@/lib/trilha/resolver";
 import { cronogramaDeTela, datasDaRota, diaAtualDaRota } from "@/lib/trilha/rota";
 import { rotaDoAluno } from "@/lib/trilha/rota-persistencia";
@@ -123,7 +124,7 @@ export default async function AlunoCronogramaPage() {
   const hojeStr = hojeISO();
   const fimStr = somarDias(hojeStr, 7);
 
-  const [{ data: missoesBrutas }, { data: matricula }, { data: progresso }, { data: briefing }] = await Promise.all([
+  const [rMissoes, rMatricula, rProgresso, rBriefing] = await Promise.all([
     supabase
       .from("aluno_missoes")
       .select("*")
@@ -152,6 +153,25 @@ export default async function AlunoCronogramaPage() {
       .eq("aluno_id", profile.id)
       .maybeSingle()
   ]);
+
+  const missoesBrutas = listaOuVazio(rMissoes, "missões do aluno");
+  const matricula = linhaOuNula(rMatricula, "matrícula do aluno");
+  const briefing = linhaOuNula(rBriefing, "briefing do aluno");
+
+  // O PROGRESSO é o único destes que não pode degradar em silêncio.
+  //
+  // No Decolando, o bloco atual é o primeiro ainda não concluído. Um
+  // `concluidas` vazio por falha de consulta — e não por falta de progresso —
+  // devolve o bloco 1: a aluna que já fez uma semana abre o cronograma e vê
+  // tudo desmarcado, de volta ao começo. Foi essa a forma exata do defeito
+  // que trocou a missão do dia de uma aluna pela do plano errado.
+  //
+  // Aqui a tela AVISA em vez de mentir. Ver lib/supabase/resultado.ts.
+  const falhouOProgresso = Boolean(rProgresso.error);
+  if (falhouOProgresso) {
+    console.error("Cronograma: falha ao ler o progresso do aluno:", profile.id, rProgresso.error!.message);
+  }
+  const progresso = rProgresso.data;
 
   // Dia do cronograma como esta tela o recebe: da rota (com data e tipo) no
   // Voo Guiado, do template puro no Decolando.
@@ -208,8 +228,14 @@ export default async function AlunoCronogramaPage() {
     todosOsDias = resolvidos;
     // `concluidas` já vem do banco filtrado por concluida = true (ver a
     // consulta acima), então é exatamente o conjunto que a regra espera.
-    diaAtual = diaDoDecolando(todosOsDias, concluidas);
-    diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
+    //
+    // Com o progresso não confiável, NÃO calculamos o bloco: apontar o bloco 1
+    // para quem já andou é pior do que não apontar bloco nenhum, porque parece
+    // certo. O aviso no topo explica o que aconteceu.
+    if (!falhouOProgresso) {
+      diaAtual = diaDoDecolando(todosOsDias, concluidas);
+      diaTrilha = todosOsDias.find((d) => d.dia_numero === diaAtual) ?? null;
+    }
   }
 
   /** "Segunda-feira · 12/08/2026" a partir da rota — sem extrapolar datas. */
@@ -244,6 +270,20 @@ export default async function AlunoCronogramaPage() {
           ← Voltar ao painel
         </Link>
       </div>
+
+      {/* Sem isto, uma falha ao ler o progresso apagaria as marcas de concluído
+          e devolveria a aluna ao começo do cronograma — com cara de normal. */}
+      {falhouOProgresso && (
+        <div className="mt-4 rounded-2xl border border-orange/30 bg-orange/[0.06] p-4">
+          <p className="font-display text-sm font-bold text-orange-dark">
+            Não conseguimos carregar o seu progresso agora
+          </p>
+          <p className="mt-1 text-sm text-navy-dark/70">
+            Seu progresso está salvo — o que falhou foi a leitura. Recarregue a página em instantes. Não refaça
+            o que você já concluiu: as marcas voltam sozinhas.
+          </p>
+        </div>
+      )}
 
       {aguardandoMentor && (
         <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow">

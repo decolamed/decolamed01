@@ -6,6 +6,7 @@ import { PageHeader, Card } from "@/components/admin/card";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
+import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
 const PATH = "/admin/notificacoes";
 
@@ -76,13 +77,13 @@ export default async function AdminNotificacoesPage({
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const { data: alunosData } = await supabase.from("profiles").select("id, nome").eq("role", "aluno").order("nome");
+  const { data: alunosData, error: erro_alunosData } = await supabase.from("profiles").select("id, nome").eq("role", "aluno").order("nome");
   const alunos = alunosData ?? [];
 
   // Histórico: agrupa por (título, created_at) — cada envio insere N linhas
   // (uma por destinatário) com o mesmo timestamp, então isso reconstrói a
   // "campanha" sem precisar de uma tabela própria de envios.
-  const { data: notifData } = await supabase
+  const { data: notifData, error: erro_notifData } = await supabase
     .from("notificacoes")
     .select("titulo, mensagem, created_at, lida")
     .order("created_at", { ascending: false })
@@ -97,10 +98,15 @@ export default async function AdminNotificacoesPage({
   });
   const historico = Array.from(campanhas.values()).slice(0, 50);
 
+  // Uma consulta recusada chegava à tela como tabela vazia — o mesmo
+  // defeito que fez /admin/matriculas e /admin/usuarios parecerem sem
+  // registros. Ver lib/supabase/resultado.ts.
+  const falhaDeCarga = falhaAoCarregar({ "alunos": { error: erro_alunosData }, "notificações": { error: erro_notifData } });
+
   return (
     <div>
       <PageHeader title="Notificações" subtitle="Envie um aviso para um aluno específico ou para todos de uma vez" />
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+      <AdminAlert erro={falhaDeCarga ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
       <Card className="mt-4 max-w-xl">
         <form action={enviarNotificacao} className="space-y-3">

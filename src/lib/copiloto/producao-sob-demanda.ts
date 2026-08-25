@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { gerarFlashcardsIA, escolherMelhorVideo } from "@/lib/gemini/client";
 import { buscarVideoAulas } from "@/lib/youtube/client";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 const MIN_FLASHCARDS_ACEITAVEL = 3; // abaixo disso, considera "pouco material"
 
@@ -80,7 +81,7 @@ export async function produzirMaterialSobDemanda(
   if (!cobertura.temFlashcardsSuficientes) {
     const gerados = await gerarFlashcardsIA(materia, assunto, 4);
     if (gerados.length > 0) {
-      const { data: inseridos } = await supabase
+      const inseridos = listaOuVazio(await supabase
         .from("flashcards")
         .insert(
           gerados.map((f) => ({
@@ -88,7 +89,7 @@ export async function produzirMaterialSobDemanda(
             ativo: true, gerado_por_ia: true
           }))
         )
-        .select("id");
+        .select("id"), "produção sob demanda do Copiloto");
       resultado.flashcardsIds = (inseridos ?? []).map((f: any) => f.id);
       resultado.flashcardsGerados = resultado.flashcardsIds.length;
     }

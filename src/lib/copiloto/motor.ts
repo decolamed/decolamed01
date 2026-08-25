@@ -20,6 +20,7 @@ import {
   type TipoReforco
 } from "@/lib/copiloto/reforco";
 import type { TrilhaDia, TrilhaItem } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 // ============================================================================
 // COPILOTO DECOLA MED — Motor Adaptativo v5 (cenários completos)
@@ -264,14 +265,14 @@ async function carregarDados(ctx: ContextoAluno): Promise<DadosAluno> {
     // meia-noite da data da prova, e virava um dia a menos toda noite.
     diasRestantes = diffDias(hojeISO(), briefing.dataProva.slice(0, 10));
 
-    const { data: missoes } = await supabase
+    const missoes = listaOuVazio(await supabase
       .from("aluno_missoes")
       .select("id, data, titulo, materia, assunto, tipo, ref_id, duracao_minutos, duracao_estimada_min, prioridade, origem, concluida")
       .eq("aluno_id", ctx.alunoId)
       .gte("data", hojeStr)
       .lte("data", briefing.dataProva)
       .eq("concluida", false)
-      .order("data");
+      .order("data"), "motor do Copiloto — missoe");
 
     missoesAgendadas = (missoes ?? []) as MissaoAgendada[];
     diasOcupados = new Set(missoesAgendadas.map((m) => m.data)).size;
@@ -1026,18 +1027,34 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
   if (dados.diaTrilhaHoje == null) return 0;
 
   // 1. O que o aluno já concluiu — inclusive o que ele marcou à mão.
-  const { data: progresso } = await supabase
+  //
+  // Falha aqui ABORTA a rodada, e não é excesso de zelo: este bloco decide o
+  // que remarcar como pendência. Um `concluidas` vazio por falha de consulta
+  // faz o motor concluir que o aluno não fez NADA e encher o cronograma dele
+  // de missões de recuperação de coisas que ele já entregou. Diferente das
+  // telas, aqui a leitura errada vira ESCRITA errada — e desfazer isso é
+  // trabalho manual. Não rodar hoje é reversível; poluir o cronograma não.
+  const { data: progresso, error: erroProgresso } = await supabase
     .from("aluno_progresso_itens")
     .select("chave, concluida")
     .eq("aluno_id", dados.alunoId)
     .eq("concluida", true);
+
+  if (erroProgresso) {
+    console.error(
+      "Copiloto: progresso ilegível, rodada de pendências abortada para não recriar o que já foi feito:",
+      dados.alunoId,
+      erroProgresso.message
+    );
+    return 0;
+  }
   const concluidas = new Set((progresso ?? []).map((p: { chave: string }) => p.chave));
 
   // 2. O que já foi remarcado antes. Cada remarcação carimba
   // `[pendencia:<chave>]` no motivo, e é esse carimbo que evita a mesma
   // atividade ser recriada toda vez que o motor roda. Três destinos
   // diferentes conforme o estado da missão:
-  const { data: jaReagendadas } = await supabase
+  const jaReagendadas = listaOuVazio(await supabase
     .from("aluno_missoes")
     .select("id, data, concluida, motivo_copiloto")
     .eq("aluno_id", dados.alunoId)
@@ -1045,7 +1062,7 @@ async function reagendarPendencias(dados: DadosAluno): Promise<number> {
     // Filtrar o carimbo no PostgREST exigiria um LIKE com `[` e `:`, que são
     // caracteres delicados na sintaxe de filtro. O regex resolve com
     // segurança e o volume por aluno é pequeno.
-    .not("motivo_copiloto", "is", null);
+    .not("motivo_copiloto", "is", null), "motor do Copiloto — ja reagendada");
 
   const chavesReagendadas = new Set<string>();
   const paraRemover: string[] = [];
@@ -1263,13 +1280,13 @@ async function compactarCronograma(dados: DadosAluno): Promise<number> {
 
   // Verificar se, após compactar, sobrou espaço para reorganizar por prioridade
   // (reagendar as missões restantes distribuídas uniformemente)
-  const { data: missoesRestantes } = await supabase
+  const missoesRestantes = listaOuVazio(await supabase
     .from("aluno_missoes")
     .select("id, materia, tipo, duracao_minutos")
     .eq("aluno_id", dados.alunoId)
     .eq("origem", "admin")
     .eq("concluida", false)
-    .gte("data", hojeISO());
+    .gte("data", hojeISO()), "motor do Copiloto — missoes restante");
 
   if ((missoesRestantes?.length ?? 0) > 0) {
     // Reordenar: colocar as de maior GEN nos primeiros dias
@@ -1698,7 +1715,7 @@ async function criarRecomendacoes(dados: DadosAluno, intervencoes: Intervencao[]
       .order("gerado_em", { ascending: false })
       .limit(1);
     if (iv.assunto) q = q.eq("assunto", iv.assunto); else q = q.is("assunto", null);
-    const { data: anteriores } = await q;
+    const anteriores = listaOuVazio(await q, "motor do Copiloto — anteriore");
     const anterior = (anteriores ?? [])[0] as
       | { id: string; status: string; concluida_em: string | null; gerado_em: string | null }
       | undefined;
@@ -1913,7 +1930,7 @@ export async function gerarCronogramaAdaptativo(alunoId: string): Promise<Result
     log.push(`Cenário 2: ${mod} dias modificados (extra ou substituição).`);
   }
 
-  const { data: mis } = await createAdminClient().from("aluno_missoes").select("materia").eq("aluno_id", alunoId).eq("origem", "copiloto");
+  const mis = listaOuVazio(await createAdminClient().from("aluno_missoes").select("materia").eq("aluno_id", alunoId).eq("origem", "copiloto"), "motor do Copiloto — mi");
   const dist: Record<string, number> = {};
   (mis ?? []).forEach((m: any) => { dist[m.materia] = (dist[m.materia] ?? 0) + 1; });
 

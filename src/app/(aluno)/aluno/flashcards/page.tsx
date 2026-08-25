@@ -5,6 +5,7 @@ import { FlashcardsStudy } from "@/components/aluno/flashcards-study";
 import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
 import { montarRodada, mensagemDeRetomada } from "@/lib/site/continuidade";
 import type { Flashcard } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 const LIMITE_POR_RODADA = 15;
 
@@ -19,7 +20,7 @@ export default async function AlunoFlashcardsPage({
   // Sem `.limit(50)`: com o teto, o sorteio só via as 50 primeiras linhas e
   // os demais flashcards nunca apareciam numa rodada — parte do sintoma de
   // "importei 300 e só tenho 60".
-  const { data: cardsData } = await supabase.from("flashcards").select("*").eq("ativo", true);
+  const cardsData = listaOuVazio(await supabase.from("flashcards").select("*").eq("ativo", true), "flashcards do aluno — cards");
 
   const todos = ((cardsData as Flashcard[]) ?? []).filter(
     (c) => !searchParams.materia || mesmaMateria(c.materia, searchParams.materia)
@@ -27,10 +28,10 @@ export default async function AlunoFlashcardsPage({
   // Mesma regra do Banco de Questões: o que ainda não foi revisado vem
   // primeiro, pelo id do card. O sorteio que existia aqui devolvia 15 cards
   // novos a cada abertura, e o aluno reencontrava os mesmos de sempre.
-  const { data: revisadosData } = await supabase
+  const revisadosData = listaOuVazio(await supabase
     .from("flashcard_revisoes")
     .select("flashcard_id")
-    .eq("aluno_id", profile.id);
+    .eq("aluno_id", profile.id), "flashcards do aluno — revisados");
   const revisados = new Set(((revisadosData as { flashcard_id: string }[]) ?? []).map((r) => r.flashcard_id));
 
   const rodada = montarRodada(todos, revisados, LIMITE_POR_RODADA);

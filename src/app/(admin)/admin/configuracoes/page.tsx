@@ -13,6 +13,7 @@ import { textoConfig, valorConfig } from "@/lib/site/configuracoes";
 import { CHAVES_DOS_RESUMOS, TOTAL_DE_LIVROS, chaveDoResumo } from "@/lib/site/resumos-livros";
 import { CHAVES_DOS_SIMULADOS, ORDENS_DE_SIMULADO, chaveDoSimulado } from "@/lib/trilha/simulados-da-rota";
 import { disponivelParaAluno, motivoIndisponivel } from "@/lib/site/avaliacoes";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 const CAMPOS = [
   { chave: "site.marca.vestibular", label: "Nome do vestibular/instituição (ex.: FACAPE) — deixe vazio para textos genéricos" },
@@ -255,7 +256,7 @@ export default async function AdminConfiguracoesPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data: config } = await supabase.from("configuracoes").select("chave, valor");
+  const config = listaOuVazio(await supabase.from("configuracoes").select("chave, valor"), "configurações");
 
   const valores = new Map((config ?? []).map((c) => [c.chave, textoConfig(c.valor)]));
 

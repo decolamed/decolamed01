@@ -8,7 +8,22 @@ export interface ResultadoCupom {
   valorFinalCentavos: number;
 }
 
-export type ErroCupom = "nao_encontrado" | "inativo" | "expirado" | "limite_atingido" | "plano_nao_elegivel";
+/**
+ * `falha_na_consulta` não é uma recusa do cupom — é a plataforma admitindo
+ * que não conseguiu conferir.
+ *
+ * Sem essa distinção, uma indisponibilidade de um segundo no banco virava
+ * "cupom inválido ou expirado" na tela: o aluno com um cupom legítimo ou
+ * desistia da compra, ou pagava o preço cheio. E o parceiro perdia a venda
+ * sem nunca saber que ela existiu.
+ */
+export type ErroCupom =
+  | "nao_encontrado"
+  | "inativo"
+  | "expirado"
+  | "limite_atingido"
+  | "plano_nao_elegivel"
+  | "falha_na_consulta";
 
 /**
  * Valida um cupom e calcula o desconto SEMPRE no servidor — nunca confiamos
@@ -24,12 +39,19 @@ export async function validarCupom(
   // restrito sem plano informado é recusado (ver `cupomValeNoPlano`).
   planoId?: string | null
 ): Promise<{ ok: true; resultado: ResultadoCupom } | { ok: false; erro: ErroCupom }> {
-  const { data: cupom } = await supabase
+  // `maybeSingle` e não `single`: com `single`, "não existe" também chega como
+  // erro (PGRST116), e aí não há como separar o cupom que não existe da
+  // consulta que falhou — que é exatamente a separação que importa aqui.
+  const { data: cupom, error } = await supabase
     .from("cupons")
     .select("*")
     .eq("codigo", codigo.trim().toUpperCase())
-    .single();
+    .maybeSingle();
 
+  if (error) {
+    console.error("Falha ao consultar o cupom:", codigo, error.message);
+    return { ok: false, erro: "falha_na_consulta" };
+  }
   if (!cupom) return { ok: false, erro: "nao_encontrado" };
   if (!cupom.ativo) return { ok: false, erro: "inativo" };
   if (cupom.valido_ate && new Date(cupom.valido_ate) < new Date()) return { ok: false, erro: "expirado" };

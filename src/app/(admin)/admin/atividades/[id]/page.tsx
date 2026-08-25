@@ -10,6 +10,7 @@ import { SeletorQuestoes } from "@/components/admin/seletor-questoes";
 import { carregarUsoDasQuestoes } from "@/lib/site/uso-questoes";
 import { mesmaMateria, materiasUnicas } from "@/lib/site/materia-canonica";
 import type { Questao, Atividade } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 async function salvarQuestoesDaAtividade(id: string, formData: FormData) {
   "use server";
@@ -31,10 +32,10 @@ async function salvarQuestoesDaAtividade(id: string, formData: FormData) {
   const materiaDaAtividade = (atividadeAtual as { materia: string | null } | null)?.materia ?? null;
 
   if (materiaDaAtividade && idsEscolhidos.length > 0) {
-    const { data: escolhidas } = await supabase
+    const escolhidas = listaOuVazio(await supabase
       .from("questoes")
       .select("id, materia")
-      .in("id", idsEscolhidos);
+      .in("id", idsEscolhidos), "questões da atividade");
 
     const foraDaMateria = (escolhidas ?? []).filter(
       (q: { materia: string | null }) => !mesmaMateria(q.materia, materiaDaAtividade)
@@ -83,7 +84,7 @@ export default async function EditarAtividadePage({
   if (!atividade) notFound();
   const a = atividade as Atividade;
 
-  const { data: todasQuestoes } = await supabase.from("questoes").select("*").eq("ativo", true).order("materia");
+  const todasQuestoes = listaOuVazio(await supabase.from("questoes").select("*").eq("ativo", true).order("materia"), "questões da atividade");
   // Quando a atividade tem disciplina definida, o seletor só oferece
   // questões dela — não adianta validar no salvar se a tela deixa o admin
   // marcar questão de outra matéria e só reclamar no fim.
@@ -91,7 +92,7 @@ export default async function EditarAtividadePage({
     (q) => !a.materia || mesmaMateria(q.materia, a.materia)
   );
 
-  const { data: jaSelecionadas } = await supabase.from("atividade_questoes").select("questao_id").eq("atividade_id", params.id);
+  const jaSelecionadas = listaOuVazio(await supabase.from("atividade_questoes").select("questao_id").eq("atividade_id", params.id), "questões da atividade");
   const rotuloNota = rotuloNotaPonderada(await getNomeVestibular());
   const idsJaSelecionados = new Set((jaSelecionadas ?? []).map((q: any) => q.questao_id));
   const uso = await carregarUsoDasQuestoes();

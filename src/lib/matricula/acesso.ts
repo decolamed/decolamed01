@@ -41,13 +41,22 @@ export async function verificarAcessoMatricula(
   supabase: SupabaseClient,
   alunoId: string
 ): Promise<StatusAcesso> {
-  const { data: matricula } = await supabase
+  const { data: matricula, error } = await supabase
     .from("matriculas")
     .select("status, acesso_expira_em")
     .eq("aluno_id", alunoId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // Falha de consulta cai em "sem matrícula" e BLOQUEIA o acesso. É a direção
+  // certa — uma indisponibilidade nunca pode virar acesso liberado —, mas o
+  // aluno que pagou vê "você ainda não tem matrícula", que é uma frase falsa
+  // e assustadora. O log é o que permite reconhecer o caso quando ele chegar
+  // pelo suporte.
+  if (error) {
+    console.error("Falha ao verificar a matrícula do aluno:", alunoId, error.message);
+  }
 
   if (!matricula) {
     return { liberado: false, motivo: "sem_matricula", mensagem: MENSAGENS_ACESSO_BLOQUEADO.sem_matricula };

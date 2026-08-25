@@ -6,6 +6,7 @@ import { PaginaAluno } from "@/components/aluno/pagina-aluno";
 import { materiasUnicas, mesmaMateria } from "@/lib/site/materia-canonica";
 import { montarRodada, mensagemDeRetomada } from "@/lib/site/continuidade";
 import type { Questao } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 const LIMITE_POR_RODADA = 10;
 
@@ -24,7 +25,7 @@ export default async function AlunoQuestoesPage({
   // Sem `.limit()` antes do sorteio: com um teto, o embaralhamento só
   // acontecia dentro das N primeiras linhas devolvidas pelo banco, e as
   // questões cadastradas depois nunca caíam numa rodada.
-  const { data: questoesData } = await query;
+  const questoesData = listaOuVazio(await query, "banco de questões — questoes");
 
   // Filtro por matéria em código, com mesmaMateria(): um link antigo com
   // "?materia=Português" continua encontrando as questões de "Linguagens"
@@ -37,17 +38,17 @@ export default async function AlunoQuestoesPage({
   // por índice). Antes esta linha era um `sort(() => Math.random() - 0.5)`:
   // rodada nova a cada visita, quase sempre recomeçando em questões já
   // respondidas. Ver lib/site/continuidade.ts.
-  const { data: respondidasData } = await supabase
+  const respondidasData = listaOuVazio(await supabase
     .from("respostas_aluno")
     .select("questao_id")
-    .eq("aluno_id", profile.id);
+    .eq("aluno_id", profile.id), "banco de questões — respondidas");
   const respondidas = new Set(((respondidasData as { questao_id: string }[]) ?? []).map((r) => r.questao_id));
 
   const rodada = montarRodada(todas, respondidas, LIMITE_POR_RODADA);
   const questoes = rodada.itens;
   const avisoRetomada = mensagemDeRetomada(rodada, "questão", "questões");
 
-  const { data: materiasData } = await supabase.from("questoes").select("materia").eq("ativo", true);
+  const materiasData = listaOuVazio(await supabase.from("questoes").select("materia").eq("ativo", true), "banco de questões — materias");
   const materias = materiasUnicas((materiasData ?? []).map((m: any) => m.materia)).sort((a, b) =>
     a.localeCompare(b, "pt-BR")
   );

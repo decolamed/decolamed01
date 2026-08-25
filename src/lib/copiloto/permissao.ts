@@ -41,6 +41,13 @@ export async function alunoTemCopiloto(alunoId: string): Promise<boolean> {
  */
 export async function planoDoAluno(alunoId: string): Promise<string | null> {
   const supabase = createAdminClient();
-  const { data } = await supabase.from("profiles").select("plano_id").eq("id", alunoId).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("plano_id").eq("id", alunoId).maybeSingle();
+  // Mesma razão de `alunoTemCopiloto` acima: um `null` por falha de consulta é
+  // indistinguível de um aluno sem plano, e o aluno passa a ver o conteúdo de
+  // "nenhum curso" com a conta em dia.
+  if (error) {
+    console.error("Falha ao ler o plano do aluno:", alunoId, error.message);
+    return null;
+  }
   return ((data as { plano_id?: string | null } | null)?.plano_id) ?? null;
 }

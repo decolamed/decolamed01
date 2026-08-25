@@ -18,6 +18,7 @@ import {
   type ComissaoDevida
 } from "@/lib/repasses/agrupar";
 import { marcarRepassePago, marcarRepasseDaPessoaPago, desfazerRepasse } from "./actions";
+import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
 // ============================================================================
 // REPASSES — QUANTO PRECISO PAGAR PARA CADA UM
@@ -67,7 +68,7 @@ export default async function AdminRepassesPage({ searchParams }: { searchParams
   if (searchParams.tipo) consulta = consulta.eq("tipo", searchParams.tipo);
   if (searchParams.status) consulta = consulta.eq("status", searchParams.status);
 
-  const [{ data: comissoesData, error: erroDaConsulta }, { data: pessoasData }] = await Promise.all([
+  const [{ data: comissoesData, error: erroDaConsulta }, { data: pessoasData, error: erroPessoas }] = await Promise.all([
     consulta.order("created_at", { ascending: false }),
     // Só quem pode receber: parceiros e professores. Um admin nunca aparece
     // aqui, e um aluno muito menos.
@@ -80,9 +81,7 @@ export default async function AdminRepassesPage({ searchParams }: { searchParams
 
   const aviso = invertido
     ? "A data inicial é posterior à data final — nenhum período foi somado. Corrija as datas."
-    : erroDaConsulta
-      ? `Não foi possível carregar as comissões: ${erroDaConsulta.message}`
-      : undefined;
+    : (falhaAoCarregar({ comissões: { error: erroDaConsulta }, pessoas: { error: erroPessoas } }) ?? undefined);
 
   // Os ids pendentes de cada pessoa, para o botão de quitar a folha dela de
   // uma vez. Saem da MESMA lista que está na tela — a ação não recalcula o

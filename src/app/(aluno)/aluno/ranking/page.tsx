@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 const MEDALHAS = ["#c8d6e5", "#ffc94d", "#e08e5a"];
 
@@ -8,7 +9,7 @@ export default async function AlunoRankingPage() {
   const profile = await requireAcessoAluno();
   const supabase = createClient();
 
-  const { data: rankingData } = await supabase.from("ranking_geral").select("*");
+  const rankingData = listaOuVazio(await supabase.from("ranking_geral").select("*"), "ranking");
   const ranking = rankingData ?? [];
 
   const pódio = ranking.slice(0, 3);

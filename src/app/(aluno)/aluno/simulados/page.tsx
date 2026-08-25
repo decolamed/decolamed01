@@ -3,6 +3,7 @@ import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { getNomeVestibular, VESTIBULAR_PADRAO } from "@/lib/site/marca";
 import type { Simulado, SimuladoTentativa } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 export default async function AlunoSimuladosPage() {
   const profile = await requireAcessoAluno();
@@ -10,18 +11,18 @@ export default async function AlunoSimuladosPage() {
   const nomeVestibular = await getNomeVestibular();
   const rotuloCurtoNota = nomeVestibular === VESTIBULAR_PADRAO ? "Nota ponderada" : `Nota ${nomeVestibular}`;
 
-  const { data: simuladosData } = await supabase.from("simulados").select("*").eq("ativo", true);
+  const simuladosData = listaOuVazio(await supabase.from("simulados").select("*").eq("ativo", true), "simulados do aluno — simulados");
   const simulados = (simuladosData as Simulado[]) ?? [];
 
-  const { data: contagens } = await supabase.from("simulado_questoes").select("simulado_id");
+  const contagens = listaOuVazio(await supabase.from("simulado_questoes").select("simulado_id"), "simulados do aluno — contagen");
   const totalPorSimulado = new Map<string, number>();
   (contagens ?? []).forEach((c: any) => totalPorSimulado.set(c.simulado_id, (totalPorSimulado.get(c.simulado_id) ?? 0) + 1));
 
-  const { data: tentativasData } = await supabase
+  const tentativasData = listaOuVazio(await supabase
     .from("simulado_tentativas")
     .select("*")
     .eq("aluno_id", profile.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }), "simulados do aluno — tentativas");
   const tentativas = (tentativasData as SimuladoTentativa[]) ?? [];
 
   return (

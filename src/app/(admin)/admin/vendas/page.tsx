@@ -17,6 +17,7 @@ import {
 import { atalhosDePeriodo } from "@/lib/vendas/atalhos";
 import { resumirRepasses, type ComissaoDevida } from "@/lib/repasses/agrupar";
 import type { Pagamento } from "@/types/database";
+import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
 const STATUS_LABEL: Record<string, string> = {
   pendente: "Pendente",
@@ -60,7 +61,7 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   };
   const { invertido } = limitesDoPeriodo(searchParams.de, searchParams.ate);
 
-  const [{ data: vendas }, { data: planos }, { data: cupons }, { data: parceiros }, { data: comissoesData }, totais] = await Promise.all([
+  const [rVendas, { data: planos }, { data: cupons }, { data: parceiros }, rComissoes, totais] = await Promise.all([
     consultaDeVendas(supabase, filtros),
     supabase.from("planos").select("id, nome").order("ordem"),
     supabase.from("cupons").select("codigo").order("codigo"),
@@ -83,8 +84,16 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
     resumoDeVendas(supabase, filtros)
   ]);
 
-  const lista = (vendas as Pagamento[]) ?? [];
-  const aRepassar = resumirRepasses((comissoesData ?? []) as unknown as ComissaoDevida[]);
+  // A TABELA de vendas é uma consulta; o RESUMO do topo é outra (ver
+  // resumoDeVendas). As duas podem falhar de forma independente, e um total
+  // de vendas que aparece como R$ 0,00 por falha de leitura é o pior número
+  // que esta tela pode mostrar.
+  const falhaDeCarga = falhaAoCarregar({
+    vendas: { error: rVendas.error },
+    "comissões a repassar": { error: rComissoes.error }
+  });
+  const lista = ((rVendas.data ?? []) as Pagamento[]);
+  const aRepassar = resumirRepasses((rComissoes.data ?? []) as unknown as ComissaoDevida[]);
 
   // O resumo vem do banco, não das linhas acima: `lista` é limitada pelo teto
   // de linhas por resposta do PostgREST, e um total que para de crescer em
@@ -114,7 +123,7 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
   return (
     <div>
       <PageHeader title="Vendas" subtitle="Tudo que entrou, no período que você escolher. Use o filtro abaixo para mudar o intervalo." />
-      <AdminAlert erro={avisoDoResumo ?? searchParams.erro} sucesso={searchParams.sucesso} />
+      <AdminAlert erro={falhaDeCarga ?? avisoDoResumo ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
       {/* O NÚMERO QUE O ADMIN VEIO BUSCAR é o líquido, não o bruto.
           "Vendas no período" era o que o aluno pagou — dele ainda saem a taxa

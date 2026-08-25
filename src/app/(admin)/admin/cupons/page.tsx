@@ -7,6 +7,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { valorParaGravar, descreverAplicacao } from "@/lib/cupons/planos-aplicaveis";
 import type { Cupom } from "@/types/database";
+import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
 async function criarCupom(formData: FormData) {
   "use server";
@@ -133,11 +134,11 @@ export default async function AdminCuponsPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data: cupons } = await supabase
+  const { data: cupons, error: erro_cupons } = await supabase
     .from("cupons")
     .select("*, parceiros:parceiro_id(nome)")
     .order("created_at", { ascending: false });
-  const { data: parceiros } = await supabase
+  const { data: parceiros, error: erro_parceiros } = await supabase
     .from("profiles")
     .select("id, nome")
     .eq("role", "parceiro")
@@ -145,15 +146,20 @@ export default async function AdminCuponsPage({
   // Todos os planos, inclusive inativos: um cupom pode estar preso a um plano
   // que foi desativado temporariamente, e sumir a marcação da tela faria o
   // admin salvar sem perceber que apagou a restrição.
-  const { data: planos } = await supabase.from("planos").select("id, nome, ativo").order("ordem");
+  const { data: planos, error: erro_planos } = await supabase.from("planos").select("id, nome, ativo").order("ordem");
   const listaDePlanos = (planos as { id: string; nome: string; ativo: boolean }[]) ?? [];
   const nomePorPlano = new Map(listaDePlanos.map((p) => [p.id, p.nome]));
   const lista = (cupons as (Cupom & { parceiros: { nome: string } | null })[]) ?? [];
 
+  // Uma consulta recusada chegava à tela como tabela vazia — o mesmo
+  // defeito que fez /admin/matriculas e /admin/usuarios parecerem sem
+  // registros. Ver lib/supabase/resultado.ts.
+  const falhaDeCarga = falhaAoCarregar({ "cupons": { error: erro_cupons }, "parceiros": { error: erro_parceiros }, "planos": { error: erro_planos } });
+
   return (
     <div>
       <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Cupons</h1>
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+      <AdminAlert erro={falhaDeCarga ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
       <div className="mt-6">
         <TabelaResponsiva

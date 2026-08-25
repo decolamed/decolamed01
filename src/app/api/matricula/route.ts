@@ -111,6 +111,17 @@ export async function POST(request: Request) {
       // O motivo importa: "cupom inválido" faz a pessoa conferir se digitou
       // certo, quando na verdade o código está certo e só não vale para o
       // plano que ela escolheu.
+      //
+      // E quando a falha é NOSSA, dizer "cupom inválido" é pior ainda: o
+      // aluno com um cupom legítimo paga o preço cheio ou desiste da compra,
+      // e o parceiro perde a comissão de uma venda que nunca soube que
+      // existiu. 503 em vez de 400 — não há nada que ele possa corrigir.
+      if (resultado.erro === "falha_na_consulta") {
+        return NextResponse.json(
+          { error: "Não foi possível verificar o cupom agora. Tente de novo em instantes." },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         {
           error:

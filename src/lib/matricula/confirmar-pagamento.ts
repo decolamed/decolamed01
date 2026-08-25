@@ -78,11 +78,32 @@ export async function confirmarPagamento(
   supabase: Cliente,
   dados: PagamentoConfirmado
 ): Promise<ResultadoDaConfirmacao> {
-  const { data: preCadastro } = await supabase
+  const { data: preCadastro, error: erroPreCadastro } = await supabase
     .from("pre_cadastros")
     .select("*, planos(*)")
     .eq("id", dados.preCadastroId)
     .maybeSingle();
+
+  // A CONSULTA FALHOU é diferente de A LINHA NÃO EXISTE, e a diferença aqui
+  // vale o acesso de alguém que já pagou.
+  //
+  // Enquanto os dois caíam no mesmo `if (!preCadastro)`, uma indisponibilidade
+  // de um segundo no banco devolvia `repetir: false` — o webhook respondia 200,
+  // o Asaas riscava o evento da fila e nunca mais reenviava, e a consulta de
+  // status da tela desistia junto. Resultado: dinheiro na conta, matrícula
+  // nunca criada, e nenhum sinal além de uma linha de log.
+  //
+  // Falha de consulta agora pede RETENTATIVA. Só a ausência real da linha —
+  // um `externalReference` que não é desta plataforma — continua sendo
+  // definitiva, porque reenviar não faria a linha aparecer.
+  if (erroPreCadastro) {
+    console.error(
+      "Falha ao ler o pré-cadastro na confirmação:",
+      dados.preCadastroId,
+      erroPreCadastro.message
+    );
+    return { ok: false, motivo: "Falha ao consultar o pré-cadastro.", repetir: true };
+  }
 
   if (!preCadastro) {
     console.error("Confirmação de pagamento sem pré-cadastro:", dados.preCadastroId);
@@ -116,11 +137,26 @@ export async function confirmarPagamento(
   let parceiroId: string | null = null;
   let comissaoCentavos = 0;
   if (preCadastro.cupom_codigo) {
-    const { data: cupomInfo } = await supabase
+    const { data: cupomInfo, error: erroCupom } = await supabase
       .from("cupons")
       .select("parceiro_id, percentual_comissao")
       .eq("codigo", preCadastro.cupom_codigo)
       .maybeSingle();
+
+    // Falha aqui gravaria a venda com comissão ZERO e sem parceiro — o
+    // afiliado perderia a comissão de uma venda que aconteceu, e nada na
+    // plataforma indicaria isso: a venda apareceria normal em /admin/vendas,
+    // só que sem a linha de repasse. Pedir retentativa é o certo, porque a
+    // venda ainda não foi gravada e o Asaas reenvia.
+    if (erroCupom) {
+      console.error(
+        "Falha ao ler o cupom na confirmação:",
+        preCadastro.cupom_codigo,
+        erroCupom.message
+      );
+      return { ok: false, motivo: "Falha ao consultar o cupom da venda.", repetir: true };
+    }
+
     if (cupomInfo?.parceiro_id) {
       parceiroId = cupomInfo.parceiro_id;
       comissaoCentavos = comissaoSobreRecebido(recebidoCentavos, cupomInfo.percentual_comissao);
@@ -146,11 +182,20 @@ export async function confirmarPagamento(
     // Segunda passagem (o outro evento do Asaas, um reenvio, ou a tela
     // consultando o status). A conta já existe — nada é criado de novo, e
     // nenhum e-mail sai. Só localizamos a matrícula para vincular a venda.
-    const { data: matriculaExistente } = await supabase
+    const { data: matriculaExistente, error: erroMatricula } = await supabase
       .from("matriculas")
       .select("id")
       .eq("pre_cadastro_id", preCadastro.id)
       .maybeSingle();
+
+    // Sem este id a venda seria gravada com `matricula_id` nulo — órfã, sem
+    // ligação com o aluno que a gerou. Não é visível na tela de vendas, mas
+    // quebra a rastreabilidade justamente do registro financeiro. Retentativa
+    // resolve, e o aluno já tem acesso (esta é a segunda passagem).
+    if (erroMatricula) {
+      console.error("Falha ao localizar a matrícula da venda:", preCadastro.id, erroMatricula.message);
+      return { ok: false, motivo: "Falha ao localizar a matrícula.", repetir: true };
+    }
     matriculaId = matriculaExistente?.id ?? null;
   } else {
     const criacao = await criarContaDoAluno(supabase, preCadastro);
@@ -337,17 +382,28 @@ async function finalizarConta(
     console.error("Falha ao marcar o pré-cadastro como convertido:", preCadastro.id, erroConvertido.message);
   }
 
+  // A contagem de usos do cupom. Diferente de tudo acima, aqui uma falha NÃO
+  // pede retentativa: a conta já foi criada e o e-mail já saiu, então repetir
+  // custaria um segundo convite ao aluno. Fica o log — um cupom com limite de
+  // usos que para de contar libera mais descontos do que foi combinado, e sem
+  // rastro isso só apareceria no fechamento do mês.
   if (preCadastro.cupom_codigo) {
-    const { data: cupom } = await supabase
+    const { data: cupom, error: erroLeitura } = await supabase
       .from("cupons")
       .select("usos")
       .eq("codigo", preCadastro.cupom_codigo)
       .maybeSingle();
-    if (cupom) {
-      await supabase
+
+    if (erroLeitura) {
+      console.error("Falha ao ler os usos do cupom:", preCadastro.cupom_codigo, erroLeitura.message);
+    } else if (cupom) {
+      const { error: erroContagem } = await supabase
         .from("cupons")
         .update({ usos: (cupom.usos ?? 0) + 1 })
         .eq("codigo", preCadastro.cupom_codigo);
+      if (erroContagem) {
+        console.error("Falha ao contar o uso do cupom:", preCadastro.cupom_codigo, erroContagem.message);
+      }
     }
   }
 

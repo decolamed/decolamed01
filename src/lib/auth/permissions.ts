@@ -23,11 +23,24 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+
+  // Falhar aqui devolve `null`, e `null` significa "deslogado" para todo o
+  // resto da plataforma: a pessoa é mandada para o login mesmo com sessão
+  // válida. É a direção SEGURA — uma falha nunca vira acesso indevido —, mas
+  // sem log é indistinguível de um usuário sem perfil, e um incidente em que
+  // "todo mundo foi deslogado" não deixaria pista nenhuma.
+  //
+  // `maybeSingle` porque com `single` um perfil ausente também chega como
+  // erro, e aí o log gritaria em todo primeiro acesso de conta recém-criada.
+  if (error) {
+    console.error("Falha ao carregar o perfil do usuário logado:", user.id, error.message);
+    return null;
+  }
 
   return (profile as Profile) ?? null;
 }

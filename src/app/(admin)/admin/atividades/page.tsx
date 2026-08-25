@@ -2,12 +2,13 @@ import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { AtividadesManager } from "./atividades-manager";
 import type { Atividade } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 export default async function AdminAtividadesPage() {
   await requireAdmin();
   const supabase = createAdminClient();
 
-  const { data: atividades } = await supabase.from("atividades").select("*").order("created_at", { ascending: false });
+  const atividades = listaOuVazio(await supabase.from("atividades").select("*").order("created_at", { ascending: false }), "atividades");
   const ids = (atividades ?? []).map((a: any) => a.id);
 
   const { data: questoesData } =

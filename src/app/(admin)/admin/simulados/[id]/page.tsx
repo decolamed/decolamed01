@@ -7,6 +7,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { SeletorQuestoes } from "@/components/admin/seletor-questoes";
 import { carregarUsoDasQuestoes } from "@/lib/site/uso-questoes";
 import type { Questao, Simulado } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 // Título, descrição e tempo do simulado. Só podiam ser definidos na
 // criação — que usa "Novo simulado"/60min fixos — e não havia nenhuma tela
@@ -123,10 +124,10 @@ export default async function EscolherQuestoesSimuladoPage({
   if (!simulado) notFound();
   const s = simulado as Simulado;
 
-  const { data: todasQuestoes } = await supabase.from("questoes").select("*").eq("ativo", true).order("materia");
+  const todasQuestoes = listaOuVazio(await supabase.from("questoes").select("*").eq("ativo", true).order("materia"), "questões do simulado");
   const questoes = (todasQuestoes as Questao[]) ?? [];
 
-  const { data: jaSelecionadas } = await supabase.from("simulado_questoes").select("questao_id").eq("simulado_id", params.id);
+  const jaSelecionadas = listaOuVazio(await supabase.from("simulado_questoes").select("questao_id").eq("simulado_id", params.id), "questões do simulado");
   const idsJaSelecionados = new Set((jaSelecionadas ?? []).map((q: any) => q.questao_id));
   const uso = await carregarUsoDasQuestoes();
 

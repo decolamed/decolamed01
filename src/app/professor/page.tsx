@@ -4,12 +4,19 @@ import { PageHeader, Card, Th, Td } from "@/components/admin/card";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { adicionarCredito, removerCredito, corrigirRedacao, removerDaLista } from "./actions";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 export default async function ProfessorPage() {
   await requireProfessor();
   const supabase = createAdminClient();
 
-  const { data: planosComRedacao } = await supabase.from("planos").select("id, creditos_redacao").gt("creditos_redacao", 0);
+  // Falha aqui esvazia a lista de alunos do professor — ele conclui que
+  // ninguém tem plano com redação e para de corrigir. Ver
+  // lib/supabase/resultado.ts.
+  const planosComRedacao = listaOuVazio(
+    await supabase.from("planos").select("id, creditos_redacao").gt("creditos_redacao", 0),
+    "planos com redação"
+  );
   const planoIds = (planosComRedacao ?? []).map((p: any) => p.id);
   const creditosPorPlano = new Map((planosComRedacao ?? []).map((p: any) => [p.id, p.creditos_redacao as number]));
 
@@ -18,7 +25,10 @@ export default async function ProfessorPage() {
       ? await supabase.from("profiles").select("id, nome, email, plano_id").eq("role", "aluno").eq("ativo", true).in("plano_id", planoIds).order("nome")
       : { data: [] as any[] };
 
-  const { data: ocultosData } = await supabase.from("redacoes_professor_ocultos").select("aluno_id");
+  const ocultosData = listaOuVazio(
+    await supabase.from("redacoes_professor_ocultos").select("aluno_id"),
+    "alunos ocultos da lista do professor"
+  );
   const ocultos = new Set((ocultosData ?? []).map((o: any) => o.aluno_id));
 
   const alunos = (alunosData ?? []).filter((a: any) => !ocultos.has(a.id));

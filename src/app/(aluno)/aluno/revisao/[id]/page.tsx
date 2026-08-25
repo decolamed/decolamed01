@@ -6,6 +6,7 @@ import { porAfinidadeDeAssunto } from "@/lib/site/assunto";
 import { PaginaAluno, CartaoAluno } from "@/components/aluno/pagina-aluno";
 import { FlashcardsStudy } from "@/components/aluno/flashcards-study";
 import type { Flashcard } from "@/types/database";
+import { listaOuVazio } from "@/lib/supabase/resultado";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -91,7 +92,7 @@ export default async function RevisaoPage({ params }: { params: { id: string } }
   }
 
   // ---- Revisão em flashcards --------------------------------------------
-  const { data: todos } = await supabase.from("flashcards").select("*").eq("ativo", true);
+  const todos = listaOuVazio(await supabase.from("flashcards").select("*").eq("ativo", true), "flashcards da revisão");
   const doAssunto = porAfinidadeDeAssunto((todos as Flashcard[]) ?? [], { materia, assunto });
   const cards = doAssunto.slice(0, CARDS_POR_REVISAO);
 

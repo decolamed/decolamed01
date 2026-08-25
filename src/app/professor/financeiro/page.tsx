@@ -26,7 +26,7 @@ export default async function ProfessorFinanceiroPage() {
   const profile = await requireProfessor();
   const supabase = createAdminClient();
 
-  const { data: comissoesData } = await supabase
+  const { data: comissoesData, error: erroComissoes } = await supabase
     .from("comissoes_parceiro")
     .select(
       "id, beneficiario_id, tipo, valor_centavos, status, data_pagamento, " +
@@ -36,6 +36,12 @@ export default async function ProfessorFinanceiroPage() {
     .eq("beneficiario_id", profile.id)
     .order("created_at", { ascending: false });
 
+  // Dinheiro: uma lista vazia por falha faria a professora ler "nenhuma
+  // comissão" e concluir que não tem nada a receber. Ver
+  // lib/supabase/resultado.ts.
+  if (erroComissoes) {
+    console.error("Financeiro do professor: falha ao ler as comissões:", profile.id, erroComissoes.message);
+  }
   const comissoes = (comissoesData ?? []) as unknown as ComissaoDevida[];
   const resumo = resumirRepasses(comissoes);
 
@@ -45,6 +51,18 @@ export default async function ProfessorFinanceiroPage() {
         title="Meu financeiro"
         subtitle="As comissões geradas pelas suas correções de redação, e o que ainda está a receber."
       />
+
+      {erroComissoes && (
+        <div className="mt-4 rounded-2xl border border-orange/30 bg-orange/[0.06] p-4">
+          <p className="font-display text-sm font-bold text-orange-dark">
+            Não conseguimos carregar suas comissões agora
+          </p>
+          <p className="mt-1 text-sm text-navy-dark/70">
+            Os valores abaixo estão zerados por falha de leitura, não porque não existem. Recarregue em
+            instantes.
+          </p>
+        </div>
+      )}
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
         <Card className="border-green/25 bg-green/[0.04]">
