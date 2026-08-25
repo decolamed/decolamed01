@@ -1,5 +1,6 @@
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { PLANO_DO_ALUNO } from "@/lib/supabase/vinculos";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { alunoTemCopiloto, planoDoAluno } from "@/lib/copiloto/permissao";
 import { diaDoDecolando, chavesConcluidas } from "@/lib/trilha/decolando";
@@ -121,7 +122,7 @@ export default async function AlunoHomePage({
       .maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "site.contato.whatsapp").maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", "redacao.whatsapp").maybeSingle(),
-    supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
+    supabase.from("profiles").select(`${PLANO_DO_ALUNO}(creditos_redacao)`).eq("id", profile.id).maybeSingle(),
     supabase.from("questoes").select("*").eq("ativo", true).order("materia").order("created_at"),
     supabase.from("flashcards").select("*").eq("ativo", true).order("ordem", { ascending: true, nullsFirst: false }),
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAcessoAluno } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { PLANO_DO_ALUNO } from "@/lib/supabase/vinculos";
 import { montarLinkWhatsapp } from "@/lib/site/whatsapp";
 import { textoConfig } from "@/lib/site/configuracoes";
 
@@ -17,7 +18,7 @@ export default async function AlunoRedacaoPage() {
   const supabase = createClient();
 
   const [{ data: perfilComPlano }, { data: consumidos }, { data: configs }, { data: ajustes }] = await Promise.all([
-    supabase.from("profiles").select("planos(creditos_redacao)").eq("id", profile.id).maybeSingle(),
+    supabase.from("profiles").select(`${PLANO_DO_ALUNO}(creditos_redacao)`).eq("id", profile.id).maybeSingle(),
     supabase.from("redacoes_creditos_consumidos").select("id").eq("aluno_id", profile.id),
     supabase.from("configuracoes").select("chave, valor").in("chave", ["redacao.whatsapp", "redacao.base_temas_url"]),
     supabase.from("redacoes_creditos_ajustes").select("quantidade").eq("aluno_id", profile.id)

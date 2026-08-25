@@ -8,6 +8,7 @@ import { ExcluirUsuario } from "@/components/admin/excluir-usuario";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
 import { AcaoDeCadastro } from "@/components/admin/acao-de-cadastro";
+import { PLANO_DO_ALUNO } from "@/lib/supabase/vinculos";
 import { resumosDosAlunos } from "@/lib/site/desempenho-servidor";
 import { diasSemEstudar } from "@/lib/site/desempenho";
 import { hojeISO } from "@/lib/site/data";
@@ -45,14 +46,21 @@ export default async function AdminUsuariosPage({
   const adminAtual = await requireAdmin();
   const supabase = createAdminClient();
 
-  let query = supabase.from("profiles").select("*, planos(nome)").order("created_at", { ascending: false });
+  // `PLANO_DO_ALUNO` e não `planos(nome)`: desde que a comissão de redação
+  // criou `planos.professor_id`, existem DUAS chaves estrangeiras entre
+  // `profiles` e `planos`, e o PostgREST recusa a consulta inteira em vez de
+  // escolher uma. Ver lib/supabase/vinculos.ts.
+  let query = supabase
+    .from("profiles")
+    .select(`*, ${PLANO_DO_ALUNO}(nome)`)
+    .order("created_at", { ascending: false });
   if (searchParams.q) {
     query = query.or(`nome.ilike.%${searchParams.q}%,email.ilike.%${searchParams.q}%`);
   }
   if (searchParams.role) {
     query = query.eq("role", searchParams.role);
   }
-  const { data: usuarios } = await query;
+  const { data: usuarios, error: erroDaLista } = await query;
   const { data: planos } = await supabase.from("planos").select("id, nome").eq("ativo", true).order("ordem");
 
   // Indicadores de acompanhamento na própria listagem: quem está evoluindo,
@@ -66,7 +74,18 @@ export default async function AdminUsuariosPage({
   return (
     <div>
       <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Usuários</h1>
-      <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
+      {/* A falha da consulta é MOSTRADA, não engolida. Descartar o `error` foi
+          o que transformou uma consulta recusada pelo PostgREST em "nenhum
+          usuário encontrado" — uma tela que parece funcionar e está vazia é
+          pior do que uma que avisa que quebrou. */}
+      <AdminAlert
+        erro={
+          erroDaLista
+            ? `Não foi possível carregar a lista de usuários: ${erroDaLista.message}`
+            : searchParams.erro
+        }
+        sucesso={searchParams.sucesso}
+      />
 
       {/* As três ações de cadastro ficam AQUI, antes de tudo. Antes viviam
           depois da tabela: com a lista crescendo, encontrá-las virava uma

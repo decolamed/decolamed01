@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { PLANO_DO_ALUNO } from "@/lib/supabase/vinculos";
 
 /**
  * Retorna true se o aluno tem acesso ao Copiloto adaptativo (definido por
@@ -10,11 +11,23 @@ import { createAdminClient } from "@/lib/supabase/server";
  */
 export async function alunoTemCopiloto(alunoId: string): Promise<boolean> {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  // O vínculo é explícito porque `profiles` e `planos` têm duas chaves
+  // estrangeiras entre si (ver lib/supabase/vinculos.ts). Aqui a ambiguidade
+  // seria especialmente cara: sem plano nenhum na resposta, esta função
+  // devolveria `false` para TODO aluno — o Copiloto pararia de rodar e o
+  // briefing sumiria da conta de quem paga por ele.
+  const { data, error } = await supabase
     .from("profiles")
-    .select("planos(tem_copiloto)")
+    .select(`${PLANO_DO_ALUNO}(tem_copiloto)`)
     .eq("id", alunoId)
     .maybeSingle();
+
+  if (error) {
+    // Um "false" por falha de consulta é indistinguível de um "false" por
+    // plano sem Copiloto, e some sem deixar rastro. O log é o rastro.
+    console.error("Falha ao verificar o Copiloto do aluno:", alunoId, error.message);
+    return false;
+  }
   return Boolean((data as any)?.planos?.tem_copiloto);
 }
 

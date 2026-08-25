@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
+import { PLANO_DO_ALUNO } from "@/lib/supabase/vinculos";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
@@ -135,7 +136,7 @@ export default async function AdminDetalhesUsuarioPage({
 
   const { data: usuario } = await supabase
     .from("profiles")
-    .select("*, planos(nome, creditos_redacao)")
+    .select(`*, ${PLANO_DO_ALUNO}(nome, creditos_redacao)`)
     .eq("id", params.id)
     .maybeSingle();
 
