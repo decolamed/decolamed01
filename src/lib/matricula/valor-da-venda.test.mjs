@@ -6,11 +6,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { valorDaVenda, chaveDaVenda, parcelasNaDescricao } from "./valor-da-venda.ts";
+import { valorDaVenda, chaveDaVenda, parcelasNaDescricao, comissaoSobreRecebido } from "./valor-da-venda.ts";
 import { montarOpcao } from "@/lib/planos/parcelamento.ts";
 
 const COBRANCA_DA_KARINNE = {
   valorDaCobranca: 151.23,
+  valorLiquidoDaCobranca: 142.99,
   installmentId: "93f2a485-e0f3-4048-9eb9-e71a7cf53449",
   descricao: "Parcela 1 de 3. Matrícula Decola Med — VOO GUIADO"
 };
@@ -85,6 +86,56 @@ test("valores absurdos no checkout não passam na frente", () => {
     const venda = valorDaVenda({ ...COBRANCA_DA_KARINNE, installmentCount: 3 }, { valorTotalCentavos: invalido });
     assert.equal(venda.totalCentavos, 45369, `total do checkout inválido (${invalido}) devia ser ignorado`);
   }
+});
+
+// ═══════════════════════════════════ O QUE ENTROU NA CONTA ══════════════════
+
+test("o recebido é o líquido do gateway, multiplicado pelas parcelas", () => {
+  // O Asaas credita R$ 142,99 por parcela: R$ 428,97 de uma venda de R$ 453,69.
+  // A diferença é a taxa dele, que nunca chegou à conta da plataforma.
+  const venda = valorDaVenda(COBRANCA_DA_KARINNE, { valorTotalCentavos: 45369, parcelas: 3 });
+  assert.equal(venda.recebidoCentavos, 42897);
+  assert.ok(venda.recebidoCentavos < venda.totalCentavos, "o recebido nunca passa do bruto");
+});
+
+test("sem líquido informado, o recebido fica indefinido", () => {
+  // Venda manual, cortesia, ou um campo que o Asaas não mandou. Quem consome
+  // trata como "sem taxa" — o recebido é o próprio valor da venda.
+  const venda = valorDaVenda({ valorDaCobranca: 170 });
+  assert.equal(venda.recebidoCentavos, null);
+});
+
+test("líquido zerado ou absurdo não vira recebido", () => {
+  for (const invalido of [0, -1, null, undefined, "grátis"]) {
+    const venda = valorDaVenda({ valorDaCobranca: 170, valorLiquidoDaCobranca: invalido });
+    assert.equal(venda.recebidoCentavos, null, `líquido ${invalido} devia ser ignorado`);
+  }
+});
+
+test("venda à vista: o recebido é o líquido da própria cobrança", () => {
+  const venda = valorDaVenda({ valorDaCobranca: 170, valorLiquidoDaCobranca: 168.01 });
+  assert.equal(venda.totalCentavos, 17000);
+  assert.equal(venda.recebidoCentavos, 16801);
+});
+
+// ═══════════════════════════════════ A COMISSÃO DO PARCEIRO ═════════════════
+
+test("a comissão incide sobre o recebido, não sobre o bruto", () => {
+  // O caso real: 10% de R$ 428,97 = R$ 42,90, e não 10% de R$ 453,69 = R$ 45,37.
+  // A diferença é comissão sobre uma taxa que a plataforma nunca recebeu.
+  assert.equal(comissaoSobreRecebido(42897, 10), 4290);
+  assert.notEqual(comissaoSobreRecebido(42897, 10), comissaoSobreRecebido(45369, 10));
+});
+
+test("cupom sem percentual de comissão não gera comissão", () => {
+  for (const nada of [0, null, undefined, -5, "dez"]) {
+    assert.equal(comissaoSobreRecebido(42897, nada), 0, `percentual ${nada} devia dar zero`);
+  }
+});
+
+test("a comissão arredonda ao centavo, sem sobra de ponto flutuante", () => {
+  assert.equal(comissaoSobreRecebido(43130, 7.5), 3235, "7,5% de R$ 431,30 = R$ 32,3475");
+  assert.equal(comissaoSobreRecebido(10000, 100), 10000, "100% é o teto, não um erro");
 });
 
 // ═════════════════════════════════════════ A IDENTIDADE DA VENDA ════════════

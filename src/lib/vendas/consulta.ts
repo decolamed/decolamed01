@@ -65,7 +65,9 @@ export function consultaDeVendas(supabase: SupabaseClient<any>, filtros: Filtros
 }
 
 /** As colunas que a soma precisa — nada além disso viaja pela rede. */
-const COLUNAS_DA_SOMA = "id, status, valor_centavos, valor_liquido_centavos, comissao_centavos, plano_nome";
+const COLUNAS_DA_SOMA =
+  "id, status, valor_centavos, valor_recebido_centavos, valor_liquido_centavos, " +
+  "comissao_centavos, comissao_redacao_centavos, plano_nome";
 
 const TAMANHO_DO_BLOCO = 1000;
 
@@ -76,6 +78,8 @@ const MAXIMO_DE_BLOCOS = 500;
 
 const RESUMO_VAZIO: ResumoDoPeriodo = {
   totalCentavos: 0,
+  recebidoCentavos: 0,
+  repassesCentavos: 0,
   liquidoCentavos: 0,
   quantidade: 0,
   ticketMedioCentavos: 0,

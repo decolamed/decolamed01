@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     // total da venda é decidido em lib/matricula/valor-da-venda.ts, com os
     // três campos abaixo e o que o checkout guardou no pré-cadastro.
     valor: payment.value,
+    valorLiquido: payment.netValue ?? null,
     installmentId: payment.installment ?? null,
     installmentCount: payment.installmentCount ?? null,
     descricao: payment.description ?? null,

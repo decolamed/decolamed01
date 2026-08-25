@@ -10,6 +10,8 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
 import { ehSlugDuplicado, mensagemDeSlugDuplicado } from "@/lib/site/erro-de-plano";
 import { lerCamposDoFormulario, erroDeParcelamento } from "@/lib/planos/parcelamento";
+import { lerComissaoDeRedacao, erroDeComissaoDeRedacao } from "@/lib/planos/comissao-redacao";
+import { ComissaoDeRedacao } from "@/components/admin/comissao-de-redacao";
 import type { Plano } from "@/types/database";
 
 async function criarPlano(formData: FormData) {
@@ -37,6 +39,9 @@ async function criarPlano(formData: FormData) {
   const erroParcelas = erroDeParcelamento(formData);
   if (erroParcelas) redirect(`/admin/planos?erro=${encodeURIComponent(erroParcelas)}`);
 
+  const erroComissao = erroDeComissaoDeRedacao(formData);
+  if (erroComissao) redirect(`/admin/planos?erro=${encodeURIComponent(erroComissao)}`);
+
   const { error } = await supabase.from("planos").insert({
     nome: String(formData.get("nome")),
     slug,
@@ -48,7 +53,8 @@ async function criarPlano(formData: FormData) {
     beneficios,
     ativo: true,
     ordem: Number(formData.get("ordem") ?? 0),
-    ...lerCamposDoFormulario(formData)
+    ...lerCamposDoFormulario(formData),
+    ...lerComissaoDeRedacao(formData)
   });
 
   revalidatePath("/admin/planos");
@@ -103,8 +109,13 @@ export default async function AdminPlanosPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data: planos } = await supabase.from("planos").select("*").order("ordem");
+  const [{ data: planos }, { data: professores }] = await Promise.all([
+    supabase.from("planos").select("*").order("ordem"),
+    supabase.from("profiles").select("id, nome").eq("role", "professor").eq("ativo", true).order("nome")
+  ]);
   const lista = (planos as Plano[]) ?? [];
+  const listaProfessores = (professores ?? []) as { id: string; nome: string }[];
+  const nomeDoProfessor = new Map(listaProfessores.map((p) => [p.id, p.nome]));
 
   return (
     <div>
@@ -124,6 +135,25 @@ export default async function AdminPlanosPage({
                 (plano.preco_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
             },
             { titulo: "Duração", celula: (plano) => (plano.duracao_meses ? `${plano.duracao_meses} meses` : "Ilimitado") },
+            {
+              titulo: "Comissão de redação",
+              celula: (plano) =>
+                plano.comissao_redacao_centavos > 0 && plano.professor_id ? (
+                  <div>
+                    <p className="font-semibold">
+                      {(plano.comissao_redacao_centavos / 100).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </p>
+                    <p className="text-xs text-navy-dark/50">
+                      {nomeDoProfessor.get(plano.professor_id) ?? "professor removido"}
+                    </p>
+                  </div>
+                ) : (
+                  <span className="text-navy-dark/40">—</span>
+                )
+            },
             { titulo: "Link público", celula: (plano) => <CopiarLinkButton path={`/inscricao/${plano.slug}`} /> },
             { titulo: "Status", celula: (plano) => (plano.ativo ? "Ativo" : "Inativo") }
           ]}
@@ -222,6 +252,9 @@ export default async function AdminPlanosPage({
               de 24 parcelas — é o teto do próprio Asaas.
             </p>
           </fieldset>
+
+          <ComissaoDeRedacao professores={listaProfessores} />
+
           <div>
             <label className="text-sm font-semibold">Descrição</label>
             <textarea name="descricao" rows={2} className="mt-1 w-full rounded-lg border p-3" />

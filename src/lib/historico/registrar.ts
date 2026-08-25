@@ -14,6 +14,7 @@ export type TipoHistoricoAdmin =
   | "usuario_promovido_parceiro"
   | "usuario_rebaixado_parceiro"
   | "professor_criado_manual"
+  | "parceiro_criado_manual"
   | "usuario_promovido_professor"
   | "usuario_rebaixado_professor"
   // Edição de perfil pelo painel. `email_alterado` é registrado à parte

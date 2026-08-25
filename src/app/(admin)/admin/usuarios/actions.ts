@@ -433,15 +433,29 @@ export async function removerParceiro(formData: FormData) {
 // ----------------------------------------------------------------------------
 // 3. Adicionar professor manualmente
 // ----------------------------------------------------------------------------
-const criarProfessorSchema = z.object({
+const criarPapelSchema = z.object({
   nome: z.string().trim().min(3, "Informe o nome completo."),
   email: z.string().trim().toLowerCase().email("E-mail inválido."),
   telefone: z.string().trim().optional()
 });
 
-export async function criarProfessorManual(formData: FormData) {
+/**
+ * Cria o acesso de login de um PAPEL ORGANIZACIONAL — professor ou parceiro.
+ *
+ * Sem matrícula e sem plano: os dois existem para trabalhar no painel, não
+ * para estudar. Como o aluno, recebem convite e definem a própria senha; a
+ * plataforma nunca cria nem envia senha por e-mail.
+ *
+ * Professor e parceiro só diferem no `role` e no texto das mensagens, então
+ * duplicar a função inteira só criaria duas cópias para divergirem depois.
+ */
+async function criarUsuarioComPapel(
+  formData: FormData,
+  papel: "professor" | "parceiro",
+  rotulo: { substantivo: string; artigo: string }
+) {
   const admin = await requireAdmin();
-  const parsed = criarProfessorSchema.safeParse({
+  const parsed = criarPapelSchema.safeParse({
     nome: formData.get("nome"),
     email: formData.get("email"),
     telefone: formData.get("telefone") || undefined
@@ -460,36 +474,51 @@ export async function criarProfessorManual(formData: FormData) {
   });
 
   if (inviteError || !invited?.user) {
-    const jaExiste = inviteError?.message?.toLowerCase().includes("already");
-    erro(jaExiste ? "Já existe um usuário cadastrado com esse e-mail." : "Não foi possível criar o usuário.");
+    // A conta já existe: criar outra não é possível, e o caminho certo é
+    // promover a que existe pelo botão da lista. Dizer isso poupa o admin de
+    // tentar de novo com o mesmo e-mail.
+    const jaExiste = /already|registered|exists|duplicate key|23505/i.test(inviteError?.message ?? "");
+    erro(
+      jaExiste
+        ? `Já existe um usuário com esse e-mail. Use "Tornar ${rotulo.substantivo}" na lista abaixo para dar o papel a ele.`
+        : "Não foi possível criar o usuário."
+    );
   }
 
-  const professorId = invited.user.id;
+  const usuarioId = invited.user.id;
 
   const { error: profileError } = await supabase.from("profiles").insert({
-    id: professorId,
+    id: usuarioId,
     nome,
     email,
     telefone: telefone ?? null,
-    role: "professor",
+    role: papel,
     ativo: true,
     criado_manualmente: true,
     criado_por: admin.id
   });
 
   if (profileError) {
-    console.error("Erro ao criar profile de professor:", profileError);
+    console.error(`Erro ao criar profile de ${papel}:`, profileError);
     erro("Usuário criado no login, mas falhou ao salvar o perfil. Contate o suporte técnico.");
   }
 
   await registrarHistoricoAdmin(supabase, {
-    tipo: "professor_criado_manual",
-    usuarioAlvoId: professorId,
+    tipo: `${papel}_criado_manual`,
+    usuarioAlvoId: usuarioId,
     adminId: admin.id
   });
 
   revalidatePath(PATH);
-  sucesso(`Professor ${nome} cadastrado com sucesso. Um e-mail de acesso foi enviado.`);
+  sucesso(`${rotulo.artigo} ${nome} foi cadastrad${rotulo.artigo === "A" ? "a" : "o"} com sucesso. Um e-mail de acesso foi enviado.`);
+}
+
+export async function criarProfessorManual(formData: FormData) {
+  await criarUsuarioComPapel(formData, "professor", { substantivo: "professor", artigo: "O professor" });
+}
+
+export async function criarParceiroManual(formData: FormData) {
+  await criarUsuarioComPapel(formData, "parceiro", { substantivo: "parceiro", artigo: "O parceiro" });
 }
 
 export async function tornarProfessor(formData: FormData) {

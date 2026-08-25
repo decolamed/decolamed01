@@ -9,6 +9,8 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { slugificar } from "@/lib/site/slugificar";
 import { ehSlugDuplicado, mensagemDeSlugDuplicado } from "@/lib/site/erro-de-plano";
 import { lerCamposDoFormulario, erroDeParcelamento } from "@/lib/planos/parcelamento";
+import { lerComissaoDeRedacao, erroDeComissaoDeRedacao } from "@/lib/planos/comissao-redacao";
+import { ComissaoDeRedacao } from "@/components/admin/comissao-de-redacao";
 import type { Plano } from "@/types/database";
 
 async function salvarPlano(id: string, formData: FormData) {
@@ -31,6 +33,9 @@ async function salvarPlano(id: string, formData: FormData) {
   const erroParcelas = erroDeParcelamento(formData);
   if (erroParcelas) redirect(`/admin/planos/${id}/editar?erro=${encodeURIComponent(erroParcelas)}`);
 
+  const erroComissao = erroDeComissaoDeRedacao(formData);
+  if (erroComissao) redirect(`/admin/planos/${id}/editar?erro=${encodeURIComponent(erroComissao)}`);
+
   const { error } = await supabase
     .from("planos")
     .update({
@@ -43,7 +48,8 @@ async function salvarPlano(id: string, formData: FormData) {
       tem_copiloto: formData.get("tem_copiloto") === "on",
       beneficios,
       ordem: Number(formData.get("ordem") ?? 0),
-      ...lerCamposDoFormulario(formData)
+      ...lerCamposDoFormulario(formData),
+      ...lerComissaoDeRedacao(formData)
     })
     .eq("id", id);
 
@@ -80,10 +86,14 @@ export default async function EditarPlanoPage({
 }) {
   await requireAdmin();
   const supabase = createAdminClient();
-  const { data: plano } = await supabase.from("planos").select("*").eq("id", params.id).single();
+  const [{ data: plano }, { data: professores }] = await Promise.all([
+    supabase.from("planos").select("*").eq("id", params.id).single(),
+    supabase.from("profiles").select("id, nome").eq("role", "professor").eq("ativo", true).order("nome")
+  ]);
 
   if (!plano) notFound();
   const p = plano as Plano;
+  const listaProfessores = (professores ?? []) as { id: string; nome: string }[];
   const salvarComId = salvarPlano.bind(null, p.id);
 
   return (
@@ -160,6 +170,13 @@ export default async function EditarPlanoPage({
               de 24 parcelas — é o teto do próprio Asaas.
             </p>
           </fieldset>
+
+        <ComissaoDeRedacao
+          professores={listaProfessores}
+          valorPadrao={p.comissao_redacao_centavos}
+          professorPadrao={p.professor_id}
+        />
+
         <div>
           <label className="text-sm font-semibold">Descrição</label>
           <textarea name="descricao" rows={2} defaultValue={p.descricao ?? ""} className="mt-1 w-full rounded-lg border p-3" />

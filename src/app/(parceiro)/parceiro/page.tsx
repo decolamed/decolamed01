@@ -1,6 +1,7 @@
 import { requireParceiro } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
+import { resumirRepasses, type ComissaoDevida } from "@/lib/repasses/agrupar";
 import type { Pagamento, Cupom } from "@/types/database";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -22,24 +23,35 @@ export default async function ParceiroDashboardPage() {
   // "pagamentos_select_own_parceiro" / "cupons_select_own_parceiro"
   // (migração 005) reforçam a mesma regra caso esses dados um dia sejam
   // buscados direto do client com a anon key.
-  const [{ data: cupons }, { data: vendas }] = await Promise.all([
+  const [{ data: cupons }, { data: vendas }, { data: comissoesData }] = await Promise.all([
     supabase.from("cupons").select("*").eq("parceiro_id", profile.id),
     supabase
       .from("pagamentos")
       .select("*")
       .eq("parceiro_id", profile.id)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false }),
+    // O razão de comissões é a fonte do que já foi pago. Antes esta tela
+    // dizia "comissão já paga: R$ 0,00" fixo no código — e depois que a baixa
+    // passou a existir em /admin/repasses, o parceiro que recebeu continuava
+    // vendo o valor inteiro como a receber.
+    supabase
+      .from("comissoes_parceiro")
+      .select(
+        "id, beneficiario_id, tipo, valor_centavos, status, data_pagamento, " +
+          "beneficiario:beneficiario_id(nome, role), " +
+          "pagamento:pagamento_id(comprador_nome, plano_nome, data_pagamento, status)"
+      )
+      .eq("beneficiario_id", profile.id)
   ]);
 
   const listaCupons = (cupons as Cupom[]) ?? [];
   const listaVendas = (vendas as Pagamento[]) ?? [];
 
   const vendasConfirmadas = listaVendas.filter((v) => v.status === "confirmado" || v.status === "recebido");
-  const totalComissaoAcumulada = vendasConfirmadas.reduce((soma, v) => soma + v.comissao_centavos, 0);
-  // Comissão já paga: preparado para quando a tela de pagamento de comissão
-  // for implementada (marcar comissoes_parceiro.status = 'paga'). Por ora
-  // toda comissão gerada aparece como "a receber".
-  const totalComissaoPaga = 0;
+  const comissoes = resumirRepasses((comissoesData ?? []) as unknown as ComissaoDevida[]);
+  const totalComissaoPaga = comissoes.pagoCentavos;
+  const totalComissaoAReceber = comissoes.aPagarCentavos;
+  const totalComissaoAcumulada = totalComissaoPaga + totalComissaoAReceber;
 
   return (
     <div>
@@ -85,7 +97,7 @@ export default async function ParceiroDashboardPage() {
           { label: "Vendas com meu cupom", value: String(vendasConfirmadas.length) },
           { label: "Comissão acumulada", value: formatarCentavos(totalComissaoAcumulada) },
           { label: "Comissão já paga", value: formatarCentavos(totalComissaoPaga) },
-          { label: "Comissão a receber", value: formatarCentavos(totalComissaoAcumulada - totalComissaoPaga) }
+          { label: "Comissão a receber", value: formatarCentavos(totalComissaoAReceber) }
         ].map((card) => (
           <div key={card.label} className="rounded-2xl bg-white p-6 shadow">
             <p className="text-sm text-navy-dark/60">{card.label}</p>

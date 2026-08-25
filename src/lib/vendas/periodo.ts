@@ -102,13 +102,22 @@ export interface VendaSomavel {
   id: string;
   status: string | null;
   valor_centavos: number | null;
+  /** O que o gateway creditou. Nulo em venda manual e nas linhas antigas. */
+  valor_recebido_centavos?: number | null;
   valor_liquido_centavos: number | null;
   comissao_centavos: number | null;
+  comissao_redacao_centavos?: number | null;
   plano_nome: string | null;
 }
 
 export interface ResumoDoPeriodo {
+  /** O que os alunos pagaram. */
   totalCentavos: number;
+  /** O que o gateway creditou, já sem a taxa dele. */
+  recebidoCentavos: number;
+  /** O que sai para parceiros e professores. */
+  repassesCentavos: number;
+  /** O que sobra de verdade: recebido menos repasses. */
   liquidoCentavos: number;
   quantidade: number;
   ticketMedioCentavos: number;
@@ -116,13 +125,30 @@ export interface ResumoDoPeriodo {
 }
 
 /**
- * O líquido de uma venda.
+ * O que a plataforma RECEBEU de uma venda — o bruto menos a taxa do gateway.
  *
- * `valor_liquido_centavos` é preenchido pelo webhook; nas vendas manuais
- * antigas ele é nulo, e aí o líquido é o bruto menos a comissão do parceiro.
+ * Venda manual, cortesia e toda venda anterior à coluna não têm o número do
+ * Asaas: para elas o recebido é o próprio valor, que é o certo — nenhuma taxa
+ * foi cobrada. É a mesma regra do `coalesce` na trigger do banco.
  */
-function liquidoDaVenda(v: VendaSomavel): number {
-  return v.valor_liquido_centavos ?? (v.valor_centavos ?? 0) - (v.comissao_centavos ?? 0);
+export function recebidoDaVenda(v: VendaSomavel): number {
+  return v.valor_recebido_centavos ?? v.valor_centavos ?? 0;
+}
+
+/** O que sai da venda para terceiros: comissão do parceiro + a de redação. */
+export function repassesDaVenda(v: VendaSomavel): number {
+  return (v.comissao_centavos ?? 0) + (v.comissao_redacao_centavos ?? 0);
+}
+
+/**
+ * O que sobra para a plataforma.
+ *
+ * `valor_liquido_centavos` é calculado pela trigger e já traz essa conta
+ * pronta; a conta local é a rede para as linhas antigas, em que a coluna pode
+ * estar nula.
+ */
+export function liquidoDaVenda(v: VendaSomavel): number {
+  return v.valor_liquido_centavos ?? Math.max(0, recebidoDaVenda(v) - repassesDaVenda(v));
 }
 
 /**
@@ -137,6 +163,8 @@ export function somarRecebidos(linhas: readonly VendaSomavel[]): ResumoDoPeriodo
   const vistas = new Set<string>();
   const porPlano = new Map<string, { quantidade: number; totalCentavos: number }>();
   let totalCentavos = 0;
+  let recebidoCentavos = 0;
+  let repassesCentavos = 0;
   let liquidoCentavos = 0;
   let quantidade = 0;
 
@@ -147,6 +175,8 @@ export function somarRecebidos(linhas: readonly VendaSomavel[]): ResumoDoPeriodo
 
     const bruto = linha.valor_centavos ?? 0;
     totalCentavos += bruto;
+    recebidoCentavos += recebidoDaVenda(linha);
+    repassesCentavos += repassesDaVenda(linha);
     liquidoCentavos += liquidoDaVenda(linha);
     quantidade += 1;
 
@@ -159,6 +189,8 @@ export function somarRecebidos(linhas: readonly VendaSomavel[]): ResumoDoPeriodo
 
   return {
     totalCentavos,
+    recebidoCentavos,
+    repassesCentavos,
     liquidoCentavos,
     quantidade,
     ticketMedioCentavos: quantidade > 0 ? Math.round(totalCentavos / quantidade) : 0,

@@ -274,6 +274,8 @@ export interface AsaasPagamento {
   installment?: string | null;
   installmentNumber?: number | null;
   description?: string | null;
+  /** O que o Asaas CREDITA, já sem a taxa dele. Por parcela, como `value`. */
+  netValue?: number | null;
 }
 
 /**
@@ -329,6 +331,8 @@ export interface AsaasWebhookPayload {
     installmentNumber?: number | null;
     installmentCount?: number | null;
     description?: string | null;
+    /** O que o Asaas CREDITA, já sem a taxa dele. Por parcela, como `value`. */
+    netValue?: number | null;
   };
 }
 

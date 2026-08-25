@@ -7,16 +7,16 @@ import { AdminAlert } from "@/components/admin/admin-alert";
 import { Card, PageHeader, StatCard } from "@/components/admin/card";
 import { formatarCentavos, formatarData } from "@/lib/formatacao";
 import { consultaDeVendas, resumoDeVendas } from "@/lib/vendas/consulta";
-import { descreverPeriodo, limitesDoPeriodo } from "@/lib/vendas/periodo";
+import {
+  descreverPeriodo,
+  limitesDoPeriodo,
+  liquidoDaVenda,
+  recebidoDaVenda,
+  repassesDaVenda
+} from "@/lib/vendas/periodo";
 import { atalhosDePeriodo } from "@/lib/vendas/atalhos";
-import { marcarComissaoPaga } from "./actions";
-import type { Pagamento, ComissaoParceiro } from "@/types/database";
-
-const COMISSAO_STATUS_LABEL: Record<string, string> = {
-  pendente: "Pendente",
-  paga: "Paga",
-  cancelada: "Cancelada"
-};
+import { resumirRepasses, type ComissaoDevida } from "@/lib/repasses/agrupar";
+import type { Pagamento } from "@/types/database";
 
 const STATUS_LABEL: Record<string, string> = {
   pendente: "Pendente",
@@ -65,28 +65,26 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
     supabase.from("planos").select("id, nome").order("ordem"),
     supabase.from("cupons").select("codigo").order("codigo"),
     supabase.from("profiles").select("id, nome").eq("role", "parceiro").order("nome"),
-    // As comissões são geradas por trigger a partir de `pagamentos` (migração
-    // 005) e ficam em "pendente" até alguém dar baixa — o que só é possível
-    // por aqui. Não segue os filtros da tabela de vendas de propósito: é um
-    // controle de contas a pagar, e esconder uma comissão pendente porque o
-    // filtro de data está estreito seria justamente o jeito de esquecê-la.
+    // Só o que falta repassar, para o aviso no rodapé desta tela. A gestão
+    // dos repasses mora em /admin/repasses, que filtra por mês, pessoa, tipo
+    // e status. Aqui NÃO seguimos os filtros da tabela de vendas de propósito:
+    // esconder uma comissão pendente porque o filtro de data está estreito
+    // seria justamente o jeito de esquecê-la.
     supabase
       .from("comissoes_parceiro")
-      .select("*, parceiro:parceiro_id(nome), pagamento:pagamento_id(comprador_nome, plano_nome, data_pagamento)")
-      .order("created_at", { ascending: false }),
+      .select(
+        "id, beneficiario_id, tipo, valor_centavos, status, data_pagamento, " +
+          "beneficiario:beneficiario_id(nome, role), " +
+          "pagamento:pagamento_id(comprador_nome, plano_nome, data_pagamento, status)"
+      )
+      .eq("status", "pendente"),
     // O resumo é uma consulta própria, que varre TODAS as linhas do período
     // em blocos — não uma soma das linhas que couberam na tabela acima.
     resumoDeVendas(supabase, filtros)
   ]);
 
   const lista = (vendas as Pagamento[]) ?? [];
-  type ComissaoComRelacoes = ComissaoParceiro & {
-    parceiro: { nome: string } | null;
-    pagamento: { comprador_nome: string | null; plano_nome: string | null; data_pagamento: string | null } | null;
-  };
-  const comissoes = (comissoesData as ComissaoComRelacoes[] | null) ?? [];
-  const comissoesPendentes = comissoes.filter((c) => c.status === "pendente");
-  const totalComissaoPendenteCentavos = comissoesPendentes.reduce((soma, c) => soma + c.valor_centavos, 0);
+  const aRepassar = resumirRepasses((comissoesData ?? []) as unknown as ComissaoDevida[]);
 
   // O resumo vem do banco, não das linhas acima: `lista` é limitada pelo teto
   // de linhas por resposta do PostgREST, e um total que para de crescer em
@@ -118,28 +116,54 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
       <PageHeader title="Vendas" subtitle="Tudo que entrou, no período que você escolher. Use o filtro abaixo para mudar o intervalo." />
       <AdminAlert erro={avisoDoResumo ?? searchParams.erro} sucesso={searchParams.sucesso} />
 
-      {/* O total do período é o número que o admin veio buscar — vem primeiro
-          e sozinho, com o intervalo escrito por extenso embaixo para não
-          restar dúvida de qual período foi somado. */}
+      {/* O NÚMERO QUE O ADMIN VEIO BUSCAR é o líquido, não o bruto.
+          "Vendas no período" era o que o aluno pagou — dele ainda saem a taxa
+          do gateway e as comissões, e essa diferença não aparecia em lugar
+          nenhum. O caminho do dinheiro agora está escrito por inteiro logo
+          abaixo do total: bruto → taxa → repasses → o que sobrou. */}
       <div className="mt-5 grid gap-3 lg:grid-cols-[1.4fr_2fr]">
         <Card className="border-green/25 bg-green/[0.04]">
-          <p className="text-[11px] font-extrabold uppercase tracking-widest text-green/70">Vendas no período</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-widest text-green/70">
+            Líquido no período
+          </p>
           <p className="mt-1 font-display text-3xl font-extrabold text-green sm:text-4xl">
-            {formatarCentavos(resumo.totalCentavos)}
+            {formatarCentavos(resumo.liquidoCentavos)}
           </p>
           <p className="mt-1 text-xs font-semibold text-navy-dark/60">
-            {descreverPeriodo(searchParams.de, searchParams.ate)}
+            O que ficou com você, {descreverPeriodo(searchParams.de, searchParams.ate).toLowerCase()}
           </p>
-          <p className="mt-2.5 border-t border-green/20 pt-2.5 text-[11px] font-semibold text-navy-dark/50">
+
+          <dl className="mt-2.5 space-y-1 border-t border-green/20 pt-2.5 text-[11px] font-semibold">
+            <div className="flex justify-between text-navy-dark/60">
+              <dt>Vendas (o que os alunos pagaram)</dt>
+              <dd>{formatarCentavos(resumo.totalCentavos)}</dd>
+            </div>
+            <div className="flex justify-between text-navy-dark/50">
+              <dt>− Taxa do gateway</dt>
+              <dd>{formatarCentavos(resumo.totalCentavos - resumo.recebidoCentavos)}</dd>
+            </div>
+            <div className="flex justify-between text-navy-dark/50">
+              <dt>− Comissões a repassar</dt>
+              <dd>{formatarCentavos(resumo.repassesCentavos)}</dd>
+            </div>
+          </dl>
+
+          <p className="mt-2 text-[11px] font-semibold text-navy-dark/50">
             {resumo.quantidade} venda{resumo.quantidade !== 1 ? "s" : ""} paga
-            {resumo.quantidade !== 1 ? "s" : ""} · líquido {formatarCentavos(resumo.liquidoCentavos)}
+            {resumo.quantidade !== 1 ? "s" : ""} ·{" "}
+            <Link href="/admin/repasses" className="underline">
+              ver a quem pagar
+            </Link>
           </p>
         </Card>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Vendas (bruto)" value={formatarCentavos(resumo.totalCentavos)} />
+          <StatCard label="Recebido do gateway" value={formatarCentavos(resumo.recebidoCentavos)} />
+          <StatCard label="A repassar" value={formatarCentavos(resumo.repassesCentavos)} tone="orange" />
           <StatCard label="Ticket médio" value={formatarCentavos(resumo.ticketMedioCentavos)} />
           <StatCard label="Vendas pagas" value={String(resumo.quantidade)} />
-          <StatCard label="Líquido recebido" value={formatarCentavos(resumo.liquidoCentavos)} />
+          <StatCard label="Líquido de verdade" value={formatarCentavos(resumo.liquidoCentavos)} tone="green" />
         </div>
       </div>
 
@@ -263,60 +287,79 @@ export default async function AdminVendasPage({ searchParams }: { searchParams: 
                 </div>
               )
             },
-            { titulo: "Valor líquido", celula: (v) => formatarCentavos(v.valor_liquido_centavos ?? v.valor_centavos) },
+            {
+              titulo: "Recebido",
+              celula: (v) => (
+                <div>
+                  <p>{formatarCentavos(recebidoDaVenda(v))}</p>
+                  {recebidoDaVenda(v) < v.valor_centavos && (
+                    <p className="text-xs text-navy-dark/50">
+                      −{formatarCentavos(v.valor_centavos - recebidoDaVenda(v))} de taxa
+                    </p>
+                  )}
+                </div>
+              )
+            },
+            {
+              titulo: "Líquido",
+              celula: (v) => (
+                <div>
+                  <p className="font-semibold text-green">{formatarCentavos(liquidoDaVenda(v))}</p>
+                  {repassesDaVenda(v) > 0 && (
+                    <p className="text-xs text-navy-dark/50">
+                      −{formatarCentavos(repassesDaVenda(v))} de comissões
+                    </p>
+                  )}
+                </div>
+              )
+            },
             { titulo: "Forma", celula: (v) => v.forma_pagamento ?? "—" },
             { titulo: "Origem", celula: (v) => ORIGEM_LABEL[v.origem_pagamento] ?? v.origem_pagamento },
             { titulo: "Status", celula: (v) => STATUS_LABEL[v.status] ?? v.status },
             { titulo: "Data", celula: (v) => formatarData(v.data_pagamento) },
             { titulo: "Cupom", celula: (v) => <span className="font-mono text-xs">{v.cupom_codigo ?? "—"}</span> },
-            { titulo: "Comissão", celula: (v) => (v.comissao_centavos > 0 ? formatarCentavos(v.comissao_centavos) : "—") }
+            {
+              titulo: "Comissões",
+              celula: (v) =>
+                repassesDaVenda(v) > 0 ? (
+                  <div className="text-xs">
+                    {v.comissao_centavos > 0 && <p>Cupom: {formatarCentavos(v.comissao_centavos)}</p>}
+                    {v.comissao_redacao_centavos > 0 && (
+                      <p>Redação: {formatarCentavos(v.comissao_redacao_centavos)}</p>
+                    )}
+                  </div>
+                ) : (
+                  "—"
+                )
+            }
           ]}
         />
       </div>
 
-      <h2 className="mt-10 font-display text-xl font-bold text-navy-dark">Comissões de parceiros</h2>
-      <p className="mt-1 text-sm text-navy-dark/60">
-        Geradas automaticamente quando uma venda com cupom de parceiro é confirmada.{" "}
-        {comissoesPendentes.length > 0
-          ? `${comissoesPendentes.length} pendente${comissoesPendentes.length !== 1 ? "s" : ""} · ${formatarCentavos(totalComissaoPendenteCentavos)} a pagar.`
-          : "Nenhuma comissão pendente."}
-      </p>
-
-      <div className="mt-4">
-        <TabelaResponsiva
-          linhas={comissoes}
-          chave={(c) => c.id}
-          vazio="Nenhuma comissão gerada ainda. Elas aparecem aqui quando uma venda com cupom de parceiro é confirmada."
-          colunas={[
-            { titulo: "Parceiro", principal: true, celula: (c) => c.parceiro?.nome ?? "—" },
-            {
-              titulo: "Venda",
-              celula: (c) => (
-                <div>
-                  <p>{c.pagamento?.comprador_nome ?? "—"}</p>
-                  <p className="text-xs text-navy-dark/50">
-                    {c.pagamento?.plano_nome ?? "—"} · {formatarData(c.pagamento?.data_pagamento ?? null)}
-                  </p>
-                </div>
-              )
-            },
-            { titulo: "Valor", celula: (c) => <span className="font-semibold">{formatarCentavos(c.valor_centavos)}</span> },
-            { titulo: "Status", celula: (c) => COMISSAO_STATUS_LABEL[c.status] ?? c.status },
-            { titulo: "Pago em", celula: (c) => (c.data_pagamento ? formatarData(c.data_pagamento) : "—") }
-          ]}
-          acoes={(c) =>
-            c.status === "pendente" ? (
-              <form action={marcarComissaoPaga}>
-                <input type="hidden" name="id" value={c.id} />
-                <SubmitButton pendingText="..." className="rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white">
-                  Marcar como paga
-                </SubmitButton>
-              </form>
-            ) : (
-              <span className="text-navy-dark/40">—</span>
-            )
-          }
-        />
+      {/* A GESTÃO dos repasses mora em /admin/repasses — lá dá para filtrar
+          por mês, pessoa, tipo e status, e quitar a folha de alguém de uma
+          vez. Aqui fica só o aviso do que está em aberto, porque quem abre
+          Vendas precisa saber que parte daquele dinheiro já tem dono. */}
+      <div className="mt-10 rounded-2xl border border-orange/25 bg-orange/[0.04] p-5">
+        <h2 className="font-display text-lg font-bold text-navy-dark">Comissões a repassar</h2>
+        <p className="mt-1 text-sm text-navy-dark/70">
+          {aRepassar.aPagarCentavos > 0 ? (
+            <>
+              <strong className="text-orange-dark">{formatarCentavos(aRepassar.aPagarCentavos)}</strong> em aberto
+              para {aRepassar.porBeneficiario.length} pessoa
+              {aRepassar.porBeneficiario.length !== 1 ? "s" : ""} — geradas automaticamente a cada venda com
+              cupom de parceiro ou de plano com comissão de redação.
+            </>
+          ) : (
+            "Nenhuma comissão em aberto no momento."
+          )}
+        </p>
+        <Link
+          href="/admin/repasses"
+          className="mt-3 inline-block rounded-full bg-navy px-5 py-2.5 text-xs font-bold text-white hover:bg-navy-dark"
+        >
+          Abrir Repasses →
+        </Link>
       </div>
     </div>
   );

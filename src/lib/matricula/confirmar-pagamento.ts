@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapBillingTypeToFormaPagamento, type AsaasBillingType } from "@/lib/asaas/client";
 import { dataDePagamento } from "@/lib/vendas/periodo";
-import { chaveDaVenda, valorDaVenda } from "@/lib/matricula/valor-da-venda";
+import { chaveDaVenda, comissaoSobreRecebido, valorDaVenda } from "@/lib/matricula/valor-da-venda";
 
 // ============================================================================
 // PAGAMENTO CONFIRMADO → CONTA LIBERADA
@@ -43,6 +43,11 @@ export interface PagamentoConfirmado {
    * Quem decide o total da venda é `valorDaVenda` — ver o módulo ao lado.
    */
   valor: number;
+  /**
+   * `payment.netValue` em reais: o que o gateway credita depois da taxa dele.
+   * É a base das comissões — ver `comissaoSobreRecebido`.
+   */
+  valorLiquido?: number | null;
   /** `payment.installment`: o id do GRUPO de parcelas, quando a compra é parcelada. */
   installmentId?: string | null;
   /** `payment.installmentCount`, quando o Asaas o informa. */
@@ -92,6 +97,7 @@ export async function confirmarPagamento(
   // pré-cadastro — ver lib/matricula/valor-da-venda.ts.
   const cobranca = {
     valorDaCobranca: dados.valor,
+    valorLiquidoDaCobranca: dados.valorLiquido,
     installmentId: dados.installmentId,
     installmentCount: dados.installmentCount,
     descricao: dados.descricao
@@ -101,10 +107,12 @@ export async function confirmarPagamento(
     parcelas: preCadastro.parcelas
   });
 
+  // A base de toda comissão é o que ENTROU na conta. Sem o líquido do gateway
+  // (venda manual, cortesia, ou um campo que o Asaas não mandou) o recebido é
+  // o próprio valor da venda — é a mesma regra do `coalesce` no banco.
+  const recebidoCentavos = venda.recebidoCentavos ?? venda.totalCentavos;
+
   // ---- Comissão do parceiro, quando a compra veio por cupom de afiliado ----
-  //
-  // Sobre o TOTAL da venda. Enquanto saía do valor da cobrança, o parceiro de
-  // uma compra em 3x recebia a comissão de um terço do que foi vendido.
   let parceiroId: string | null = null;
   let comissaoCentavos = 0;
   if (preCadastro.cupom_codigo) {
@@ -115,9 +123,21 @@ export async function confirmarPagamento(
       .maybeSingle();
     if (cupomInfo?.parceiro_id) {
       parceiroId = cupomInfo.parceiro_id;
-      comissaoCentavos = Math.round((venda.totalCentavos * (cupomInfo.percentual_comissao ?? 0)) / 100);
+      comissaoCentavos = comissaoSobreRecebido(recebidoCentavos, cupomInfo.percentual_comissao);
     }
   }
+
+  // ---- Comissão de redação, quando o plano tem professora responsável ------
+  //
+  // Valor FIXO por venda, definido no plano, e COPIADO para cá — não
+  // referenciado. Mudar a comissão do plano amanhã não pode reescrever o que
+  // já era devido pelas vendas de ontem.
+  //
+  // Precisa dos dois: sem professora não há a quem pagar, e sem valor não há o
+  // que pagar. Um sem o outro é configuração incompleta, não comissão de zero.
+  const professorId: string | null = preCadastro.planos?.professor_id ?? null;
+  const comissaoRedacaoCentavos =
+    professorId ? Math.max(0, Number(preCadastro.planos?.comissao_redacao_centavos ?? 0)) : 0;
 
   let matriculaId: string | null = null;
   const jaEstavaConvertido = Boolean(preCadastro.convertido);
@@ -146,6 +166,7 @@ export async function confirmarPagamento(
     pre_cadastro_id: preCadastro.id,
     matricula_id: matriculaId,
     valor_centavos: venda.totalCentavos,
+    valor_recebido_centavos: venda.recebidoCentavos,
     parcelas: venda.parcelas,
     valor_parcela_centavos: venda.valorDaParcelaCentavos,
     forma_pagamento: mapBillingTypeToFormaPagamento(dados.billingType),
@@ -156,6 +177,8 @@ export async function confirmarPagamento(
     cupom_codigo: preCadastro.cupom_codigo,
     parceiro_id: parceiroId,
     comissao_centavos: comissaoCentavos,
+    professor_id: professorId,
+    comissao_redacao_centavos: comissaoRedacaoCentavos,
     comprador_nome: preCadastro.nome,
     comprador_email: preCadastro.email,
     plano_nome: preCadastro.planos?.nome ?? null,

@@ -78,6 +78,7 @@ export async function GET(request: Request) {
     // registrou a venda de 25/08 (o webhook não chegou), então ele precisa
     // mandar exatamente os mesmos campos que o webhook.
     valor: pagamento.value,
+    valorLiquido: pagamento.netValue ?? null,
     installmentId: pagamento.installment ?? null,
     installmentCount: pagamento.installmentCount ?? null,
     descricao: pagamento.description ?? null,

@@ -23,6 +23,13 @@ export interface Plano {
   ordem: number;
   creditos_redacao: number;
   tem_copiloto: boolean;
+  /**
+   * Valor FIXO devido à professora responsável a cada venda deste plano, em
+   * centavos. 0 = o plano não gera comissão de redação.
+   */
+  comissao_redacao_centavos: number;
+  /** Quem recebe essa comissão. Sem professor definido, nenhuma é gerada. */
+  professor_id: string | null;
   created_at: string;
   updated_at: string;
   // Parcelamento no cartão, por plano. Pix e boleto não têm parcela e não são
@@ -120,6 +127,11 @@ export interface Pagamento {
   asaas_installment_id: string | null;
   /** O total da COMPRA, não o da parcela. Uma venda em 3x de R$ 151,23 vale 45369. */
   valor_centavos: number;
+  /**
+   * O que o gateway CREDITOU, já sem a taxa dele. Nulo nas vendas manuais e
+   * nas anteriores a esta coluna — nesses casos vale o próprio `valor_centavos`.
+   */
+  valor_recebido_centavos: number | null;
   parcelas: number;
   /** O valor de cada parcela, ou null quando a venda foi à vista. */
   valor_parcela_centavos: number | null;
@@ -130,7 +142,12 @@ export interface Pagamento {
   origem_pagamento: OrigemPagamento;
   parceiro_id: string | null;
   cupom_codigo: string | null;
+  /** Comissão percentual do parceiro do cupom, sobre o RECEBIDO. */
   comissao_centavos: number;
+  /** Comissão fixa da professora do plano, copiada dele no momento da venda. */
+  comissao_redacao_centavos: number;
+  professor_id: string | null;
+  /** O que sobra para a plataforma: recebido menos as duas comissões. */
   valor_liquido_centavos: number | null;
   criado_por: string | null;
   comprador_nome: string | null;
@@ -140,9 +157,17 @@ export interface Pagamento {
   created_at: string;
 }
 
+/**
+ * cupom: percentual devido ao parceiro do cupom usado na compra.
+ * redacao: valor fixo devido à professora responsável pelo plano vendido.
+ */
+export type ComissaoTipo = "cupom" | "redacao";
+
 export interface ComissaoParceiro {
   id: string;
-  parceiro_id: string;
+  /** Quem recebe: o parceiro (cupom) ou a professora (redação). */
+  beneficiario_id: string;
+  tipo: ComissaoTipo;
   pagamento_id: string;
   valor_centavos: number;
   status: ComissaoStatus;

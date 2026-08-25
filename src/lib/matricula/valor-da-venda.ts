@@ -30,6 +30,14 @@
 export interface CobrancaConfirmada {
   /** `payment.value`, em reais. Num parcelamento, é o valor de UMA parcela. */
   valorDaCobranca: number;
+  /**
+   * `payment.netValue`, em reais: o que o Asaas CREDITA depois da taxa dele.
+   *
+   * Num parcelamento é o líquido de UMA parcela, pela mesma razão que `value`.
+   * É a base da comissão do parceiro — o percentual não pode incidir sobre uma
+   * taxa que a plataforma nunca chegou a ver.
+   */
+  valorLiquidoDaCobranca?: number | null;
   /** `payment.installment`: o id do grupo de parcelas, quando há. */
   installmentId?: string | null;
   /** `payment.installmentCount`, quando o Asaas o inclui. */
@@ -47,6 +55,14 @@ export interface TotaisDoCheckout {
 export interface VendaValorada {
   /** O total da COMPRA, em centavos. É o que vai para `valor_centavos`. */
   totalCentavos: number;
+  /**
+   * O que o gateway CREDITOU, em centavos — já sem a taxa dele.
+   *
+   * Null quando o Asaas não informou o líquido; nesse caso o financeiro trata
+   * o recebido como o próprio total, que é o comportamento certo para venda
+   * manual e cortesia (nenhuma taxa envolvida).
+   */
+  recebidoCentavos: number | null;
   /** Em quantas vezes foi paga. 1 para toda venda à vista. */
   parcelas: number;
   /** O valor de cada parcela, ou null quando a venda é à vista. */
@@ -98,13 +114,38 @@ export function valorDaVenda(cobranca: CobrancaConfirmada, checkout: TotaisDoChe
       ? totalDoCheckout
       : valorCobradoCentavos * parcelas;
 
+  // O líquido do gateway segue a MESMA regra do valor: no parcelamento ele vem
+  // por parcela, então o que entrou na conta é ele multiplicado pelas parcelas.
+  // Aqui não há total do checkout a que recorrer — a taxa é do Asaas e só ele
+  // a conhece — então quando o campo não vem, o recebido fica indefinido e o
+  // financeiro trata a venda como sem taxa.
+  const liquidoDaCobranca = Number(cobranca.valorLiquidoDaCobranca);
+  const recebidoCentavos = Number.isFinite(liquidoDaCobranca) && liquidoDaCobranca > 0
+    ? Math.round(liquidoDaCobranca * 100) * parcelas
+    : null;
+
   return {
     totalCentavos,
+    recebidoCentavos,
     parcelas,
     // A parcela sai do total quando ele veio do checkout, para os dois números
     // fecharem na tela mesmo quando o gateway cobrou um centavo diferente.
     valorDaParcelaCentavos: parcelas > 1 ? Math.round(totalCentavos / parcelas) : null
   };
+}
+
+/**
+ * A comissão percentual de um parceiro, em centavos.
+ *
+ * Incide sobre o que a plataforma RECEBEU, não sobre o que o aluno pagou. A
+ * diferença é a taxa do gateway: numa venda de R$ 453,69 o Asaas credita
+ * R$ 428,97, e cobrar 10% dos R$ 453,69 seria pagar comissão sobre R$ 24,72
+ * que nunca entraram na conta.
+ */
+export function comissaoSobreRecebido(recebidoCentavos: number, percentual: number | null | undefined): number {
+  const taxa = Number(percentual);
+  if (!Number.isFinite(taxa) || taxa <= 0) return 0;
+  return Math.round((recebidoCentavos * taxa) / 100);
 }
 
 /**

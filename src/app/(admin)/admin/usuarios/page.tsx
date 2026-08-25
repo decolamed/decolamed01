@@ -7,6 +7,7 @@ import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { ExcluirUsuario } from "@/components/admin/excluir-usuario";
 import { WhatsappButton } from "@/components/admin/whatsapp-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
+import { AcaoDeCadastro } from "@/components/admin/acao-de-cadastro";
 import { resumosDosAlunos } from "@/lib/site/desempenho-servidor";
 import { diasSemEstudar } from "@/lib/site/desempenho";
 import { hojeISO } from "@/lib/site/data";
@@ -14,6 +15,7 @@ import type { Profile } from "@/types/database";
 import {
   criarAlunoManual,
   criarProfessorManual,
+  criarParceiroManual,
   alterarPlano,
   reenviarConvite,
   reenviarSenha,
@@ -66,7 +68,130 @@ export default async function AdminUsuariosPage({
       <h1 className="font-display text-xl font-bold text-navy-dark sm:text-2xl">Usuários</h1>
       <AdminAlert erro={searchParams.erro} sucesso={searchParams.sucesso} />
 
-      <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap" action="/admin/usuarios">
+      {/* As três ações de cadastro ficam AQUI, antes de tudo. Antes viviam
+          depois da tabela: com a lista crescendo, encontrá-las virava uma
+          rolagem até o fim de centenas de linhas. */}
+      <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap">
+        <AcaoDeCadastro
+          titulo="Adicionar usuário"
+          descricao="Cria a matrícula, libera o acesso e envia o e-mail de convite — sem passar pelo checkout do Asaas. Use para vendas fechadas fora da plataforma, cortesias ou bolsas."
+        >
+          <form action={criarAlunoManual} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold" htmlFor="nome">Nome</label>
+                <input id="nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="email">E-mail</label>
+                <input id="email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="telefone">Telefone/WhatsApp</label>
+                <input id="telefone" name="telefone" required placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="planoId">Plano</label>
+                <select id="planoId" name="planoId" required className="mt-1 w-full rounded-lg border p-3">
+                  <option value="">Selecione...</option>
+                  {(planos ?? []).map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="dataInicio">Data de início</label>
+                <input id="dataInicio" name="dataInicio" type="date" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="dataVencimento">Data de vencimento (vazio = sem vencimento)</label>
+                <input id="dataVencimento" name="dataVencimento" type="date" className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="statusMatricula">Status da matrícula</label>
+                <select id="statusMatricula" name="statusMatricula" defaultValue="ativa" className="mt-1 w-full rounded-lg border p-3">
+                  <option value="ativa">Ativa</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="bloqueada">Bloqueada</option>
+                  <option value="cancelada">Cancelada</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="origemPagamento">Origem do pagamento</label>
+                <select id="origemPagamento" name="origemPagamento" defaultValue="manual" className="mt-1 w-full rounded-lg border p-3">
+                  <option value="manual">Pagamento confirmado manualmente</option>
+                  <option value="asaas">Pagamento via Asaas</option>
+                  <option value="cortesia">Cortesia/bolsa</option>
+                </select>
+              </div>
+            </div>
+            <SubmitButton
+              pendingText="Cadastrando..."
+              className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+            >
+              Cadastrar aluno
+            </SubmitButton>
+          </form>
+        </AcaoDeCadastro>
+
+        <AcaoDeCadastro
+          titulo="Adicionar parceiro"
+          descricao="Cria o acesso de um afiliado, que passa a ver o próprio painel de vendas e comissões. Depois de criado, gere o cupom dele em Cupons. Sem matrícula e sem plano — é um papel de trabalho, não de estudo."
+        >
+          <form action={criarParceiroManual} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold" htmlFor="parc-nome">Nome</label>
+                <input id="parc-nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="parc-email">E-mail</label>
+                <input id="parc-email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="parc-telefone">Telefone/WhatsApp (opcional)</label>
+                <input id="parc-telefone" name="telefone" placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+            </div>
+            <SubmitButton
+              pendingText="Cadastrando..."
+              className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+            >
+              Cadastrar parceiro
+            </SubmitButton>
+          </form>
+        </AcaoDeCadastro>
+
+        <AcaoDeCadastro
+          titulo="Adicionar professor"
+          descricao="Cria o acesso de um professor, que passa a ver os créditos de redação dos alunos e o próprio financeiro. Sem matrícula e sem plano. Ele recebe um e-mail para definir a própria senha."
+        >
+          <form action={criarProfessorManual} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold" htmlFor="prof-nome">Nome</label>
+                <input id="prof-nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="prof-email">E-mail</label>
+                <input id="prof-email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="prof-telefone">Telefone/WhatsApp (opcional)</label>
+                <input id="prof-telefone" name="telefone" placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
+              </div>
+            </div>
+            <SubmitButton
+              pendingText="Cadastrando..."
+              className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
+            >
+              Cadastrar professor
+            </SubmitButton>
+          </form>
+        </AcaoDeCadastro>
+      </div>
+
+      <form className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap" action="/admin/usuarios">
         <input
           name="q"
           defaultValue={searchParams.q}
@@ -305,100 +430,6 @@ export default async function AdminUsuariosPage({
             </div>
           )}
         />
-      </div>
-
-      <div className="mt-8 max-w-2xl rounded-2xl bg-white p-6 shadow">
-        <h2 className="font-display font-bold text-navy-dark">Adicionar aluno manualmente</h2>
-        <p className="mt-1 text-sm text-navy-dark/60">
-          Cria a matrícula, libera o acesso e envia o e-mail de convite — sem passar pelo checkout do Asaas.
-          Use para vendas fechadas fora da plataforma, cortesias ou bolsas.
-        </p>
-        <form action={criarAlunoManual} className="mt-4 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-sm font-semibold" htmlFor="nome">Nome</label>
-              <input id="nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="email">E-mail</label>
-              <input id="email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="telefone">Telefone/WhatsApp</label>
-              <input id="telefone" name="telefone" required placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="planoId">Plano</label>
-              <select id="planoId" name="planoId" required className="mt-1 w-full rounded-lg border p-3">
-                <option value="">Selecione...</option>
-                {(planos ?? []).map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.nome}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="dataInicio">Data de início</label>
-              <input id="dataInicio" name="dataInicio" type="date" required className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="dataVencimento">Data de vencimento (vazio = sem vencimento)</label>
-              <input id="dataVencimento" name="dataVencimento" type="date" className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="statusMatricula">Status da matrícula</label>
-              <select id="statusMatricula" name="statusMatricula" defaultValue="ativa" className="mt-1 w-full rounded-lg border p-3">
-                <option value="ativa">Ativa</option>
-                <option value="pendente">Pendente</option>
-                <option value="bloqueada">Bloqueada</option>
-                <option value="cancelada">Cancelada</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="origemPagamento">Origem do pagamento</label>
-              <select id="origemPagamento" name="origemPagamento" defaultValue="manual" className="mt-1 w-full rounded-lg border p-3">
-                <option value="manual">Pagamento confirmado manualmente</option>
-                <option value="asaas">Pagamento via Asaas</option>
-                <option value="cortesia">Cortesia/bolsa</option>
-              </select>
-            </div>
-          </div>
-          <SubmitButton
-            pendingText="Cadastrando..."
-            className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
-          >
-            Cadastrar aluno
-          </SubmitButton>
-        </form>
-      </div>
-
-      <div className="mt-8 max-w-2xl rounded-2xl bg-white p-6 shadow">
-        <h2 className="font-display font-bold text-navy-dark">Adicionar professor manualmente</h2>
-        <p className="mt-1 text-sm text-navy-dark/60">
-          Cria o acesso de login para um professor (sem matrícula/plano — é um papel organizacional para
-          identificação no painel). O professor recebe um e-mail para definir a própria senha.
-        </p>
-        <form action={criarProfessorManual} className="mt-4 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-sm font-semibold" htmlFor="prof-nome">Nome</label>
-              <input id="prof-nome" name="nome" required className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="prof-email">E-mail</label>
-              <input id="prof-email" name="email" type="email" required className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="prof-telefone">Telefone/WhatsApp (opcional)</label>
-              <input id="prof-telefone" name="telefone" placeholder="(87) 99999-9999" className="mt-1 w-full rounded-lg border p-3" />
-            </div>
-          </div>
-          <SubmitButton
-            pendingText="Cadastrando..."
-            className="rounded-full bg-orange px-6 py-3 font-display font-bold text-white hover:bg-orange-dark"
-          >
-            Cadastrar professor
-          </SubmitButton>
-        </form>
       </div>
 
       <p className="mt-6 text-sm text-navy-dark/50">

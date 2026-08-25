@@ -12,6 +12,9 @@ import { Icon } from "@/components/admin/icon";
 const GRUPO_GESTAO = [
   { href: "/admin", label: "Visão Geral", icon: "gauge" },
   { href: "/admin/vendas", label: "Vendas", icon: "money" },
+  // A outra metade do financeiro: Vendas diz quanto entrou, Repasses diz
+  // quanto sai e para quem. Fica ao lado dela de propósito.
+  { href: "/admin/repasses", label: "Repasses", icon: "gift" },
   { href: "/admin/usuarios", label: "Usuários", icon: "user" },
   { href: "/admin/matriculas", label: "Matrículas", icon: "file" },
   { href: "/admin/planos", label: "Planos", icon: "ticket" },
