@@ -45,6 +45,10 @@ import { chaveDeItemTrilha } from "@/lib/trilha/progresso";
 /** Só o que este módulo precisa do client — evita acoplar ao tipo gerado. */
 type ClienteSupabase = {
   from: (tabela: string) => any;
+  // `any` pelo mesmo motivo de `from`: o retorno real é o construtor de
+  // consulta do supabase-js, que é aguardável mas não é um Promise puro.
+  /** `sincronizar_rota_do_aluno` — ver a migração 073. */
+  rpc: (funcao: string, argumentos: Record<string, unknown>) => any;
 };
 
 interface LinhaRota {
@@ -350,14 +354,7 @@ export async function sincronizarRota(
 
     if (!precisaRegravar((atuais as LinhaRota[]) ?? [], rota)) return;
 
-    const { error: erroLimpeza } = await supabase.from("aluno_rota_dias").delete().eq("aluno_id", alunoId);
-    if (erroLimpeza) {
-      console.error("Rota: falha ao limpar a rota anterior:", erroLimpeza.message);
-      return;
-    }
-
     const linhas = rota.dias.map((d) => ({
-      aluno_id: alunoId,
       route_day: d.routeDay,
       scheduled_date: d.scheduledDate,
       template_days: d.templateDays,
@@ -368,8 +365,28 @@ export async function sincronizarRota(
       assinatura: rota.assinatura
     }));
 
-    const { error: erroInsercao } = await supabase.from("aluno_rota_dias").insert(linhas);
-    if (erroInsercao) console.error("Rota: falha ao gravar a nova rota:", erroInsercao.message);
+    // APAGAR e GRAVAR numa transação só, do lado do banco.
+    //
+    // Eram dois comandos separados aqui: `delete` e depois `insert`. Entre um
+    // e outro o aluno ficava com ZERO dias, e uma falha no `insert` o deixava
+    // assim — pior do que antes de tentar. Foi assim que uma aluna do Voo
+    // Guiado ficou com o cronograma vazio na ficha do mentor, com o app dela
+    // funcionando (a rota é remontada em memória a cada carregamento, então a
+    // ausência só aparecia de fora).
+    //
+    // Agora, se a inserção falhar por qualquer motivo, o `delete` volta atrás
+    // junto e o aluno continua com o cronograma que tinha. Ver a migração
+    // 073.
+    const { error: erroGravacao } = await supabase.rpc("sincronizar_rota_do_aluno", {
+      p_aluno_id: alunoId,
+      p_linhas: linhas
+    });
+    if (erroGravacao) {
+      console.error(
+        `Rota: falha ao gravar a rota do aluno ${alunoId} (${rota.dias.length} dias). A rota anterior foi mantida:`,
+        erroGravacao.message
+      );
+    }
   } catch (e) {
     // Idem: a rota em memória já está correta e é ela que a tela usa.
     console.error("Rota: erro inesperado ao sincronizar:", e);
@@ -433,7 +450,19 @@ export async function regerarRotaDoAluno(
 
   await aplicarQuestoesExtras(supabase, alunoId, rota, contexto);
 
-  await limparRotaDoAluno(supabase, alunoId);
+  // Aqui havia um `limparRotaDoAluno` ANTES da gravação, e era ele que
+  // esvaziava o cronograma do aluno.
+  //
+  // `sincronizarRota` valida a rota nova antes de gravar e desiste quando ela
+  // não passa — o comentário lá diz, com razão, que "o aluno continua com a
+  // rota anterior, que ao menos era executável". Só que por ESTE caminho a
+  // rota anterior já tinha sido apagada uma linha acima, então desistir
+  // deixava o aluno sem cronograma nenhum. E este é justamente o caminho do
+  // mentor: acontecia no momento em que ele salvava o briefing.
+  //
+  // A limpeza era desnecessária desde sempre: a gravação já troca a rota
+  // inteira, agora numa transação só (migração 073). Sem ela, uma recusa na
+  // validação passa a de fato preservar o que existia.
   await sincronizarRota(supabase, alunoId, rota, opcoes.template);
   return rota;
 }
