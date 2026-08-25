@@ -829,8 +829,27 @@ export function parametrosDoBriefing(
   const dataProva = briefing?.data_prova?.slice(0, 10);
   if (!dataProva) return null;
 
+  // A ROTA É ANCORADA NO INÍCIO DO ALUNO, NÃO EM HOJE.
+  //
+  // Era `informado > hoje ? informado : hoje`: assim que a data de início
+  // passava, o início virava HOJE — e a rota inteira era remontada todo dia
+  // começando de novo no dia 1.
+  //
+  // O efeito para quem estuda: o cartão da tela inicial dizia "DIA 1 DE 44"
+  // na terça, "DIA 1 DE 43" na quarta, "DIA 1 DE 42" na quinta. O total
+  // encolhia junto com o calendário, mas o contador nunca saía do 1. Uma
+  // aluna descreveu como "está do mesmo jeito": ela nunca via progresso
+  // nenhum, porque não havia progresso a ver — a régua reiniciava com ela.
+  //
+  // Ancorada no início, o dia de hoje cai onde de fato caiu na jornada dela:
+  // DIA 3 DE 46 hoje, DIA 4 DE 46 amanhã, e o total para de encolher.
+  //
+  // O que se perde: dias que já passaram ficam no passado da rota, e o
+  // conteúdo deles não volta a ser "a missão de hoje". Não some — continua no
+  // cronograma, marcado como pendente, e o gerador já favorece o que ainda
+  // não foi feito na hora de montar os dias seguintes.
   const informado = briefing?.inicio_estudos?.slice(0, 10);
-  const inicio = informado && informado > hoje ? informado : hoje;
+  const inicio = informado || hoje;
   if (inicio >= dataProva) return null;
 
   const horas = Number(briefing?.horas_por_dia_semana ?? 2);

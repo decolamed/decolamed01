@@ -238,14 +238,47 @@ test("4 — a âncora é o início informado pelo aluno, não a data de matrícu
   assert.equal(dias.filter((d) => d.scheduledDate < "2026-08-12").length, 0);
 });
 
-test("4b — início já passado usa hoje, não ressuscita dias vencidos", () => {
+test("4b — a rota é ancorada no início do aluno, mesmo que ele já tenha passado", () => {
+  // Este teste já afirmou o CONTRÁRIO: que um início passado virava "hoje",
+  // para não ressuscitar dias vencidos. A intenção era boa e o efeito era
+  // ruim — remontar a rota a partir de hoje, todo dia, congelava o aluno no
+  // dia 1 para sempre (ver o teste seguinte) e fazia os ajustes do mentor,
+  // que são gravados por NÚMERO do dia, caírem numa data diferente a cada dia.
   const p = parametrosDoBriefing(
     { data_prova: "2026-08-31", inicio_estudos: "2026-07-12", dias_estuda: TODOS_OS_DIAS, horas_por_dia_semana: 2 },
     "2026-08-09"
   );
-  assert.equal(p.inicio, "2026-08-09", "o que passou não volta");
-  const { dias } = gerarRota(template(), p);
-  assert.equal(dias.filter((d) => d.scheduledDate < "2026-08-09").length, 0);
+  assert.equal(p.inicio, "2026-07-12", "a régua é a jornada do aluno, não o dia de hoje");
+});
+
+test("4c — o dia de hoje AVANÇA de um dia para o outro", () => {
+  // O defeito relatado por uma aluna: o cartão dizia "DIA 1 DE 44" na terça,
+  // "DIA 1 DE 43" na quarta, "DIA 1 DE 42" na quinta. O total encolhia com o
+  // calendário e o contador nunca saía do 1 — ela não via progresso nenhum
+  // porque não havia progresso a ver.
+  const briefing = {
+    data_prova: "2026-08-31",
+    inicio_estudos: "2026-08-01",
+    dias_estuda: TODOS_OS_DIAS,
+    horas_por_dia_semana: 2
+  };
+
+  const lido = (hoje) => {
+    const rota = gerarRota(template(), parametrosDoBriefing(briefing, hoje));
+    return {
+      dia: diaAtualDaRota(rota.dias, hoje)?.routeDay,
+      total: rota.dias.filter((d) => d.tipo !== "prova").length
+    };
+  };
+
+  const terca = lido("2026-08-11");
+  const quarta = lido("2026-08-12");
+  const quinta = lido("2026-08-13");
+
+  assert.equal(quarta.dia, terca.dia + 1, "o dia de amanhã é o de hoje mais um");
+  assert.equal(quinta.dia, terca.dia + 2);
+  assert.equal(quarta.total, terca.total, "e o total para de encolher");
+  assert.equal(quinta.total, terca.total);
 });
 
 test("sem data de prova não há rota — melhor nada do que uma rota chutada", () => {
