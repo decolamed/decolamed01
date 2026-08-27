@@ -62,7 +62,7 @@ export default function RedefinirSenhaPage() {
 
   if (verificandoSessao) {
     return (
-      <div className="rounded-3xl bg-white p-8 text-center shadow-xl">
+      <div className="rounded-3xl bg-white p-6 sm:p-8 text-center shadow-xl">
         <p className="text-navy-dark/60">Verificando link...</p>
       </div>
     );
@@ -70,7 +70,7 @@ export default function RedefinirSenhaPage() {
 
   if (semSessao) {
     return (
-      <div className="rounded-3xl bg-white p-8 text-center shadow-xl">
+      <div className="rounded-3xl bg-white p-6 sm:p-8 text-center shadow-xl">
         <h1 className="font-display text-2xl font-bold text-navy-dark">Link inválido ou expirado</h1>
         <p className="mt-2 text-sm text-navy-dark/60">
           Peça um novo link de redefinição de senha.
@@ -83,7 +83,7 @@ export default function RedefinirSenhaPage() {
   }
 
   return (
-    <div className="rounded-3xl bg-white p-8 shadow-xl">
+    <div className="rounded-3xl bg-white p-6 sm:p-8 shadow-xl">
       <h1 className="text-center font-display text-2xl font-bold text-navy-dark">Criar senha</h1>
       <p className="mt-2 text-center text-sm text-navy-dark/60">
         Defina a senha que você vai usar para acessar a plataforma.
