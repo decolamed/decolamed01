@@ -8,7 +8,8 @@ import {
   cupomValeNoPlano,
   normalizarPlanos,
   valorParaGravar,
-  descreverAplicacao
+  descreverAplicacao,
+  lerEscolhaDePlanos
 } from "./planos-aplicaveis.ts";
 
 const VOO = "11111111-1111-1111-1111-111111111111";
@@ -82,4 +83,67 @@ test("a restrição é descrita pelo nome do plano", () => {
 
 test("plano apagado depois não quebra a listagem", () => {
   assert.equal(descreverAplicacao([VOO], new Map()), "Plano removido");
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// A ESCOLHA DO ADMINISTRADOR
+//
+// O caso real: o DECOLA30 (30%) deveria valer só no VOO GUIADO. Ficou gravado
+// como "todos os planos", e um DECOLANDO PRO de R$ 170,00 saiu por R$ 119,00.
+// A tela era só uma lista de caixas, e "nenhuma marcada" queria dizer TODOS —
+// o inverso do que desmarcar uma caixa sugere.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Um FormData de mentira com só o que o módulo lê. */
+function formulario(campos) {
+  return {
+    get: (nome) => (nome in campos ? campos[nome] : null),
+    getAll: (nome) => {
+      const v = campos[nome];
+      return v === undefined ? [] : Array.isArray(v) ? v : [v];
+    }
+  };
+}
+
+test('"todos os planos" grava nulo, que é como o banco representa "sem restrição"', () => {
+  const r = lerEscolhaDePlanos(formulario({ restricao_planos: "todos" }));
+  assert.deepEqual(r, { ok: true, planos: null });
+});
+
+test("restringir a um plano grava só aquele plano", () => {
+  const r = lerEscolhaDePlanos(formulario({ restricao_planos: "selecionados", planos_aplicaveis: [VOO] }));
+  assert.deepEqual(r, { ok: true, planos: [VOO] });
+});
+
+test("restringir SEM marcar plano nenhum é recusado, não vira 'todos'", () => {
+  // Este é o teste que descreve o defeito. Antes, esta combinação gravava
+  // nulo — e o cupom passava a valer em todo lugar, que é o oposto do pedido.
+  const r = lerEscolhaDePlanos(formulario({ restricao_planos: "selecionados", planos_aplicaveis: [] }));
+  assert.equal(r.ok, false);
+  assert.match(r.erro, /marque ao menos um|marcou nenhum/i);
+});
+
+test("marcar planos sem escolher restringir continua valendo em todos", () => {
+  // A decisão manda, não as caixas: o campo de restrição é a fonte da verdade.
+  const r = lerEscolhaDePlanos(formulario({ restricao_planos: "todos", planos_aplicaveis: [VOO, DECOLANDO] }));
+  assert.deepEqual(r, { ok: true, planos: null });
+});
+
+test("formulário sem o campo de decisão cai em 'todos os planos'", () => {
+  // Restringir por engano bloquearia um desconto que o cliente já viu na tela.
+  assert.deepEqual(lerEscolhaDePlanos(formulario({})), { ok: true, planos: null });
+});
+
+test("planos repetidos ou em branco não sujam a lista gravada", () => {
+  const r = lerEscolhaDePlanos(
+    formulario({ restricao_planos: "selecionados", planos_aplicaveis: [VOO, "  ", VOO, ""] })
+  );
+  assert.deepEqual(r, { ok: true, planos: [VOO] });
+});
+
+test("o cupom restrito ao VOO GUIADO recusa o DECOLANDO PRO", () => {
+  // A ponta final: com a lista gravada certa, a validação faz o resto.
+  const r = lerEscolhaDePlanos(formulario({ restricao_planos: "selecionados", planos_aplicaveis: [VOO] }));
+  assert.equal(cupomValeNoPlano(r.planos, VOO), true);
+  assert.equal(cupomValeNoPlano(r.planos, DECOLANDO), false, "era esta a venda que não podia ter saído com desconto");
 });

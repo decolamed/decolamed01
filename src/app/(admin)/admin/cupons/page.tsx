@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { AdminAlert } from "@/components/admin/admin-alert";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { TabelaResponsiva } from "@/components/admin/tabela-responsiva";
-import { valorParaGravar, descreverAplicacao } from "@/lib/cupons/planos-aplicaveis";
+import { lerEscolhaDePlanos, descreverAplicacao, CAMPO_DA_RESTRICAO, RESTRITO } from "@/lib/cupons/planos-aplicaveis";
 import type { Cupom } from "@/types/database";
 import { falhaAoCarregar } from "@/lib/supabase/resultado";
 
@@ -34,6 +34,13 @@ async function criarCupom(formData: FormData) {
     }
   }
 
+  // A restrição por plano é DECLARADA no formulário, não deduzida das caixas
+  // marcadas — ver lib/cupons/planos-aplicaveis.ts.
+  const escolhaDePlanos = lerEscolhaDePlanos(formData);
+  if (!escolhaDePlanos.ok) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent(escolhaDePlanos.erro)}`);
+  }
+
   const { error } = await supabase.from("cupons").insert({
     codigo: String(formData.get("codigo")).trim().toUpperCase(),
     tipo: String(formData.get("tipo")),
@@ -46,10 +53,7 @@ async function criarCupom(formData: FormData) {
     // trigger sync_comissao_parceiro).
     parceiro_id: parceiroId || null,
     percentual_comissao: parceiroId && percentualComissao ? Number(percentualComissao) : 0,
-    // Nenhum plano marcado = vale em todos, que é o comportamento de sempre.
-    // `valorParaGravar` transforma lista vazia em nulo (ver
-    // lib/cupons/planos-aplicaveis.ts).
-    planos_aplicaveis: valorParaGravar(formData.getAll("planos_aplicaveis"))
+    planos_aplicaveis: escolhaDePlanos.planos
   });
 
   revalidatePath("/admin/cupons");
@@ -92,9 +96,14 @@ async function salvarPlanosDoCupom(formData: FormData) {
   "use server";
   await requireAdmin();
   const supabase = createAdminClient();
+  const escolha = lerEscolhaDePlanos(formData);
+  if (!escolha.ok) {
+    redirect(`/admin/cupons?erro=${encodeURIComponent(escolha.erro)}`);
+  }
+
   const { error } = await supabase
     .from("cupons")
-    .update({ planos_aplicaveis: valorParaGravar(formData.getAll("planos_aplicaveis")) })
+    .update({ planos_aplicaveis: escolha.planos })
     .eq("id", String(formData.get("id")));
   revalidatePath("/admin/cupons");
   if (error) {
@@ -182,29 +191,60 @@ export default async function AdminCuponsPage({
               titulo: "Cursos/Planos aplicáveis",
               celula: (cupom) => (
                 <div>
+                  {/* O estado ATUAL vem primeiro e em destaque: antes ele
+                      ficava embaixo das caixas, e um cupom liberado em todos
+                      os planos parecia restrito só porque nenhuma caixa
+                      estava marcada. */}
+                  <p className="mb-1.5 text-xs font-bold text-navy-dark">
+                    Hoje: {descreverAplicacao(cupom.planos_aplicaveis, nomePorPlano)}
+                  </p>
+
                   <form action={salvarPlanosDoCupom} className="space-y-1">
                     <input type="hidden" name="id" value={cupom.id} />
-                    {listaDePlanos.map((plano) => (
-                      <label key={plano.id} className="flex items-center gap-1.5 text-xs">
-                        <input
-                          type="checkbox"
-                          name="planos_aplicaveis"
-                          value={plano.id}
-                          defaultChecked={(cupom.planos_aplicaveis ?? []).includes(plano.id)}
-                        />
-                        <span className={plano.ativo ? "" : "text-navy-dark/40"}>
-                          {plano.nome}
-                          {!plano.ativo && " (inativo)"}
-                        </span>
-                      </label>
-                    ))}
+
+                    {/* A decisão é declarada, não deduzida de "nenhuma caixa
+                        marcada" — que significava TODOS e era o inverso do
+                        que desmarcar sugere. */}
+                    <label className="flex items-center gap-1.5 text-xs">
+                      <input
+                        type="radio"
+                        name={CAMPO_DA_RESTRICAO}
+                        value="todos"
+                        defaultChecked={(cupom.planos_aplicaveis ?? []).length === 0}
+                      />
+                      <span>Vale em todos os planos</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs">
+                      <input
+                        type="radio"
+                        name={CAMPO_DA_RESTRICAO}
+                        value={RESTRITO}
+                        defaultChecked={(cupom.planos_aplicaveis ?? []).length > 0}
+                      />
+                      <span>Somente nos planos marcados:</span>
+                    </label>
+
+                    <div className="ml-4 space-y-1 border-l border-navy-dark/10 pl-2">
+                      {listaDePlanos.map((plano) => (
+                        <label key={plano.id} className="flex items-center gap-1.5 text-xs">
+                          <input
+                            type="checkbox"
+                            name="planos_aplicaveis"
+                            value={plano.id}
+                            defaultChecked={(cupom.planos_aplicaveis ?? []).includes(plano.id)}
+                          />
+                          <span className={plano.ativo ? "" : "text-navy-dark/40"}>
+                            {plano.nome}
+                            {!plano.ativo && " (inativo)"}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
                     <SubmitButton pendingText="..." className="text-orange-dark hover:underline text-xs">
                       Salvar planos
                     </SubmitButton>
                   </form>
-                  <p className="mt-1 text-xs text-navy-dark/50">
-                    {descreverAplicacao(cupom.planos_aplicaveis, nomePorPlano)}
-                  </p>
                 </div>
               )
             },
@@ -316,9 +356,16 @@ export default async function AdminCuponsPage({
           </div>
           <div>
             <label className="text-sm font-semibold">Cursos/Planos aplicáveis</label>
-            <p className="mt-0.5 text-xs text-navy-dark/50">
-              Nenhum marcado = vale em todos os planos. Marque um ou mais para restringir.
-            </p>
+            <div className="mt-1.5 space-y-1.5">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name={CAMPO_DA_RESTRICAO} value="todos" defaultChecked />
+                <span>Vale em <strong>todos</strong> os planos</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name={CAMPO_DA_RESTRICAO} value={RESTRITO} />
+                <span>Somente nos planos marcados abaixo</span>
+              </label>
+            </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {listaDePlanos.map((plano) => (
                 <label key={plano.id} className="flex items-center gap-2 rounded-lg border p-2.5 text-sm">

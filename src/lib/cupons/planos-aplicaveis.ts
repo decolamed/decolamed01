@@ -58,6 +58,56 @@ export function valorParaGravar(valor: unknown): string[] | null {
   return lista.length > 0 ? lista : null;
 }
 
+// ============================================================================
+// A ESCOLHA DO ADMINISTRADOR, LIDA SEM AMBIGUIDADE
+//
+// O formulário era só uma lista de caixas de seleção, e "nenhuma marcada"
+// significava TODOS OS PLANOS. É o inverso do que a caixa sugere: quem
+// desmarca um plano está tirando o cupom dele, e quem desmarca todos espera
+// tirar o cupom de todos — não liberá-lo geral.
+//
+// Foi exatamente o que aconteceu com o DECOLA30: ele deveria valer só no VOO
+// GUIADO, ficou gravado como "todos os planos", e um DECOLANDO PRO de
+// R$ 170,00 foi vendido com 30% de desconto.
+//
+// Agora a intenção é declarada, não deduzida: ou o cupom vale em todos, ou
+// vale nos marcados — e "nos marcados, nenhum marcado" é um erro que a tela
+// mostra, não um estado que o banco aceita em silêncio.
+// ============================================================================
+
+export type EscolhaDePlanos =
+  | { ok: true; planos: string[] | null }
+  | { ok: false; erro: string };
+
+/** O nome do campo que carrega a decisão no formulário. */
+export const CAMPO_DA_RESTRICAO = "restricao_planos";
+export const RESTRITO = "selecionados";
+
+/**
+ * Lê a escolha do formulário do painel.
+ *
+ * Sem o campo de decisão — um formulário antigo, ou uma requisição montada à
+ * mão — cai em "todos os planos", que é o comportamento histórico e o único
+ * seguro de assumir: restringir por engano bloquearia um desconto que o
+ * cliente já viu na tela.
+ */
+export function lerEscolhaDePlanos(form: {
+  get(nome: string): unknown;
+  getAll(nome: string): unknown[];
+}): EscolhaDePlanos {
+  const restricao = String(form.get(CAMPO_DA_RESTRICAO) ?? "").trim();
+  if (restricao !== RESTRITO) return { ok: true, planos: null };
+
+  const lista = normalizarPlanos(form.getAll("planos_aplicaveis"));
+  if (lista.length === 0) {
+    return {
+      ok: false,
+      erro: 'Você escolheu restringir o cupom, mas não marcou nenhum plano. Marque ao menos um — ou selecione "Vale em todos os planos".'
+    };
+  }
+  return { ok: true, planos: lista };
+}
+
 /** O texto mostrado ao cliente quando o cupom não vale para o plano dele. */
 export const MENSAGEM_PLANO_NAO_ELEGIVEL = "Este cupom não é válido para este plano.";
 
