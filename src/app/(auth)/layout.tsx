@@ -30,20 +30,25 @@ import Image from "next/image";
 // existe na tela e o conteúdo é empurrado para baixo do que se vê. `dvh`
 // acompanha a altura real.
 //
-// `justify-center` com `py-8`: o bloco fica centrado quando cabe, e a folga
-// vertical garante respiro quando o teclado do celular sobe e a área visível
-// encolhe.
+// A FOLGA É MAIOR EMBAIXO, DE PROPÓSITO: `pt-6 pb-16`.
+//
+// Com padding igual dos dois lados o bloco fica geometricamente centrado e
+// ainda assim parece baixo — em parte porque olho lê o centro um pouco acima
+// do meio real, em parte porque no Android a área da página se estende por
+// baixo da barra de navegação do sistema, que rouba do fundo um pedaço que a
+// conta não enxerga. Mais respiro embaixo empurra o bloco para cima e
+// devolve o equilíbrio na tela de verdade.
 // ============================================================================
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="flex min-h-dvh flex-col justify-center px-5 py-8"
+      className="flex min-h-dvh flex-col justify-center px-5 pb-16 pt-6"
       style={{
         background: "radial-gradient(1200px 700px at 50% -10%, #0e3a5c 0%, #0a2438 60%, #071a2a 100%)"
       }}
     >
       <div className="mx-auto w-full max-w-md">
-        <div className="mb-7 flex justify-center sm:mb-9">
+        <div className="mb-6 flex justify-center sm:mb-7">
           <Image
             src="/assets/logo-marca.png"
             alt="Decola Med"
@@ -52,7 +57,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             priority
             // A largura manda; a altura acompanha. Assim a marca cresce no
             // celular sem virar um bloco desproporcional no desktop.
-            className="h-auto w-56 sm:w-64"
+            className="h-auto w-40 sm:w-48"
           />
         </div>
         {children}
