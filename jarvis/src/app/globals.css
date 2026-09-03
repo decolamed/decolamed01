@@ -1,0 +1,433 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   O DOCUMENTO
+
+   As classes `r-*` abaixo não podem ser utilitários do Tailwind. O HTML do
+   resumo é montado como STRING em src/lib/resumo/renderizar.ts, e o Tailwind
+   só gera classe que ele encontra varrendo o código-fonte — utilitário usado
+   só dentro de uma string sai do CSS final e a página chega sem estilo.
+   Por isso, CSS de verdade, escrito à mão, aqui.
+   ========================================================================== */
+
+:root {
+  --tinta-950: #0a0f14;
+  --tinta-900: #0f151c;
+  --tinta-800: #1a232e;
+  --tinta-700: #25313f;
+  --tinta-500: #5a6b7d;
+  --tinta-300: #b4c1cd;
+  --tinta-200: #dbe3ea;
+  --tinta-100: #eef3f7;
+  --ciano-600: #0b7f8c;
+  --ciano-500: #0fa3b1;
+  --ciano-100: #e0f7fa;
+  --ambar-600: #b45309;
+  --ambar-400: #f5a623;
+  --ambar-100: #fff3d6;
+  --alerta-600: #b42318;
+  --alerta-100: #fdecea;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--tinta-100);
+  color: var(--tinta-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------
+   Resumo — tipografia de leitura longa
+   -------------------------------------------------------------------------- */
+
+.resumo {
+  font-family: Charter, "Bitstream Charter", Georgia, Cambria, "Times New Roman", serif;
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  color: var(--tinta-900);
+}
+
+.resumo .r-h1,
+.resumo .r-h2,
+.resumo .r-h3,
+.resumo .r-h4 {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--tinta-950);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.resumo .r-h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 2.5rem 0 1rem;
+  letter-spacing: -0.02em;
+}
+
+/* A régua sob a seção é o principal sinal de hierarquia num texto longo: ela
+   diz "acabou um assunto, começou outro" antes mesmo de a pessoa ler. */
+.resumo .r-h2 {
+  font-size: 1.3125rem;
+  font-weight: 700;
+  margin: 2.25rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--tinta-200);
+  letter-spacing: -0.01em;
+}
+
+.resumo .r-h3 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--ciano-600);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.resumo .r-h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.4rem;
+}
+
+.resumo .r-p {
+  margin: 0 0 1rem;
+}
+
+.resumo .r-forte {
+  font-weight: 700;
+  color: var(--tinta-950);
+}
+
+/* O grifo. Amarelo de marca-texto, mas com a base assentada na linha — sem
+   isso o retângulo colorido flutua e polui o ritmo do parágrafo. */
+.resumo .r-grifo {
+  background: linear-gradient(transparent 58%, var(--ambar-100) 58%);
+  color: inherit;
+  padding: 0 0.1em;
+  font-weight: 600;
+  border-radius: 2px;
+}
+
+.resumo .r-codigo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background: var(--tinta-200);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+
+.resumo .r-lista {
+  margin: 0 0 1rem;
+  padding-left: 1.4rem;
+}
+
+.resumo ul.r-lista {
+  list-style: disc;
+}
+
+.resumo ol.r-lista {
+  list-style: decimal;
+}
+
+.resumo .r-lista li {
+  margin-bottom: 0.4rem;
+}
+
+.resumo .r-lista li::marker {
+  color: var(--ciano-500);
+}
+
+.resumo .r-lista-interna {
+  list-style: circle;
+  margin: 0.4rem 0 0.2rem;
+  padding-left: 1.2rem;
+}
+
+.resumo .r-citacao-bloco {
+  margin: 1.25rem 0;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 3px solid var(--tinta-300);
+  color: var(--tinta-500);
+  font-style: italic;
+}
+
+.resumo .r-regua {
+  border: 0;
+  border-top: 1px solid var(--tinta-200);
+  margin: 2rem 0;
+}
+
+.resumo .r-link {
+  color: var(--ciano-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   A mesma gramática, na conversa
+
+   O Jarvis escreve com a mesma marcação no chat e no resumo — trocar de
+   vocabulário entre os dois só daria a ele mais uma chance de errar. O que
+   muda é a escala: no chat o texto é sans-serif, menor e mais apertado, porque
+   ali se lê em turnos curtos, e não em página corrida.
+   -------------------------------------------------------------------------- */
+
+.resumo-conversa {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+.resumo-conversa .r-h1,
+.resumo-conversa .r-h2 {
+  font-size: 1rem;
+  margin: 1.15rem 0 0.5rem;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.resumo-conversa .r-h3,
+.resumo-conversa .r-h4 {
+  font-size: 0.8125rem;
+  margin: 1rem 0 0.35rem;
+}
+
+.resumo-conversa .r-p,
+.resumo-conversa .r-lista {
+  margin-bottom: 0.7rem;
+}
+
+.resumo-conversa .r-bloco {
+  margin: 0.9rem 0;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.875rem;
+}
+
+.resumo-conversa > *:first-child {
+  margin-top: 0;
+}
+
+.resumo-conversa > *:last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Tabela
+   -------------------------------------------------------------------------- */
+
+.resumo .r-tabela-rolagem {
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  border: 1px solid var(--tinta-200);
+  border-radius: 10px;
+}
+
+.resumo .r-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.resumo .r-tabela th {
+  background: var(--tinta-100);
+  text-align: left;
+  font-weight: 700;
+  color: var(--tinta-950);
+  padding: 0.6rem 0.85rem;
+  border-bottom: 2px solid var(--tinta-200);
+  white-space: nowrap;
+}
+
+.resumo .r-tabela td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--tinta-200);
+  vertical-align: top;
+}
+
+.resumo .r-tabela tr:last-child td {
+  border-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Blocos destacados
+
+   Cada tipo tem cor E rótulo. Só a cor não basta: quem não distingue as cores
+   perderia a informação inteira, e o rótulo também ajuda quem imprime em
+   preto e branco — que é como a maioria imprime.
+   -------------------------------------------------------------------------- */
+
+.resumo .r-bloco {
+  margin: 1.5rem 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: 10px;
+  border-left: 4px solid;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.9688rem;
+  line-height: 1.6;
+  /* Um bloco não pode ser partido ao meio pela quebra de página. */
+  break-inside: avoid;
+}
+
+.resumo .r-bloco-rotulo {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin: 0 0 0.45rem;
+}
+
+.resumo .r-bloco-corpo > .r-p:last-child,
+.resumo .r-bloco-corpo > .r-lista:last-child {
+  margin-bottom: 0;
+}
+
+.resumo .b-conceito {
+  background: #f4f8fb;
+  border-color: var(--tinta-500);
+}
+.resumo .b-conceito .r-bloco-rotulo {
+  color: var(--tinta-500);
+}
+
+.resumo .b-clinico {
+  background: var(--ciano-100);
+  border-color: var(--ciano-500);
+}
+.resumo .b-clinico .r-bloco-rotulo {
+  color: var(--ciano-600);
+}
+
+.resumo .b-atencao {
+  background: var(--alerta-100);
+  border-color: var(--alerta-600);
+}
+.resumo .b-atencao .r-bloco-rotulo {
+  color: var(--alerta-600);
+}
+
+.resumo .b-fluxo {
+  background: var(--ambar-100);
+  border-color: var(--ambar-400);
+}
+.resumo .b-fluxo .r-bloco-rotulo {
+  color: var(--ambar-600);
+}
+
+.resumo .b-nota {
+  background: var(--tinta-100);
+  border-color: var(--tinta-300);
+}
+.resumo .b-nota .r-bloco-rotulo {
+  color: var(--tinta-500);
+}
+
+/* --------------------------------------------------------------------------
+   Citação numerada
+   -------------------------------------------------------------------------- */
+
+.resumo .r-citacao {
+  display: inline-block;
+  vertical-align: super;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 1.05em;
+  padding: 0.2em 0.32em;
+  margin-left: 0.12em;
+  border-radius: 4px;
+  background: var(--ciano-100);
+  color: var(--ciano-600);
+  text-decoration: none;
+}
+
+.resumo .r-citacao:hover {
+  background: var(--ciano-500);
+  color: #fff;
+}
+
+/* Destaca a fonte quando se chega nela pelo número clicado — sem isso, a
+   página rola e a pessoa não sabe qual das quinze linhas era a que ela queria. */
+.fonte:target {
+  background: var(--ciano-100);
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Impressão / salvar em PDF
+
+   O aluno pediu "um arquivo tipo PDF organizadinho". Isto é o que entrega
+   isso: Ctrl+P → Salvar como PDF sai com o documento sozinho na folha, sem
+   menu, sem barra lateral, sem botão.
+   -------------------------------------------------------------------------- */
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .nao-imprimir {
+    display: none !important;
+  }
+
+  .area-de-impressao {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .resumo {
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  .resumo .r-h1 {
+    font-size: 17pt;
+  }
+  .resumo .r-h2 {
+    font-size: 13pt;
+    /* Título de seção no pé da página, com o texto na seguinte, é o defeito
+       clássico de impressão — e o mais fácil de evitar. */
+    break-after: avoid;
+  }
+  .resumo .r-h3 {
+    font-size: 11pt;
+    break-after: avoid;
+  }
+
+  .resumo .r-tabela-rolagem,
+  .resumo .r-tabela tr {
+    break-inside: avoid;
+  }
+
+  /* Sem isto o navegador imprime os fundos coloridos em branco e os blocos
+     destacados somem — o resumo perde justamente a hierarquia visual. */
+  .resumo .r-bloco,
+  .resumo .r-grifo,
+  .resumo .r-tabela th,
+  .resumo .r-citacao {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .resumo .r-link,
+  .resumo .r-citacao {
+    text-decoration: none;
+  }
+}
