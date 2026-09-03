@@ -48,6 +48,12 @@ e escreve.
 
 ---
 
+> **Quer só colocar para funcionar?** Vá direto para **[COMECE-AQUI.md](COMECE-AQUI.md)**
+> — passo a passo, clique a clique, sem pressupor nada. Este README explica o
+> projeto; aquele coloca no ar.
+
+---
+
 ## Rodando
 
 ### 1. Dependências
@@ -86,7 +92,7 @@ npm run dev
 ```bash
 npm run typecheck   # tipos
 npm run lint        # eslint
-npm test            # 31 testes de parse do PubMed e do renderizador
+npm test            # 50 testes: PubMed, renderizador e os dois motores de IA
 npm run build       # build de produção
 ```
 
@@ -126,7 +132,10 @@ src/
       sp/[id]/       a tela de estudo: conversa + objetivos + resumos
       resumos/[id]/  o documento formatado, pronto para imprimir
       configuracoes/ motor de IA, nome, memória do Jarvis
+    comece-aqui/     a tela que aparece quando falta configuração
+    diagnostico/     testa banco, PubMed e IA separadamente, ao vivo
   lib/
+    config.ts        confere o .env e diz o que falta, em português
     pubmed/          E-utilities do NCBI: busca, parse do XML, fila de saída
     ia/              a fronteira com o modelo
       claude.ts        laço de ferramentas com o SDK da Anthropic
@@ -139,7 +148,9 @@ src/
       renderizar.ts    markdown estendido → HTML, com escape e citações
     supabase/        clientes: servidor (RLS), navegador, admin (sem RLS)
 supabase/schema.sql  tabelas, gatilhos, RLS e GRANTs
-middleware.ts        renovação de sessão e roteamento por login
+src/middleware.ts    renovação de sessão e roteamento por login
+                     (dentro de src/ porque o projeto usa src/ — na raiz o
+                      Next ignora o arquivo, silenciosamente)
 ```
 
 ### Onde estão as decisões
@@ -162,18 +173,20 @@ cabeçalho antes:
 
 Sendo honesto sobre o estado disto:
 
-- **Cobrança.** `perfis.plano` e `perfis.acesso_ate` existem e estão protegidos
-  (o usuário não consegue promover a si mesmo — o GRANT é por coluna), mas
-  nenhum meio de pagamento está ligado e nenhuma cota é aplicada. Hoje todo
-  mundo que cria conta usa tudo.
-- **Limite de uso.** Cada conversa gasta API de IA. Antes de abrir para o
-  público, isso precisa de teto por usuário — senão a conta é sua.
-- **A fila do PubMed é por instância.** Num deploy com várias instâncias
-  (Vercel), o limite real do NCBI é o desta fila vezes o número de instâncias.
-  Quando o volume justificar, trocar por um limitador compartilhado.
+- **Cobrança, planos e cotas.** Removidos de propósito: este build é para uso
+  próprio. Quando virar produto, o teto por usuário precisa entrar ANTES do
+  primeiro cliente — a unidade natural de cobrança aqui é a situação-problema,
+  que é também a unidade real de custo.
+- **Deploy.** Roda com `npm run dev` na sua máquina. Não há nada hospedado.
+- **A fila do PubMed é por instância.** Rodando local, é exatamente o que se
+  quer. Num deploy com várias instâncias, o teto real do NCBI é o desta fila
+  vezes o número de instâncias.
 - **Sem streaming.** A resposta chega inteira quando fica pronta. Com busca no
   PubMed no meio, isso pode levar alguns segundos.
 - **Nunca rodou contra o Supabase nem contra as APIs de IA de verdade.** O
-  ambiente onde foi escrito não tem saída para `eutils.ncbi.nlm.nih.gov`. O
-  parse do XML do PubMed e o renderizador do resumo são cobertos por testes; o
-  resto precisa de um primeiro teste ponta a ponta seu.
+  ambiente onde foi escrito não alcança `eutils.ncbi.nlm.nih.gov` nem as APIs
+  dos modelos. O que É coberto por teste: o parse do XML do PubMed, o
+  renderizador do resumo, e o formato dos pedidos aos dois motores (o do Claude
+  contra um servidor HTTP local, para testar a serialização real do SDK). O que
+  falta é a primeira execução com chave de verdade — para isso existe a tela
+  `/diagnostico`.

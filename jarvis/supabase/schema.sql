@@ -35,10 +35,6 @@ create table if not exists perfis (
   -- Qual motor de IA este usuário quer usar. A CHAVE de cada motor mora só em
   -- variável de ambiente do servidor — aqui fica apenas a preferência.
   motor_ia text not null default 'claude' check (motor_ia in ('claude', 'gemini')),
-  -- Assinatura. Ainda não há cobrança ligada; estes campos existem para o
-  -- controle de acesso já nascer no lugar certo em vez de ser enxertado depois.
-  plano text not null default 'gratis' check (plano in ('gratis', 'pro')),
-  acesso_ate date,
   criado_em timestamptz not null default now()
 );
 
@@ -299,10 +295,9 @@ grant select, insert, update, delete on
   to authenticated;
 
 -- `perfis` é o único caso com GRANT por COLUNA. O usuário lê o próprio perfil
--- inteiro, mas só pode escrever em `nome` e `motor_ia`. É assim, e não por
--- gatilho, que ninguém promove a si mesmo para o plano pago pela API: o
--- Postgres recusa o UPDATE em `plano`/`acesso_ate` antes de qualquer regra
--- nossa rodar. A mudança de plano fica sendo operação de servidor, com a
--- service role — que ignora RLS e ignora estes GRANTs.
+-- inteiro, mas só pode escrever em `nome` e `motor_ia` — nunca em `id` nem em
+-- `email`, que são a identidade dele. O Postgres recusa esse UPDATE antes de
+-- qualquer regra nossa rodar, o que é bem mais difícil de furar do que um
+-- gatilho que alguém pode esquecer de manter.
 grant select on perfis to authenticated;
 grant update (nome, motor_ia) on perfis to authenticated;

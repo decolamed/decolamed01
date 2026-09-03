@@ -118,11 +118,14 @@ export default async function PaginaConfiguracoes() {
             <dt className="text-tinta-500">E-mail</dt>
             <dd className="text-tinta-900">{perfil.data?.email}</dd>
           </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-tinta-500">Plano</dt>
-            <dd className="text-tinta-900">{perfil.data?.plano === "pro" ? "Pro" : "Grátis"}</dd>
-          </div>
         </dl>
+        <p className="mt-4 border-t border-tinta-200 pt-4 text-xs leading-relaxed text-tinta-500">
+          Algo não está funcionando? A{" "}
+          <a href="/diagnostico" className="font-semibold text-ciano-600 hover:underline">
+            tela de diagnóstico
+          </a>{" "}
+          testa banco, IA e PubMed e diz qual dos três está com problema.
+        </p>
       </section>
     </div>
   );

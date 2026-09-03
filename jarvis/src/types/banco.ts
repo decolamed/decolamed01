@@ -4,15 +4,11 @@
 import type { Motor } from "@/lib/ia/tipos";
 import type { Referencia } from "@/lib/resumo/tipos";
 
-export type Plano = "gratis" | "pro";
-
 export interface Perfil {
   id: string;
   nome: string;
   email: string;
   motor_ia: Motor;
-  plano: Plano;
-  acesso_ate: string | null;
   criado_em: string;
 }
 
