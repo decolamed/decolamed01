@@ -176,7 +176,14 @@ apagável — em **Configurações**.
   e colar as mesmas variáveis.
 - **Streaming.** A resposta aparece inteira quando fica pronta. Com busca no
   PubMed no meio, leva alguns segundos.
-- **Teste real ponta a ponta.** O ambiente onde isto foi escrito não alcança o
-  PubMed nem as APIs de IA. O parse do PubMed e o renderizador têm 50 testes
-  automatizados; a conversa de verdade, com chave de verdade, **você vai ser o
-  primeiro a rodar**. Se quebrar, me manda o erro que eu conserto.
+- **A conversa com chave de verdade.** É a única peça que ninguém rodou ainda.
+  O ambiente onde isto foi escrito não alcança o PubMed nem as APIs de IA.
+
+  O que **está** verificado rodando: o `schema.sql` aplica sem erro num
+  PostgreSQL de verdade e 24 asserções provam que um usuário não enxerga nada
+  do outro (`npm run test:banco`); a trava que recusa resumo com fonte
+  inventada; o formato dos pedidos aos dois motores; o parse do PubMed; o
+  renderizador. São 84 verificações no total.
+
+  O que falta é justamente o encontro de tudo isso com uma chave real. Rode o
+  `/diagnostico` primeiro — e se quebrar, me manda o erro que eu conserto.

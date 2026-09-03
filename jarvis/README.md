@@ -92,7 +92,8 @@ npm run dev
 ```bash
 npm run typecheck   # tipos
 npm run lint        # eslint
-npm test            # 50 testes: PubMed, renderizador e os dois motores de IA
+npm test            # 60 testes de código
+npm run test:banco  # 24 testes de isolamento entre usuários, num Postgres real
 npm run build       # build de produção
 ```
 
@@ -148,6 +149,7 @@ src/
       renderizar.ts    markdown estendido → HTML, com escape e citações
     supabase/        clientes: servidor (RLS), navegador, admin (sem RLS)
 supabase/schema.sql  tabelas, gatilhos, RLS e GRANTs
+supabase/teste/      sobe um Postgres descartável e prova que a RLS isola
 src/middleware.ts    renovação de sessão e roteamento por login
                      (dentro de src/ porque o projeto usa src/ — na raiz o
                       Next ignora o arquivo, silenciosamente)
@@ -169,9 +171,40 @@ cabeçalho antes:
 
 ---
 
-## O que ainda não existe
+## O que está verificado, e o que não está
 
-Sendo honesto sobre o estado disto:
+Vale separar, porque "tem teste" quer dizer coisas diferentes.
+
+**Verificado rodando de verdade:**
+
+- **O `schema.sql` aplica sem erro** num PostgreSQL 16, e 24 asserções provam o
+  isolamento: o usuário B não lê, não altera e não apaga nada do usuário A, e
+  não consegue plantar uma situação-problema dentro da pasta dele. Rode com
+  `npm run test:banco`. Isso importa porque uma policy escrita errada compila,
+  sobe e só aparece no dia em que um aluno enxerga a tutoria de outro.
+- **A trava contra fonte inventada.** Um resumo que cita um PMID inexistente é
+  recusado, e nada é gravado — testado com o parse real do PubMed rodando sobre
+  XML controlado.
+- **O formato dos pedidos aos dois motores.** O do Claude contra um servidor
+  HTTP local, para testar a serialização real do SDK, e não a minha suposição
+  dela.
+- **O parse do XML do PubMed** e **o renderizador do resumo**, incluindo o
+  escape que torna seguro o `dangerouslySetInnerHTML`.
+- **O aplicativo subindo**: as rotas, os redirecionamentos e as telas de
+  `/comece-aqui` e `/diagnostico` foram exercitadas com o servidor no ar.
+
+**NÃO verificado — precisa de você:**
+
+- **A conversa ponta a ponta com chave de verdade.** O ambiente onde isto foi
+  escrito não alcança `eutils.ncbi.nlm.nih.gov` nem as APIs dos modelos. É a
+  primeira coisa a fazer, e é para isso que existe `/diagnostico`.
+- **O Supabase de verdade.** O schema foi testado num Postgres puro com o
+  `auth.uid()` do Supabase reproduzido fielmente, mas o serviço real tem
+  particularidades próprias.
+
+---
+
+## O que ainda não existe
 
 - **Cobrança, planos e cotas.** Removidos de propósito: este build é para uso
   próprio. Quando virar produto, o teto por usuário precisa entrar ANTES do
@@ -183,10 +216,3 @@ Sendo honesto sobre o estado disto:
   vezes o número de instâncias.
 - **Sem streaming.** A resposta chega inteira quando fica pronta. Com busca no
   PubMed no meio, isso pode levar alguns segundos.
-- **Nunca rodou contra o Supabase nem contra as APIs de IA de verdade.** O
-  ambiente onde foi escrito não alcança `eutils.ncbi.nlm.nih.gov` nem as APIs
-  dos modelos. O que É coberto por teste: o parse do XML do PubMed, o
-  renderizador do resumo, e o formato dos pedidos aos dois motores (o do Claude
-  contra um servidor HTTP local, para testar a serialização real do SDK). O que
-  falta é a primeira execução com chave de verdade — para isso existe a tela
-  `/diagnostico`.
